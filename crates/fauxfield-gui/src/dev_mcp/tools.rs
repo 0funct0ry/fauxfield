@@ -343,6 +343,42 @@ pub fn register_ui_tools(registry: &mut Registry, bridge: Arc<dyn UiBridge>) {
             })
         },
     ));
+    let b = bridge.clone();
+    registry.register(ToolDef::new::<super::audit::AuditInput>(
+        "ui.audit",
+        "Lint the UI (SPEC §11.4): UX101 clipped text without tooltip, UX102 overlapping \
+         siblings, UX103 target under 20 pt, UX110 token contrast (both themes), UX120 colour \
+         literals, UX130 actions missing from the palette or SPEC §9.8 binding, UX131 no \
+         keyboard path, UX140 view without empty-state fixture, UX150 frame/key-to-paint time \
+         (only with `perf` or in `rules`). Audits what is on screen; `themes`, `sizes` and \
+         `states` (`[\"all\"]` for every fixture) sweep a matrix and restore theme and size. \
+         Findings carry rule, severity, message, element ids, bounds and a suggested fix.",
+        ToolClass::Ui,
+        move |args: Map<String, Value>| {
+            let b = b.clone();
+            Box::pin(async move {
+                let i: super::audit::AuditInput = serde_json::from_value(Value::Object(args))
+                    .map_err(|e| format!("bad arguments: {e}"))?;
+                super::audit::audit(&b, i).await
+            })
+        },
+    ));
+    let b = bridge.clone();
+    registry.register(ToolDef::new::<super::audit::WalkthroughInput>(
+        "ui.walkthrough",
+        "Run a list of steps (reset, open, invoke, key, type, command, click_element, set_theme, \
+         resize, wait_for, wait_idle) and report per-step time and totals: steps, keystrokes, \
+         clicks, wall-clock ms and toasts, to compare the cost of a task over time.",
+        ToolClass::Ui,
+        move |args: Map<String, Value>| {
+            let b = b.clone();
+            Box::pin(async move {
+                let i: super::audit::WalkthroughInput = serde_json::from_value(Value::Object(args))
+                    .map_err(|e| format!("bad arguments: {e}"))?;
+                super::audit::walkthrough(&b, i).await
+            })
+        },
+    ));
     let b = bridge;
     registry.register(ToolDef::new::<ScreenshotAllInput>(
         "ui.screenshot_all",
@@ -398,6 +434,8 @@ mod tests {
             "ui.resize",
             "ui.screenshot",
             "ui.screenshot_all",
+            "ui.audit",
+            "ui.walkthrough",
             "ui.list_actions",
             "ui.tree",
             "ui.find",

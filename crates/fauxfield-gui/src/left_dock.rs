@@ -79,8 +79,12 @@ impl Shell {
             crate::dev_id!(
                 div()
                     .id(crate::ui::eid(format!("chev-{}", r.id)))
-                    .w(px(14.))
+                    .w(px(20.))
+                    .h(px(20.))
                     .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _, _, cx| {
@@ -105,12 +109,12 @@ impl Shell {
             )
             .into_any_element()
         } else {
-            div().w(px(14.)).flex_none().into_any_element()
+            div().w(px(20.)).flex_none().into_any_element()
         };
         let dots = crate::dev_id!(
             div()
                 .id(crate::ui::eid(format!("dots-{}", r.id)))
-                .size(px(18.))
+                .size(px(20.))
                 .flex_none()
                 .flex()
                 .items_center()

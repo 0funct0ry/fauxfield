@@ -35,6 +35,8 @@ pub enum Step {
     Key(String),
     /// Type text into the focused input (`ui.type_text`).
     Type(String),
+    /// Click an element by id (`ui.click_element`).
+    ClickElement(String),
     /// A `ui.command` object, e.g. `{command: toggle_dock, dock: left}`.
     Command(Map<String, Value>),
     /// `one-dark` or `one-light`, not persisted.
@@ -82,6 +84,9 @@ fixtures!(
     "theme-selector-open",
     "docks-collapsed",
     "problems-open",
+    "no-tabs",
+    "quick-search-empty",
+    "palette-empty",
 );
 
 pub fn named_steps(name: &str) -> Result<Vec<Step>, String> {
@@ -139,7 +144,7 @@ pub async fn resize(bridge: &Arc<dyn UiBridge>, size: &str) -> Result<Value, Str
     }
 }
 
-async fn run_step(bridge: &Arc<dyn UiBridge>, step: &Step) -> Result<(), String> {
+pub(super) async fn run_step(bridge: &Arc<dyn UiBridge>, step: &Step) -> Result<(), String> {
     match step {
         Step::Reset => call(bridge, "ui.reset_view", json!({})).await.map(drop),
         Step::Open { kind, id } => call(bridge, "ui.open_tab", json!({ "kind": kind, "id": id }))
@@ -152,6 +157,9 @@ async fn run_step(bridge: &Arc<dyn UiBridge>, step: &Step) -> Result<(), String>
             .await
             .map(drop),
         Step::Type(text) => call(bridge, "ui.type_text", json!({ "text": text }))
+            .await
+            .map(drop),
+        Step::ClickElement(id) => call(bridge, "ui.click_element", json!({ "id": id }))
             .await
             .map(drop),
         Step::Command(args) => call(bridge, "ui.command", Value::Object(args.clone()))

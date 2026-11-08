@@ -1,0 +1,7 @@
+# UI state fixture (M1.6): Command Palette with a query that matches nothing ("No results").
+steps:
+  - reset
+  - invoke: command_palette
+  - wait_for: {condition: {pointer: /command_palette/open, equals: true}}
+  - type: "zzzzqqqq"
+  - wait_idle

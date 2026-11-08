@@ -54,6 +54,37 @@ pub enum Click {
     TrafficRow(usize),
 }
 
+/// Extra facts the audit (`ui.audit`) needs. Everything defaults to "nothing declared".
+#[derive(Clone, Debug, Default)]
+pub struct Meta {
+    /// The element shows its full text in a tooltip.
+    pub tooltip: bool,
+    /// The label is deliberately truncated to fit.
+    pub truncates: bool,
+    /// Action id that gives a keyboard equivalent for a non-action control.
+    pub keyboard: Option<&'static str>,
+}
+
+impl Click {
+    pub fn interactive(&self) -> bool {
+        !matches!(self, Click::None)
+    }
+
+    /// Controls whose click has a keyboard path by construction: registered actions, tab
+    /// activation (Cmd+1..9, close tab), bottom-dock tabs (show_* actions), picker hits
+    /// (arrows and Enter).
+    fn keyboard_path(&self) -> bool {
+        matches!(
+            self,
+            Click::Action(_)
+                | Click::Tab(_)
+                | Click::CloseTab(_)
+                | Click::BottomTab(_)
+                | Click::PickerHit(_)
+        )
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Spec {
     pub id: String,
@@ -62,6 +93,7 @@ pub struct Spec {
     pub enabled: bool,
     pub z: u8,
     pub click: Click,
+    pub meta: Meta,
 }
 
 #[derive(Clone, Debug)]
@@ -81,6 +113,26 @@ struct Inner {
     focused: Option<String>,
     /// Totals of virtualised lists, keyed by node id.
     totals: Vec<(String, usize)>,
+    perf: Perf,
+}
+
+/// Frame and input timing for UX150. Samples are in milliseconds, capped at `PERF_CAP`.
+#[derive(Default)]
+struct Perf {
+    frame_start: Option<std::time::Instant>,
+    last_paint: Option<std::time::Instant>,
+    pending_key: Option<std::time::Instant>,
+    frames_ms: Vec<f64>,
+    key_to_paint_ms: Vec<f64>,
+}
+
+const PERF_CAP: usize = 240;
+
+fn push_capped(v: &mut Vec<f64>, x: f64) {
+    if v.len() == PERF_CAP {
+        v.remove(0);
+    }
+    v.push(x);
 }
 
 #[derive(Default)]
@@ -99,6 +151,50 @@ impl Registry {
         r.totals.clear();
         r.frame += 1;
         r.focused = focused.map(str::to_string);
+        // Close the previous frame: start of render to its last tagged paint.
+        let p = &mut r.perf;
+        if let (Some(a), Some(b)) = (p.frame_start, p.last_paint)
+            && b >= a
+        {
+            push_capped(&mut p.frames_ms, (b - a).as_secs_f64() * 1e3);
+        }
+        p.last_paint = None;
+        p.frame_start = Some(std::time::Instant::now());
+    }
+
+    /// Stamp the moment a synthetic key was injected; the next paint resolves it.
+    pub fn stamp_key(cx: &App) {
+        if let Some(r) = cx.try_global::<Registry>() {
+            r.0.borrow_mut().perf.pending_key = Some(std::time::Instant::now());
+        }
+    }
+
+    fn note_paint(cx: &App) {
+        if let Some(r) = cx.try_global::<Registry>() {
+            let mut r = r.0.borrow_mut();
+            let now = std::time::Instant::now();
+            r.perf.last_paint = Some(now);
+            if let Some(k) = r.perf.pending_key.take() {
+                push_capped(&mut r.perf.key_to_paint_ms, (now - k).as_secs_f64() * 1e3);
+            }
+        }
+    }
+
+    /// Timing samples since the last clear; `clear` empties them after reading.
+    pub fn perf(cx: &App, clear: bool) -> Value {
+        let Some(r) = cx.try_global::<Registry>() else {
+            return json!({ "frames_ms": [], "key_to_paint_ms": [] });
+        };
+        let mut r = r.0.borrow_mut();
+        let out = json!({
+            "frames_ms": r.perf.frames_ms,
+            "key_to_paint_ms": r.perf.key_to_paint_ms,
+        });
+        if clear {
+            r.perf.frames_ms.clear();
+            r.perf.key_to_paint_ms.clear();
+        }
+        out
     }
 
     pub fn set_total(cx: &mut App, id: &str, total: usize) {
@@ -142,6 +238,15 @@ impl Registry {
             "z": n.spec.z,
             "order": idx,
             "bounds": { "x": n.bounds[0], "y": n.bounds[1], "w": n.bounds[2], "h": n.bounds[3] },
+            "meta": {
+                "interactive": n.spec.click.interactive(),
+                "action": matches!(n.spec.click, Click::Action(_)),
+                "tooltip": n.spec.meta.tooltip,
+                "truncates": n.spec.meta.truncates,
+                "keyboard": n.spec.meta.keyboard
+                    .map(str::to_string)
+                    .or_else(|| n.spec.click.keyboard_path().then(|| "built-in".to_string())),
+            },
         });
         if let Some((_, total)) = r.totals.iter().find(|(id, _)| *id == n.spec.id) {
             v["total"] = json!(total);
@@ -344,6 +449,7 @@ impl Element for Tagged {
         cx: &mut App,
     ) {
         self.child.paint(window, cx);
+        Registry::note_paint(cx);
     }
 }
 

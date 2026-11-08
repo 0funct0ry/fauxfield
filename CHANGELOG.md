@@ -3,6 +3,16 @@
 ## Unreleased
 
 ### Added
+- M1.6 UI audit (dev builds): `ui.audit` runs UX101, UX102, UX103, UX110, UX120, UX130, UX131,
+  UX140 and (with `perf` or in `rules`) UX150 over `ui.tree`, theme token pairs, the actions table,
+  the view table and the state fixtures; `themes`, `sizes` and `states` sweep a matrix and restore
+  theme and size. `ui.walkthrough` reports steps, keystrokes, clicks, wall-clock time and toasts.
+  The pure rules live in `fauxfield-mcp::audit` (no GPUI). Tree nodes carry `meta` (interactive,
+  action, tooltip, truncates, keyboard); `ui.perf_probe` exposes frame and key-to-paint samples.
+  New state fixtures `no-tabs`, `quick-search-empty`, `palette-empty`.
+- Changed: tab close buttons, tree chevrons and tree row menu buttons are now 20 pt targets; four
+  One Light tokens (`text.accent`, `created`, `modified`, syntax `string`) are slightly darker so
+  every theme pair meets its WCAG ratio.
 - M1.5 Screenshots (dev builds): `ui.screenshot` (window or element crop, optional named or inline
   `state`), `ui.screenshot_all` (states x themes x sizes, restores theme and size even when a cell
   fails), `ui.set_theme` (not persisted) and `ui.resize`. A `Capture` trait picks macOS

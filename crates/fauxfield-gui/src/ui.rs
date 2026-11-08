@@ -114,8 +114,37 @@ macro_rules! dev_id_z {
                 enabled: true,
                 z: $z,
                 click: $crate::dev_mcp::tree::Click::$($click)+,
+                meta: ::std::default::Default::default(),
             },
         )
+    };
+}
+
+/// Like `dev_id!` with audit metadata: `dev_id_meta!(element, Meta { tooltip: true, ..Default::default() }, id, role, label, click)`.
+#[cfg(feature = "dev-mcp")]
+#[macro_export]
+macro_rules! dev_id_meta {
+    ($el:expr, $meta:expr, $id:expr, $role:ident, $label:expr, $($click:tt)+) => {
+        $crate::dev_mcp::tree::tag(
+            $el,
+            $crate::dev_mcp::tree::Spec {
+                id: ($id).to_string(),
+                role: $crate::dev_mcp::tree::Role::$role,
+                label: ($label).to_string(),
+                enabled: true,
+                z: 0,
+                click: $crate::dev_mcp::tree::Click::$($click)+,
+                meta: $meta,
+            },
+        )
+    };
+}
+
+#[cfg(not(feature = "dev-mcp"))]
+#[macro_export]
+macro_rules! dev_id_meta {
+    ($el:expr, $($rest:tt)*) => {
+        $el
     };
 }
 

@@ -21,6 +21,13 @@ expression: a
         "w": 1920.0,
         "h": 26.0
       },
+      "meta": {
+        "interactive": false,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": null
     },
     {
@@ -38,6 +45,13 @@ expression: a
         "y": 2.5,
         "w": 169.0,
         "h": 20.0
+      },
+      "meta": {
+        "interactive": false,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "title-bar"
     },
@@ -57,6 +71,13 @@ expression: a
         "w": 82.0,
         "h": 20.0
       },
+      "meta": {
+        "interactive": true,
+        "action": true,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": "built-in"
+      },
       "parent": "title-bar"
     },
     {
@@ -74,6 +95,13 @@ expression: a
         "y": 2.5,
         "w": 79.0,
         "h": 20.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": true,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": "built-in"
       },
       "parent": "title-bar"
     },
@@ -93,6 +121,13 @@ expression: a
         "w": 220.0,
         "h": 20.0
       },
+      "meta": {
+        "interactive": true,
+        "action": true,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": "built-in"
+      },
       "parent": "title-bar"
     },
     {
@@ -110,6 +145,13 @@ expression: a
         "y": 26.0,
         "w": 260.0,
         "h": 771.0
+      },
+      "meta": {
+        "interactive": false,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": null
     },
@@ -129,6 +171,13 @@ expression: a
         "w": 260.0,
         "h": 743.0
       },
+      "meta": {
+        "interactive": false,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "left-dock"
     },
     {
@@ -146,6 +195,13 @@ expression: a
         "y": 54.0,
         "w": 260.0,
         "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "tree"
     },
@@ -165,6 +221,13 @@ expression: a
         "w": 14.0,
         "h": 12.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "row-srv_users"
     },
     {
@@ -182,6 +245,13 @@ expression: a
         "y": 57.0,
         "w": 18.0,
         "h": 18.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "row-srv_users"
     },
@@ -201,6 +271,13 @@ expression: a
         "w": 260.0,
         "h": 24.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "tree"
     },
     {
@@ -218,6 +295,13 @@ expression: a
         "y": 84.0,
         "w": 14.0,
         "h": 12.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "row-fld_users"
     },
@@ -237,6 +321,13 @@ expression: a
         "w": 18.0,
         "h": 18.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "row-fld_users"
     },
     {
@@ -254,6 +345,13 @@ expression: a
         "y": 102.0,
         "w": 260.0,
         "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "tree"
     },
@@ -273,6 +371,13 @@ expression: a
         "w": 18.0,
         "h": 18.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "row-rt_users_list"
     },
     {
@@ -290,6 +395,13 @@ expression: a
         "y": 126.0,
         "w": 260.0,
         "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "tree"
     },
@@ -309,6 +421,13 @@ expression: a
         "w": 18.0,
         "h": 18.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "row-rt_users_get"
     },
     {
@@ -326,6 +445,13 @@ expression: a
         "y": 150.0,
         "w": 260.0,
         "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "tree"
     },
@@ -345,6 +471,13 @@ expression: a
         "w": 18.0,
         "h": 18.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "row-rt_users_create"
     },
     {
@@ -362,6 +495,13 @@ expression: a
         "y": 174.0,
         "w": 260.0,
         "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "tree"
     },
@@ -381,6 +521,13 @@ expression: a
         "w": 18.0,
         "h": 18.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "row-rt_users_update"
     },
     {
@@ -398,6 +545,13 @@ expression: a
         "y": 198.0,
         "w": 260.0,
         "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "tree"
     },
@@ -417,6 +571,13 @@ expression: a
         "w": 18.0,
         "h": 18.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "row-rt_users_delete"
     },
     {
@@ -434,6 +595,13 @@ expression: a
         "y": 222.0,
         "w": 260.0,
         "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "tree"
     },
@@ -453,6 +621,13 @@ expression: a
         "w": 18.0,
         "h": 18.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "row-rt_health"
     },
     {
@@ -470,6 +645,13 @@ expression: a
         "y": 246.0,
         "w": 260.0,
         "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "tree"
     },
@@ -489,6 +671,13 @@ expression: a
         "w": 14.0,
         "h": 12.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "row-srv_payments"
     },
     {
@@ -506,6 +695,13 @@ expression: a
         "y": 249.0,
         "w": 18.0,
         "h": 18.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "row-srv_payments"
     },
@@ -525,6 +721,13 @@ expression: a
         "w": 260.0,
         "h": 24.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "tree"
     },
     {
@@ -542,6 +745,13 @@ expression: a
         "y": 276.0,
         "w": 14.0,
         "h": 12.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "row-fld_charges"
     },
@@ -561,6 +771,13 @@ expression: a
         "w": 18.0,
         "h": 18.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "row-fld_charges"
     },
     {
@@ -578,6 +795,13 @@ expression: a
         "y": 294.0,
         "w": 260.0,
         "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "tree"
     },
@@ -597,6 +821,13 @@ expression: a
         "w": 18.0,
         "h": 18.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "row-rt_charges_create"
     },
     {
@@ -614,6 +845,13 @@ expression: a
         "y": 318.0,
         "w": 260.0,
         "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "tree"
     },
@@ -633,6 +871,13 @@ expression: a
         "w": 18.0,
         "h": 18.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "row-rt_charges_get"
     },
     {
@@ -650,6 +895,13 @@ expression: a
         "y": 342.0,
         "w": 260.0,
         "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "tree"
     },
@@ -669,6 +921,13 @@ expression: a
         "w": 18.0,
         "h": 18.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "row-rt_refunds"
     },
     {
@@ -686,6 +945,13 @@ expression: a
         "y": 366.0,
         "w": 260.0,
         "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "tree"
     },
@@ -705,6 +971,13 @@ expression: a
         "w": 14.0,
         "h": 12.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "row-sec_environments"
     },
     {
@@ -722,6 +995,13 @@ expression: a
         "y": 369.0,
         "w": 18.0,
         "h": 18.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "row-sec_environments"
     },
@@ -741,6 +1021,13 @@ expression: a
         "w": 260.0,
         "h": 24.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "tree"
     },
     {
@@ -758,6 +1045,13 @@ expression: a
         "y": 393.0,
         "w": 18.0,
         "h": 18.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "row-env:local"
     },
@@ -777,6 +1071,13 @@ expression: a
         "w": 260.0,
         "h": 24.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "tree"
     },
     {
@@ -794,6 +1095,13 @@ expression: a
         "y": 417.0,
         "w": 18.0,
         "h": 18.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "row-env:staging"
     },
@@ -813,6 +1121,13 @@ expression: a
         "w": 260.0,
         "h": 24.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "tree"
     },
     {
@@ -830,6 +1145,13 @@ expression: a
         "y": 444.0,
         "w": 14.0,
         "h": 12.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "row-sec_datasets"
     },
@@ -849,6 +1171,13 @@ expression: a
         "w": 18.0,
         "h": 18.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "row-sec_datasets"
     },
     {
@@ -866,6 +1195,13 @@ expression: a
         "y": 462.0,
         "w": 260.0,
         "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "tree"
     },
@@ -885,6 +1221,13 @@ expression: a
         "w": 18.0,
         "h": 18.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "row-ds:users"
     },
     {
@@ -902,6 +1245,13 @@ expression: a
         "y": 486.0,
         "w": 260.0,
         "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "tree"
     },
@@ -921,6 +1271,13 @@ expression: a
         "w": 18.0,
         "h": 18.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "row-ds:charges"
     },
     {
@@ -938,6 +1295,13 @@ expression: a
         "y": 26.0,
         "w": 1659.0,
         "h": 771.0
+      },
+      "meta": {
+        "interactive": false,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": null
     },
@@ -957,6 +1321,13 @@ expression: a
         "w": 1920.0,
         "h": 260.0
       },
+      "meta": {
+        "interactive": false,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": null
     },
     {
@@ -974,6 +1345,13 @@ expression: a
         "y": 799.5,
         "w": 107.0,
         "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": "built-in"
       },
       "parent": "bottom-dock"
     },
@@ -993,6 +1371,13 @@ expression: a
         "w": 90.0,
         "h": 24.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": "built-in"
+      },
       "parent": "bottom-dock"
     },
     {
@@ -1010,6 +1395,13 @@ expression: a
         "y": 799.5,
         "w": 61.0,
         "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": "built-in"
       },
       "parent": "bottom-dock"
     },
@@ -1029,6 +1421,13 @@ expression: a
         "w": 20.0,
         "h": 20.0
       },
+      "meta": {
+        "interactive": true,
+        "action": true,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": "built-in"
+      },
       "parent": "bottom-dock"
     },
     {
@@ -1046,6 +1445,13 @@ expression: a
         "y": 826.0,
         "w": 1920.0,
         "h": 232.0
+      },
+      "meta": {
+        "interactive": false,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "total": 10000,
       "parent": "bottom-dock"
@@ -1066,6 +1472,13 @@ expression: a
         "w": 1920.0,
         "h": 22.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "traffic"
     },
     {
@@ -1083,6 +1496,13 @@ expression: a
         "y": 872.0,
         "w": 1920.0,
         "h": 22.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "traffic"
     },
@@ -1102,6 +1522,13 @@ expression: a
         "w": 1920.0,
         "h": 22.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "traffic"
     },
     {
@@ -1119,6 +1546,13 @@ expression: a
         "y": 916.0,
         "w": 1920.0,
         "h": 22.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "traffic"
     },
@@ -1138,6 +1572,13 @@ expression: a
         "w": 1920.0,
         "h": 22.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "traffic"
     },
     {
@@ -1155,6 +1596,13 @@ expression: a
         "y": 960.0,
         "w": 1920.0,
         "h": 22.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "traffic"
     },
@@ -1174,6 +1622,13 @@ expression: a
         "w": 1920.0,
         "h": 22.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "traffic"
     },
     {
@@ -1191,6 +1646,13 @@ expression: a
         "y": 1004.0,
         "w": 1920.0,
         "h": 22.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "traffic"
     },
@@ -1210,6 +1672,13 @@ expression: a
         "w": 1920.0,
         "h": 22.0
       },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "traffic"
     },
     {
@@ -1227,6 +1696,13 @@ expression: a
         "y": 1048.0,
         "w": 1920.0,
         "h": 22.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
       },
       "parent": "traffic"
     },
@@ -1246,6 +1722,13 @@ expression: a
         "w": 1920.0,
         "h": 22.0
       },
+      "meta": {
+        "interactive": false,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": null
     },
     {
@@ -1263,6 +1746,13 @@ expression: a
         "y": 1059.5,
         "w": 26.0,
         "h": 20.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": true,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": "built-in"
       },
       "parent": "status-bar"
     },
@@ -1282,6 +1772,13 @@ expression: a
         "w": 26.0,
         "h": 20.0
       },
+      "meta": {
+        "interactive": true,
+        "action": true,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": "built-in"
+      },
       "parent": "status-bar"
     },
     {
@@ -1299,6 +1796,13 @@ expression: a
         "y": 1059.5,
         "w": 26.0,
         "h": 20.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": true,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": "built-in"
       },
       "parent": "status-bar"
     },
@@ -1318,6 +1822,13 @@ expression: a
         "w": 1430.0,
         "h": 0.0
       },
+      "meta": {
+        "interactive": false,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
       "parent": "status-bar"
     },
     {
@@ -1336,6 +1847,13 @@ expression: a
         "w": 64.0,
         "h": 20.0
       },
+      "meta": {
+        "interactive": true,
+        "action": true,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": "built-in"
+      },
       "parent": "status-bar"
     },
     {
@@ -1353,6 +1871,13 @@ expression: a
         "y": 1059.5,
         "w": 36.0,
         "h": 20.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": true,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": "built-in"
       },
       "parent": "status-bar"
     }

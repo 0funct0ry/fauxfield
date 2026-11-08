@@ -1,0 +1,4 @@
+# UI state fixture (M1.6): the centre pane with no tab open (its empty state).
+steps:
+  - reset
+  - wait_idle

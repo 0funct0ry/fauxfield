@@ -1,0 +1,7 @@
+# UI state fixture (M1.6): Quick Search with a query that matches nothing ("No results").
+steps:
+  - reset
+  - invoke: quick_search
+  - wait_for: {condition: {pointer: /quick_search/open, equals: true}}
+  - type: "zzzzqqqq"
+  - wait_idle

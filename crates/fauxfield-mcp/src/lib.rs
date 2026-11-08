@@ -1,6 +1,7 @@
 //! Fauxfield MCP server (SPEC §11): tool registry with class filtering, stdio and unix-socket
 //! transports, and the `UiBridge` trait implemented by the GUI in M1.2. Must not depend on GPUI.
 
+pub mod audit;
 pub mod bridge;
 pub mod class;
 pub mod condition;

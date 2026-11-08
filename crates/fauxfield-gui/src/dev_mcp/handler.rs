@@ -221,6 +221,11 @@ pub fn dispatch(
             cx.notify();
             Ok(json!({ "mask": i.on }))
         }
+        "ui.audit_data" => Ok(super::audit::data(shell, cx)),
+        "ui.perf_probe" => {
+            let clear = req.params["clear"].as_bool().unwrap_or(false);
+            Ok(super::tree::Registry::perf(cx, clear))
+        }
         "ui.reset_view" => {
             reset_view(shell, window, cx);
             Ok(json!({ "reset": true }))

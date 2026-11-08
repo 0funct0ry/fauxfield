@@ -160,7 +160,7 @@ impl Shell {
                 .child(crate::dev_id!(
                     div()
                         .id(crate::ui::eid(format!("tab-close-{}", tab.id)))
-                        .size(px(16.))
+                        .size(px(20.))
                         .flex()
                         .items_center()
                         .justify_center()

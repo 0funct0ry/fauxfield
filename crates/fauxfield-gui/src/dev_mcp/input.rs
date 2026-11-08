@@ -249,6 +249,7 @@ pub fn command(
 
 /// Key dispatch runs shell listeners, so it must not run inside an update of the `Shell`.
 pub fn key(keys: &str, window: &mut Window, cx: &mut App) -> Result<Value, UiError> {
+    super::tree::Registry::stamp_key(cx);
     let strokes: Vec<Keystroke> = keys
         .split_whitespace()
         .map(|s| {

@@ -1,6 +1,7 @@
 //! The in-process MCP host for agent UI testing (SPEC §3.4, §11.4). Compiled only with the
 //! `dev-mcp` feature; release builds contain none of it.
 
+pub mod audit;
 pub mod bridge;
 pub mod capture;
 pub mod handler;
