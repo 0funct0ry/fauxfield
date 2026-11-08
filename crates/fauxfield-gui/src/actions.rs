@@ -76,8 +76,31 @@ actions!(
         QuitAnyway,
         CancelQuit,
         Quit,
+        ShowAbout,
+        HideApp,
+        HideOthers,
+        ShowAllApps,
+        MinimizeWindow,
+        ZoomWindow,
+        ToggleFullscreen,
+        RevealWorkspace,
+        OpenDocumentation,
+        OpenReleaseNotes,
+        ReportIssue,
+        EditCut,
+        EditCopy,
+        EditPaste,
+        EditSelectAll,
     ]
 );
+
+/// Parameterised action used by the Open Recent submenu (SPEC §20.14). It has no JSON form
+/// (`no_json`), so it never appears in `ACTIONS` or the palette; the menu builds it directly.
+#[derive(Clone, PartialEq, gpui::Action)]
+#[action(namespace = fauxfield, no_json)]
+pub struct OpenRecent {
+    pub path: String,
+}
 
 pub struct ActionInfo {
     /// Stable snake_case id used in keymap TOML and by the palette.
@@ -239,6 +262,40 @@ pub static ACTIONS: &[ActionInfo] = &[
         SetDefaultResponse
     ),
     row!("quit", "Application: Quit", Quit),
+    row!("show_about", "Application: About Fauxfield", ShowAbout),
+    #[cfg(target_os = "macos")]
+    row!("hide_app", "Application: Hide Fauxfield", HideApp),
+    #[cfg(target_os = "macos")]
+    row!("hide_others", "Application: Hide Others", HideOthers),
+    #[cfg(target_os = "macos")]
+    row!("show_all_apps", "Application: Show All", ShowAllApps),
+    row!("minimize_window", "Window: Minimize", MinimizeWindow),
+    row!("zoom_window", "Window: Zoom / Maximize", ZoomWindow),
+    row!(
+        "toggle_fullscreen",
+        "Window: Toggle Full Screen",
+        ToggleFullscreen
+    ),
+    row!(
+        "reveal_workspace",
+        "Workspace: Reveal in File Manager",
+        RevealWorkspace
+    ),
+    row!(
+        "open_documentation",
+        "Help: Documentation",
+        OpenDocumentation
+    ),
+    row!(
+        "open_release_notes",
+        "Help: Release Notes",
+        OpenReleaseNotes
+    ),
+    row!("report_issue", "Help: Report an Issue…", ReportIssue),
+    row!("edit_cut", "Edit: Cut", EditCut),
+    row!("edit_copy", "Edit: Copy", EditCopy),
+    row!("edit_paste", "Edit: Paste", EditPaste),
+    row!("edit_select_all", "Edit: Select All", EditSelectAll),
 ];
 
 pub fn find(id: &str) -> Option<&'static ActionInfo> {

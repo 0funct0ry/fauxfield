@@ -164,6 +164,8 @@ impl PromptAction {
 pub struct Picker {
     pub kind: PickerKind,
     pub query: String,
+    /// Select All was pressed: the next typed text or Backspace replaces the whole query.
+    pub all_selected: bool,
     pub selected: usize,
     pub hits: Vec<Hit>,
 }
@@ -262,6 +264,19 @@ pub struct Shell {
     pub(crate) focus: FocusHandle,
     pub(crate) picker_focus: FocusHandle,
     pub(crate) lc: crate::lifecycle::Lifecycle,
+    /// M3.2: where the menu is drawn, the last context, the last native model, and the seams.
+    pub(crate) menu_style: crate::menu::MenuStyle,
+    pub(crate) menu_ctx: Option<crate::menu::MenuContext>,
+    pub(crate) menu_last: Option<Vec<crate::menu::MenuDef>>,
+    pub(crate) menu_sink: Box<dyn crate::menu_shell::MenuSink>,
+    pub(crate) url_opener: Box<dyn crate::menu_shell::UrlOpener>,
+    pub(crate) about_open: bool,
+    pub(crate) bar: crate::menubar::Bar,
+    /// Dev-mcp actions waiting for the frames that re-register their handlers.
+    #[cfg(feature = "dev-mcp")]
+    pub(crate) dev_pending: u32,
+    /// Last item run through the menu (sequence, label path), for `ui.state`/`ui.events`.
+    pub(crate) menu_invoked: Option<(u64, Vec<String>)>,
 }
 
 impl Focusable for Shell {
@@ -403,6 +418,16 @@ impl Shell {
             focus,
             picker_focus: cx.focus_handle(),
             lc: Default::default(),
+            menu_style: crate::menu::menu_style(),
+            menu_ctx: None,
+            menu_last: None,
+            menu_sink: Box::new(crate::menu_shell::NativeSink),
+            url_opener: Box::new(crate::menu_shell::SystemOpener),
+            about_open: false,
+            bar: Default::default(),
+            #[cfg(feature = "dev-mcp")]
+            dev_pending: 0,
+            menu_invoked: None,
         };
         if let Some(p) = problems.first() {
             shell.notify(p.clone(), cx);
@@ -1006,6 +1031,7 @@ impl Shell {
         self.picker = Some(Picker {
             kind,
             query: String::new(),
+            all_selected: false,
             selected,
             hits,
         });
@@ -1036,7 +1062,7 @@ impl Shell {
         }
     }
 
-    fn refresh_picker(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn refresh_picker(&mut self, cx: &mut Context<Self>) {
         let Some(p) = &self.picker else { return };
         let (kind, query) = (p.kind, p.query.clone());
         let hits = self.picker_hits(kind, &query);
@@ -1072,6 +1098,9 @@ impl Shell {
 
     pub fn picker_type(&mut self, text: &str, cx: &mut Context<Self>) {
         if let Some(p) = &mut self.picker {
+            if std::mem::take(&mut p.all_selected) {
+                p.query.clear();
+            }
             p.query.push_str(text);
         }
         self.refresh_picker(cx);
@@ -1079,7 +1108,11 @@ impl Shell {
 
     pub fn picker_backspace(&mut self, cx: &mut Context<Self>) {
         if let Some(p) = &mut self.picker {
-            p.query.pop();
+            if std::mem::take(&mut p.all_selected) {
+                p.query.clear();
+            } else {
+                p.query.pop();
+            }
         }
         self.refresh_picker(cx);
     }
@@ -1143,7 +1176,9 @@ impl Shell {
                 self.close_picker(true, window, cx);
                 self.recent.retain(|r| r != id);
                 self.recent.insert(0, id.clone());
-                self.run_action_id(id, window, cx);
+                // The picker was the modal that greyed the menu; dispatch only after the next
+                // frame has re-registered the handlers for the now-modal-free state.
+                self.run_action_id_next_frame(id, window, cx);
             }
             target => {
                 self.close_picker(true, window, cx);
@@ -1237,6 +1272,46 @@ impl Shell {
         self.chord.is_pending()
     }
 
+    pub fn run_action_id_next_frame(
+        &mut self,
+        id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(info) = actions::find(id) {
+            let build = info.build;
+            // Frame callbacks run before the frame is drawn, so wait one more frame: the
+            // second one runs after a render that saw the closed picker.
+            #[cfg(not(test))]
+            {
+                let this = cx.entity();
+                #[cfg(feature = "dev-mcp")]
+                {
+                    self.dev_pending += 1;
+                }
+                window.on_next_frame(move |w, _| {
+                    w.on_next_frame(move |w, cx| {
+                        w.dispatch_action(build(), cx);
+                        #[cfg(feature = "dev-mcp")]
+                        this.update(cx, |s, _| s.dev_pending = s.dev_pending.saturating_sub(1));
+                        #[cfg(not(feature = "dev-mcp"))]
+                        let _ = &this;
+                    });
+                    w.refresh();
+                });
+            }
+            // The test platform draws at the end of each effect cycle and runs no frame
+            // callbacks, so a spawned task (which runs after that draw) plays their role.
+            #[cfg(test)]
+            cx.spawn_in(window, async move |this, cx| {
+                this.update_in(cx, |_, w, cx| w.dispatch_action(build(), cx))
+                    .ok();
+            })
+            .detach();
+        }
+        cx.notify();
+    }
+
     pub fn run_action_id(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(info) = actions::find(id) {
             window.dispatch_action((info.build)(), cx);
@@ -1244,6 +1319,19 @@ impl Shell {
     }
 
     fn on_capture_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.bar.open.is_some() && self.bar_key(ev, window, cx) {
+            cx.stop_propagation();
+            return;
+        }
+        if self.bar_mnemonic(ev, cx) {
+            cx.stop_propagation();
+            return;
+        }
+        if self.about_open && matches!(ev.keystroke.key.as_str(), "escape" | "enter") {
+            self.close_about(cx);
+            cx.stop_propagation();
+            return;
+        }
         if self.any_dialog_open() && ev.keystroke.key == "escape" {
             self.cancel_dialog(cx);
             cx.stop_propagation();
@@ -1498,7 +1586,7 @@ impl Shell {
         }
     }
 
-    fn file_for_edit(&self) -> Option<String> {
+    pub(crate) fn file_for_edit(&self) -> Option<String> {
         let store = self.store.as_ref()?;
         let id = self
             .tabs
@@ -1799,13 +1887,17 @@ fn tab_exists(ws: &Workspace, kind: TabKind, id: &str) -> bool {
     }
 }
 
+/// Registers one handler per action, but only while the action is enabled in the menu model
+/// (`Shell::gated`), so a greyed native menu item and its key both do nothing (SPEC §20.14).
 macro_rules! on_actions {
-    ($root:expr, $cx:expr, { $($ty:ident => |$this:ident, $w:ident, $c:ident| $body:expr),* $(,)? }) => {{
+    ($shell:expr, $root:expr, $cx:expr, { $($ty:ident => |$this:ident, $w:ident, $c:ident| $body:expr),* $(,)? }) => {{
         let mut root = $root;
         $(
-            root = root.on_action($cx.listener(
-                |$this: &mut Shell, _: &actions::$ty, $w: &mut Window, $c: &mut Context<Shell>| $body,
-            ));
+            if $shell.gated(stringify!($ty)) {
+                root = root.on_action($cx.listener(
+                    |$this: &mut Shell, _: &actions::$ty, $w: &mut Window, $c: &mut Context<Shell>| $body,
+                ));
+            }
         )*
         root
     }};
@@ -1814,6 +1906,11 @@ macro_rules! on_actions {
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sync_window_title(window);
+        let w = f32::from(window.viewport_size().width);
+        if (self.bar.win_w - w).abs() > 0.5 {
+            self.bar.win_w = w;
+        }
+        self.sync_menus(window, cx);
         #[cfg(feature = "dev-mcp")]
         crate::dev_mcp::tree::Registry::begin_frame(
             cx,
@@ -1876,7 +1973,7 @@ impl Render for Shell {
                 cx.listener(|this, _, _, cx| this.end_resize(cx)),
             );
 
-        let root = on_actions!(root, cx, {
+        let root = on_actions!(self, root, cx, {
             QuickSearch => |this, w, cx| this.open_picker(PickerKind::Search, w, cx),
             CommandPalette => |this, w, cx| this.open_picker(PickerKind::Palette, w, cx),
             SelectTheme => |this, w, cx| this.open_picker(PickerKind::Theme, w, cx),
@@ -2000,7 +2097,30 @@ impl Render for Shell {
             QuitAnyway => |this, _w, cx| this.quit_now(cx),
             CancelQuit => |this, _w, cx| this.cancel_quit(cx),
             Quit => |this, _w, cx| this.request_quit(cx),
+            ShowAbout => |this, _w, cx| this.show_about(cx),
+            HideApp => |_this, _w, cx| cx.hide(),
+            HideOthers => |_this, _w, cx| cx.hide_other_apps(),
+            ShowAllApps => |_this, _w, cx| cx.unhide_other_apps(),
+            MinimizeWindow => |_this, w, _cx| w.minimize_window(),
+            ZoomWindow => |_this, w, _cx| w.zoom_window(),
+            ToggleFullscreen => |_this, w, _cx| w.toggle_fullscreen(),
+            RevealWorkspace => |this, _w, cx| this.reveal_workspace(cx),
+            OpenDocumentation => |this, _w, cx| this.open_documentation(cx),
+            OpenReleaseNotes => |this, _w, cx| this.open_release_notes(cx),
+            ReportIssue => |this, _w, cx| this.report_issue(cx),
+            EditCut => |this, _w, cx| this.edit_cut(cx),
+            EditCopy => |this, _w, cx| this.edit_copy(cx),
+            EditPaste => |this, _w, cx| this.edit_paste(cx),
+            EditSelectAll => |this, _w, cx| this.edit_select_all(cx),
         });
+        let root = root.on_action(cx.listener(
+            |this: &mut Shell,
+             a: &actions::OpenRecent,
+             _w: &mut Window,
+             cx: &mut Context<Shell>| {
+                this.open_recent(std::path::Path::new(&a.path), cx)
+            },
+        ));
 
         // Registered only while a workspace is open, so the palette and `ui.list_actions`
         // report them as disabled in Welcome.
@@ -2055,6 +2175,10 @@ impl Render for Shell {
         })
         .when(self.any_dialog_open(), |d| {
             d.child(self.render_dialogs(&t, cx))
+        })
+        .when(self.about_open, |d| d.child(self.render_about(&t, cx)))
+        .when(self.bar_visible() && self.bar.open.is_some(), |d| {
+            d.child(self.render_bar_backdrop(cx))
         })
         .when(self.lc.method_menu.is_some(), |d| {
             d.child(crate::dev_id_z!(

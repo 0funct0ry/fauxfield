@@ -1,0 +1,7 @@
+# UI state fixture (M3.2): the in-window File menu open (workspace open).
+steps:
+  - reset
+  - resize: default
+  - command: {command: set_menu_style, style: in_window}
+  - command: {command: open_menu, id: File}
+  - wait_idle

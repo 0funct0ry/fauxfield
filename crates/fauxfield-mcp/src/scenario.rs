@@ -62,6 +62,8 @@ pub enum Step {
     Invoke(String),
     /// `ui.command` object.
     Command(Map<String, Value>),
+    /// `ui.menu` object, e.g. `{action: invoke, path: [File, Open Recent, demo]}`.
+    Menu(Map<String, Value>),
     /// `ui.click_element`.
     ClickElement(IdArg),
     /// `ui.open_tab`.
@@ -304,6 +306,7 @@ impl Run<'_> {
                 .await
                 .map(drop),
             Step::Command(m) => self.tool("ui.command", m.clone()).await.map(drop),
+            Step::Menu(m) => self.tool("ui.menu", m.clone()).await.map(drop),
             Step::ClickElement(i) => self
                 .tool("ui.click_element", obj(json!({ "id": i.id() })))
                 .await
@@ -575,6 +578,7 @@ pub fn step_from_call(tool: &str, a: &Map<String, Value>) -> Option<Step> {
         "ui.type_text" => Step::TypeText(s("text")?),
         "ui.invoke_action" => Step::Invoke(s("name")?),
         "ui.command" => Step::Command(a.clone()),
+        "ui.menu" => Step::Menu(a.clone()),
         "ui.click_element" => Step::ClickElement(IdArg::Plain(s("id")?)),
         "ui.open_tab" => Step::Open {
             kind: s("kind")?,

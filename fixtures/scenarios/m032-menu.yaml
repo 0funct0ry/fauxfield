@@ -1,0 +1,64 @@
+# M3.2 scenario: the application menu and the About box, end to end.
+# Needs the example workspace as the launch workspace (scripts/smoke-ui.sh copies it) and
+# ports 4010 and 4020 free. The native macOS menu cannot be seen, so everything is asserted on
+# `ui.state.menus`, which reflects the built model exactly; the in-window bar is driven too.
+name: m032-menu
+size: default
+steps:
+  - state: [reset]
+  - invoke: clear_recent
+  # Welcome: workspace items are greyed, the always-on set is enabled.
+  - command: {command: close_workspace}
+  - assert: {pointer: /view, equals: welcome}
+  - wait_for_idle: {}
+  - assert: {pointer: /menus/menus/1/title, equals: File}
+  - assert: {pointer: /menus/menus/1/items/0/id, equals: new_server}
+  - assert: {pointer: /menus/menus/1/items/0/enabled, equals: false}
+  - assert: {pointer: /menus/menus/1/items/4/id, equals: open_folder}
+  - assert: {pointer: /menus/menus/1/items/4/enabled, equals: true}
+  - assert: {pointer: /menus/menus/1/items/8/id, equals: close_workspace}
+  - assert: {pointer: /menus/menus/1/items/8/enabled, equals: false}
+  # Open the example workspace through File > Open Recent (it was just closed, so it is first).
+  - menu: {action: invoke, path: [File, Open Recent, example-workspace]}
+  - wait_for_idle: {}
+  - assert: {pointer: /view, equals: workspace}
+  - assert: {pointer: /menus/menus/1/items/8/enabled, equals: true}
+  # Labels follow state: docks.
+  - assert: {pointer: /docks/left/open, equals: true}
+  - menu: {action: invoke, path: [View, Hide Left Dock]}
+  - wait_for_idle: {}
+  - assert: {pointer: /docks/left/open, equals: false}
+  - menu: {action: invoke, path: [View, Show Left Dock]}
+  - wait_for_idle: {}
+  # Run All Servers becomes Stop All Servers.
+  - menu: {action: invoke, path: [Server, Run All Servers]}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: running}}
+  - wait_for_idle: {}
+  - menu: {action: invoke, path: [Server, Stop All Servers]}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: stopped}}
+  # Undo is greyed with nothing to undo.
+  - assert: {pointer: /menus/menus/2/items/0/id, equals: undo}
+  - assert: {pointer: /menus/menus/2/items/0/enabled, equals: false}
+  # About opens the modal, Copy toasts, Esc closes.
+  # About lives under the app menu on macOS and Help elsewhere, so the action is invoked.
+  - invoke: show_about
+  - wait_for: {condition: {pointer: /modal, equals: about}}
+  - wait_for_idle: {}
+  - click_element: about-copy
+  - assert: {pointer: /toasts/0, equals: Version info copied}
+  - assert: {pointer: /modal, equals: about}
+  - key: escape
+  - assert: {pointer: /modal, equals: about, not: true}
+  # In-window bar: open File, click an item through its dev id.
+  - command: {command: set_menu_style, style: in_window}
+  - menu: {action: open, path: [File]}
+  - wait_for_idle: {}
+  - assert: {pointer: /menus/style, equals: in_window}
+  - assert_find: {text: menu-file-open_folder, ids: [menu-file-open_folder]}
+  - menu: {action: close}
+  # Narrow window: the titles collapse into the hamburger.
+  - resize: "900x700"
+  - wait_for_idle: {}
+  - assert_find: {text: menubar-collapsed, ids: [menubar-collapsed]}
+  - resize: default
+  - command: {command: set_menu_style, style: native}

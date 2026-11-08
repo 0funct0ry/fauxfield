@@ -138,7 +138,7 @@ pub struct EventsInput {
     /// result's `last_seq` to continue.
     #[serde(default)]
     pub since: Option<u64>,
-    /// Only these kinds (`generation`, `toast`, `server`, `traffic`). Default: all.
+    /// Only these kinds (`generation`, `toast`, `server`, `traffic`, `workspace`, `menu`, `about`). Default: all.
     #[serde(default)]
     pub kinds: Vec<String>,
     /// If nothing matches yet, wait up to this many milliseconds (max 30000).

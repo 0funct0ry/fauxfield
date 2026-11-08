@@ -365,6 +365,8 @@ impl Shell {
             Some("delete_confirm")
         } else if self.lc.create_confirm.is_some() {
             Some("create_confirm")
+        } else if self.about_open {
+            Some("about")
         } else {
             None
         }

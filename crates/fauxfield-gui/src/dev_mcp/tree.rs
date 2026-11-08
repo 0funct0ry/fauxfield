@@ -60,6 +60,20 @@ pub enum Click {
     TrafficRow(usize),
     /// Select a response of a route in the Responses sub-tab.
     Response(String, usize),
+    /// In-window menu bar: open top-level menu `n` (or the hamburger when collapsed).
+    BarTitle(usize),
+    /// In-window menu item: run action `id` through `Shell::run_menu_action`.
+    BarAction(&'static str),
+    /// In-window Open Recent entry (folder path).
+    BarRecent(String),
+    /// In-window submenu row: open it.
+    BarSubmenu(usize),
+    /// About box: copy the version info.
+    AboutCopy,
+    /// About box: close it.
+    AboutClose,
+    /// About box: open a link (URL).
+    AboutLink(String),
 }
 
 /// Extra facts the audit (`ui.audit`) needs. Everything defaults to "nothing declared".
@@ -85,6 +99,13 @@ impl Click {
         matches!(
             self,
             Click::Action(_)
+                | Click::BarTitle(_)
+                | Click::BarAction(_)
+                | Click::BarRecent(_)
+                | Click::BarSubmenu(_)
+                | Click::AboutCopy
+                | Click::AboutClose
+                | Click::AboutLink(_)
                 | Click::Tab(_)
                 | Click::CloseTab(_)
                 | Click::BottomTab(_)
@@ -484,7 +505,7 @@ pub fn click_element(
     match node.spec.click.clone() {
         Click::None => return fail(format!("element {id:?} has no click action")),
         Click::Action(name) => {
-            super::input::invoke_action(name, window, cx)?;
+            super::input::invoke_action(name, shell, window, cx)?;
         }
         Click::Row(row) => shell.click_row(&row, 1, cx),
         Click::ToggleRow(row) => {
@@ -517,11 +538,25 @@ pub fn click_element(
         Click::RouteMethod(route, m) => {
             if m == "custom" {
                 shell.lc.method_menu = None;
-                super::input::invoke_action("edit_route_method_custom", window, cx)?;
+                super::input::invoke_action("edit_route_method_custom", shell, window, cx)?;
             } else {
                 shell.set_route_method(&route, &m, cx);
             }
         }
+        Click::BarTitle(i) => shell.bar_toggle(i, cx),
+        Click::BarAction(id) => {
+            if let Err(e) = shell.run_menu_action(id, window, cx) {
+                return fail(e);
+            }
+        }
+        Click::BarRecent(path) => {
+            shell.bar_close(cx);
+            window.dispatch_action(Box::new(crate::actions::OpenRecent { path }), cx);
+        }
+        Click::BarSubmenu(i) => shell.bar_open_sub(i, cx),
+        Click::AboutCopy => shell.copy_version_info(cx),
+        Click::AboutClose => shell.close_about(cx),
+        Click::AboutLink(url) => shell.open_link(&url, cx),
         Click::Recent(path) => shell.open_recent(std::path::Path::new(&path), cx),
         Click::RemoveRecent(path) => shell.remove_recent(std::path::Path::new(&path), cx),
         Click::Response(route, i) => {

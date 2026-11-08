@@ -165,6 +165,9 @@ async fn feed_events(bridge: Arc<dyn UiBridge>, events: EventBuffer) {
     let mut last_servers: Vec<Value> = Vec::new();
     let mut last_traffic_id = 0u64;
     let mut last_workspace: Option<(Option<String>, String)> = None;
+    let mut last_menu_open = Value::Null;
+    let mut last_invoked_seq = 0u64;
+    let mut last_about = false;
     loop {
         tokio::time::sleep(Duration::from_millis(100)).await;
         let Ok(state) = bridge
@@ -214,6 +217,31 @@ async fn feed_events(bridge: Arc<dyn UiBridge>, events: EventBuffer) {
                 );
             }
             last_workspace = Some(ws);
+        }
+        // Menu: opened / closed (in-window bar) and invoked {path}; About open / close.
+        let open = state["menus"]["open"].clone();
+        if open != last_menu_open {
+            events.push(
+                "menu",
+                serde_json::json!({ "event": if open.is_null() { "closed" } else { "opened" }, "path": open }),
+            );
+            last_menu_open = open;
+        }
+        let seq = state["menus"]["last_invoked"]["seq"].as_u64().unwrap_or(0);
+        if seq != last_invoked_seq {
+            last_invoked_seq = seq;
+            events.push(
+                "menu",
+                serde_json::json!({ "event": "invoked", "path": state["menus"]["last_invoked"]["path"] }),
+            );
+        }
+        let about = state["modal"].as_str() == Some("about");
+        if about != last_about {
+            last_about = about;
+            events.push(
+                "about",
+                serde_json::json!({ "event": if about { "opened" } else { "closed" } }),
+            );
         }
         let toasts = state["toasts"].as_array().cloned().unwrap_or_default();
         for t in &toasts {

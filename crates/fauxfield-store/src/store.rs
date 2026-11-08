@@ -305,6 +305,21 @@ impl Store {
         Ok(r)
     }
 
+    /// Whether `file` has an edit to undo (drives the Edit menu).
+    pub fn can_undo(&self, file: &str) -> bool {
+        self.lock()
+            .docs
+            .get(file)
+            .is_some_and(|d| !d.undo.is_empty())
+    }
+    /// Whether `file` has an undone edit to redo.
+    pub fn can_redo(&self, file: &str) -> bool {
+        self.lock()
+            .docs
+            .get(file)
+            .is_some_and(|d| !d.redo.is_empty())
+    }
+
     pub fn undo(&self, file: &str) -> bool {
         self.swap_history(file, true)
     }

@@ -81,7 +81,7 @@ steps:
   - assert: {pointer: /servers/2/enabled, equals: true}
   - assert: {pointer: /servers/2/address, equals: "0.0.0.0:4650"}
   # Send a request through the first server's route and see it in Traffic.
-  - invoke: clear_traffic
+  # (Traffic is already empty after reopening, and Clear Traffic is greyed with no rows.)
   - open: {kind: route, id: rt_users_list}
   - invoke: send_test
   - wait_for: {condition: {pointer: /traffic/row_count, equals: 1}}

@@ -47,6 +47,145 @@ pub struct UiState {
     pub active_environment: String,
     pub window: WindowState,
     pub theme: String,
+    /// The application menu exactly as built (native menus cannot be seen or screenshotted).
+    pub menus: MenusState,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct MenusState {
+    pub style: &'static str,
+    /// Label path of the open in-window menu level, e.g. `["File", "Open Recent"]`.
+    pub open: Option<Vec<String>>,
+    pub menus: Vec<MenuState>,
+    pub last_invoked: Option<InvokedState>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct InvokedState {
+    pub seq: u64,
+    pub path: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct MenuState {
+    pub title: String,
+    pub items: Vec<MenuItemState>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct MenuItemState {
+    pub id: String,
+    pub label: String,
+    pub enabled: bool,
+    pub binding: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items: Option<Vec<MenuItemState>>,
+}
+
+fn menu_items(
+    entries: &[crate::menu::MenuEntry],
+    ctx: &crate::menu::MenuContext,
+) -> Vec<MenuItemState> {
+    use crate::menu::{MenuEntry, entry_enabled};
+    let mut recent = 0;
+    entries
+        .iter()
+        .filter_map(|e| {
+            let enabled = entry_enabled(e, ctx);
+            Some(match e {
+                MenuEntry::Separator | MenuEntry::Services => return None,
+                MenuEntry::Action { id, label } => MenuItemState {
+                    id: id.to_string(),
+                    label: label.clone(),
+                    enabled,
+                    binding: ctx.binding(id).map(str::to_string),
+                    items: None,
+                },
+                MenuEntry::Recent { label, .. } => {
+                    recent += 1;
+                    MenuItemState {
+                        id: format!("recent-{}", recent - 1),
+                        label: label.clone(),
+                        enabled,
+                        binding: None,
+                        items: None,
+                    }
+                }
+                MenuEntry::Disabled { label } => MenuItemState {
+                    id: "none".into(),
+                    label: label.clone(),
+                    enabled: false,
+                    binding: None,
+                    items: None,
+                },
+                MenuEntry::Submenu {
+                    key,
+                    label,
+                    entries,
+                    ..
+                } => MenuItemState {
+                    id: key.to_string(),
+                    label: label.clone(),
+                    enabled,
+                    binding: None,
+                    items: Some(menu_items(entries, ctx)),
+                },
+            })
+        })
+        .collect()
+}
+
+pub(crate) fn menus_state(shell: &Shell) -> MenusState {
+    use crate::menu::MenuStyle;
+    let in_window = shell.menu_style == MenuStyle::InWindow;
+    let (menus, open) = match &shell.menu_ctx {
+        Some(ctx) => {
+            let defs = crate::menu::build_menus(ctx);
+            let defs: Vec<_> = if in_window {
+                defs.into_iter()
+                    .filter(|m| m.title != "Fauxfield")
+                    .collect()
+            } else {
+                defs
+            };
+            let open = shell.bar.open.map(|i| {
+                let d = if shell.bar_collapsed() {
+                    None
+                } else {
+                    defs.get(i)
+                };
+                let mut p = vec![
+                    d.map(|d| d.title.to_string())
+                        .unwrap_or_else(|| "Menu".into()),
+                ];
+                if let (Some(s), Some(d)) = (shell.bar.sub, d)
+                    && let Some(crate::menu::MenuEntry::Submenu { label, .. }) = d.entries.get(s)
+                {
+                    p.push(label.clone());
+                }
+                p
+            });
+            (
+                defs.iter()
+                    .map(|d| MenuState {
+                        title: d.title.to_string(),
+                        items: menu_items(&d.entries, ctx),
+                    })
+                    .collect(),
+                open,
+            )
+        }
+        None => (Vec::new(), None),
+    };
+    MenusState {
+        style: if in_window { "in_window" } else { "native" },
+        open,
+        menus,
+        last_invoked: shell.menu_invoked.as_ref().map(|(seq, path)| InvokedState {
+            seq: *seq,
+            path: path.clone(),
+        }),
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -347,6 +486,7 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
             scale: window.scale_factor(),
         },
         theme: cx.global::<Theme>().name.clone(),
+        menus: menus_state(shell),
     }
 }
 

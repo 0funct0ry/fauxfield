@@ -1068,13 +1068,20 @@ fn toggle_button(
             .cursor_pointer()
             .border_1()
             .border_color(t.border)
-            .bg(if on { t.created } else { t.surface })
+            .bg(if on { t.accent } else { t.surface })
             .flex()
             .items_center()
             .px(px(2.))
             .when(on, |d| d.justify_end())
             .on_click(on_click)
-            .child(div().size(px(14.)).rounded_full().bg(t.text)),
+            .child(div().size(px(14.)).rounded_full().bg(
+                // A light knob on the accent fill; the light theme's text colour is dark.
+                if on && t.appearance == crate::theme_model::Appearance::Light {
+                    t.background
+                } else {
+                    t.text
+                },
+            )),
         id,
         Button,
         if on { "On" } else { "Off" },

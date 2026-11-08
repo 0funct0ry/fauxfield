@@ -38,15 +38,15 @@ tools only, no `ui.*`.
 
 | Group | Tools |
 |---|---|
-| State | `ui.state`, `ui.open_workspace`, `ui.create_workspace`, `ui.open_tab` |
-| Workspace | `update_workspace`, `update_server` (incl. `unmatched_hint`), `ui.command` `close_workspace`, `add_recent`, `remove_recent`, `hold_port` (binds a port until `ui.reset_view`), `request_quit` (refused when nothing runs) |
+| State | `ui.state` (includes `menus`), `ui.open_workspace`, `ui.create_workspace`, `ui.open_tab`, `ui.menu` (`list`, `invoke`, `open`, `close` by label path, e.g. `[File, Open Recent, demo]`) |
+| Workspace | `update_workspace`, `update_server` (incl. `unmatched_hint`), `ui.command` `close_workspace`, `add_recent`, `remove_recent`, `hold_port` (binds a port until `ui.reset_view`), `set_menu_style` (`native`|`in_window`), `open_menu` (`File` or `File/Open Recent`, for state fixtures), `request_quit` (refused when nothing runs) |
 | Run | `start_server`, `stop_server`, `restart_server`, `send_test_request`, `get_traffic` (product tools, not `ui.*`; they drive the engine the window hosts) |
 | Input | `ui.list_actions`, `ui.invoke_action`, `ui.command`, `ui.key`, `ui.type_text`, `ui.wait_for_idle`, `ui.wait_for` (`ui.click` and `ui.scroll` return an error: GPUI 0.2.2 cannot inject pointer events) |
 | Tree | `ui.tree`, `ui.find`, `ui.click_element` |
 | Screenshots | `ui.screenshot`, `ui.screenshot_all`, `ui.set_theme`, `ui.resize` |
 | Audit | `ui.audit`, `ui.walkthrough` |
 | Scenarios | `ui.run_scenario`, `ui.record` |
-| Events | `ui.events` |
+| Events | `ui.events` (kinds include `menu` opened/closed/invoked and `about` opened/closed) |
 
 The registry is the source of truth: `tools/list` shows names, descriptions and schemas.
 
@@ -123,3 +123,9 @@ use `capture: false` (or `--no-capture`) to keep going. On Linux install `grim` 
    element ids to the report. Separate app failures from flakiness (timing, ports).
 7. Product tools (`start_server`, `send_test_request`, `get_traffic`, `validate`) arrive with the
    milestones that add them; use them to check the GUI shows what the engine did.
+
+## Menu notes (M3.2)
+
+- A native macOS menu cannot be seen or screenshotted: assert on `ui.state.menus` / `ui.menu list`, which reflect the built model exactly. To screenshot the bar, `ui.command set_menu_style in_window`.
+- A greyed item is an item whose handler is not registered, so `ui.invoke_action` on it fails. When state changed in the same call sequence, an action is dispatched after the next frames; input tools wait for that, so no extra `ui.wait_for_idle` is needed for it.
+- `ui.menu invoke` on a Recent entry accepts the bare workspace name as the last path segment.

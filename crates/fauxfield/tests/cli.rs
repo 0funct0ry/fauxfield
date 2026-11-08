@@ -24,6 +24,14 @@ fn version_json_is_stable() {
     v["version"] = "<version>".into();
     assert!(v["gui"].is_boolean());
     v["gui"] = "<bool>".into();
+    // Redact per-commit / per-host build facts.
+    for k in ["commit", "commit_date", "target", "profile"] {
+        assert!(v[k].is_string(), "{k}");
+        v[k] = format!("<{k}>").into();
+    }
+    assert!(v["dirty"].is_boolean());
+    v["dirty"] = "<bool>".into();
+    assert!(v["gpui"].is_string());
     snap_json(Some("version_json_is_stable"), &v);
 }
 

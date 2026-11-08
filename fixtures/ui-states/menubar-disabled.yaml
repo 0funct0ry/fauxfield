@@ -1,0 +1,9 @@
+# UI state fixture (M3.2): the Welcome view with the File menu open; most items are greyed.
+steps:
+  - reset
+  - resize: default
+  - command: {command: close_workspace}
+  - wait_for: {condition: {pointer: /view, equals: welcome}}
+  - command: {command: set_menu_style, style: in_window}
+  - command: {command: open_menu, id: File}
+  - wait_idle

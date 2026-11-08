@@ -46,6 +46,10 @@ impl TabSet {
         self.tabs.is_empty()
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = &Tab> {
+        self.tabs.iter()
+    }
+
     pub fn active_index(&self) -> Option<usize> {
         self.active
     }

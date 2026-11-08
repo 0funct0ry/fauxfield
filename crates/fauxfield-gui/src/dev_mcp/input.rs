@@ -88,6 +88,10 @@ pub enum CommandName {
     RemoveRecent,
     /// Add `path` (which need not exist) to Recent, newest first.
     AddRecent,
+    /// Override where the menu is drawn: `style` = `native` or `in_window` (dev builds only).
+    SetMenuStyle,
+    /// Open an in-window menu: `id` = `File` or `File/Open Recent` (for state fixtures).
+    OpenMenu,
 }
 
 #[derive(Clone, Copy, Deserialize, JsonSchema)]
@@ -129,6 +133,79 @@ pub struct CommandInput {
     /// remove_recent: workspace folder path.
     #[serde(default)]
     pub path: Option<String>,
+    /// set_menu_style: `native` or `in_window`.
+    #[serde(default)]
+    pub style: Option<String>,
+}
+
+#[derive(Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MenuAction {
+    List,
+    Invoke,
+    Open,
+    Close,
+}
+
+/// `ui.menu`: inspect and drive the application menu.
+#[derive(Deserialize, JsonSchema)]
+pub struct MenuInput {
+    /// `list`, `invoke`, `open` (in-window bar) or `close`.
+    pub action: MenuAction,
+    /// invoke / open: label path such as `["File", "Open Recent", "demo — ~/demo"]`.
+    #[serde(default)]
+    pub path: Option<Vec<String>>,
+}
+
+pub fn menu(
+    input: MenuInput,
+    shell: &mut Shell,
+    window: &mut Window,
+    cx: &mut Context<Shell>,
+) -> Result<Value, UiError> {
+    match input.action {
+        MenuAction::List => {
+            Ok(serde_json::to_value(super::state::menus_state(shell)).expect("menus serialize"))
+        }
+        MenuAction::Invoke => {
+            let path = need(input.path, "path", "invoke")?;
+            shell
+                .run_menu_path(&path, window, cx)
+                .map_err(UiError::Failed)?;
+            Ok(json!({ "ok": true, "path": path }))
+        }
+        MenuAction::Open => {
+            if shell.menu_style != crate::menu::MenuStyle::InWindow {
+                return fail("the menu is native; use ui.command set_menu_style in_window first");
+            }
+            let path = need(input.path, "path", "open")?;
+            let first = path.first().cloned().unwrap_or_default();
+            let idx = if shell.bar_collapsed() {
+                Some(0)
+            } else {
+                shell.bar_menus().iter().position(|m| m.title == first)
+            };
+            let Some(i) = idx else {
+                return fail(format!("no menu {first:?}"));
+            };
+            shell.bar_open_menu(i, cx);
+            if let Some(sub) = path.get(1) {
+                let entries = shell.bar_entries(i);
+                let at = entries.iter().position(
+                    |e| matches!(e, crate::menu::MenuEntry::Submenu { label, .. } if label == sub),
+                );
+                match at {
+                    Some(s) => shell.bar_open_sub(s, cx),
+                    None => return fail(format!("no submenu {}", path.join("/"))),
+                }
+            }
+            Ok(json!({ "ok": true, "open": path }))
+        }
+        MenuAction::Close => {
+            shell.bar_close(cx);
+            Ok(json!({ "ok": true }))
+        }
+    }
 }
 
 static HELD_PORTS: std::sync::Mutex<Vec<std::net::TcpListener>> = std::sync::Mutex::new(Vec::new());
@@ -200,6 +277,7 @@ pub fn list_actions(shell: &Shell, window: &mut Window, cx: &mut Context<Shell>)
 
 pub fn invoke_action(
     name: &str,
+    shell: &mut Shell,
     window: &mut Window,
     cx: &mut Context<Shell>,
 ) -> Result<Value, UiError> {
@@ -210,13 +288,20 @@ pub fn invoke_action(
         return fail("action \"quit\" is refused over MCP: it would end the session");
     }
     let action = (info.build)();
-    if !window.is_action_available(action.as_ref(), cx) {
+    // The handlers of the last painted frame decide availability, but a tool call can arrive
+    // before the frame that follows a state change. The fresh menu rules decide whether the
+    // action is enabled; when only the painted frame is behind, dispatch after the next frames.
+    if !shell.enabled_now(info.id, window) {
         return fail(format!(
             "action {name:?} is disabled in the current context"
         ));
     }
-    // GPUI defers the dispatch; its effect lands before the next bridge request is served.
-    window.dispatch_action(action, cx);
+    if window.is_action_available(action.as_ref(), cx) {
+        // GPUI defers the dispatch; its effect lands before the next bridge request is served.
+        window.dispatch_action(action, cx);
+    } else {
+        shell.dispatch_next_frames(info.id, window, cx);
+    }
     Ok(json!({ "ok": true, "action": name }))
 }
 
@@ -261,6 +346,32 @@ pub fn command(
             }
             shell.set_environment(&name, cx);
             Ok(json!({ "ok": true, "active_environment": shell.active_env }))
+        }
+        CommandName::SetMenuStyle => {
+            let name = need(input.style, "style", "set_menu_style")?;
+            let style = match name.as_str() {
+                "native" => crate::menu::MenuStyle::Native,
+                "in_window" => crate::menu::MenuStyle::InWindow,
+                other => return fail(format!("unknown style {other:?}; use native or in_window")),
+            };
+            shell.menu_style = style;
+            shell.menu_last = None;
+            shell.bar_close(cx);
+            cx.notify();
+            Ok(json!({ "ok": true, "style": name }))
+        }
+        CommandName::OpenMenu => {
+            let id = need(input.id, "id", "open_menu")?;
+            let path = id.split('/').map(str::to_string).collect();
+            menu(
+                MenuInput {
+                    action: MenuAction::Open,
+                    path: Some(path),
+                },
+                shell,
+                window,
+                cx,
+            )
         }
         CommandName::CloseWorkspace => {
             if shell.store.is_none() {

@@ -129,6 +129,12 @@ fn reset_view(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) {
     shell.lc.delete_confirm = None;
     shell.lc.create_confirm = None;
     shell.lc.prompt_error = None;
+    shell.about_open = false;
+    shell.menu_style = crate::menu::menu_style();
+    shell.menu_last = None;
+    shell.bar.open = None;
+    shell.bar.hi = [None, None];
+    shell.bar.sub = None;
     super::input::release_held_ports();
     // Baseline Traffic is the synthetic 10k rows; real requests and the engine's buffer go.
     shell.traffic = crate::traffic::synthetic(crate::shell::TRAFFIC_ROWS);
@@ -215,8 +221,9 @@ pub fn dispatch(
         "ui.list_actions" => Ok(input::list_actions(shell, window, cx)),
         "ui.invoke_action" => {
             let i: input::InvokeActionInput = args(&req.params)?;
-            input::invoke_action(&i.name, window, cx)
+            input::invoke_action(&i.name, shell, window, cx)
         }
+        "ui.menu" => input::menu(args(&req.params)?, shell, window, cx),
         "ui.command" => input::command(args(&req.params)?, shell, window, cx),
         "ui.tree" => super::tree::tree(cx, &args(&req.params)?).map_err(UiError::Failed),
         "ui.find" => Ok(super::tree::find(cx, &args(&req.params)?)),
@@ -231,7 +238,8 @@ pub fn dispatch(
             let generation = host.tracker.observe(s).generation;
             Ok(json!({
                 "generation": generation,
-                "pending": shell.chord_pending() || shell.resize.is_some(),
+                "pending": shell.chord_pending() || shell.resize.is_some() || shell.dev_pending > 0,
+                "dispatching": shell.dev_pending > 0,
             }))
         }
         "ui.window_bounds" => {

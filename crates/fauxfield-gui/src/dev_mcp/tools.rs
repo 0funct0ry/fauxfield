@@ -60,6 +60,16 @@ async fn with_outcome(
     args: Map<String, Value>,
 ) -> Result<Value, String> {
     let mut out = call(bridge, method, Value::Object(args)).await?;
+    // An action deferred until the handlers are re-registered (see `invoke_action`) must have
+    // run before the caller looks at the result.
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(2) {
+        let p = call(bridge, "ui.idle_probe", json!({})).await?;
+        if !p["dispatching"].as_bool().unwrap_or(false) {
+            break;
+        }
+        tokio::time::sleep(POLL).await;
+    }
     let state = call(bridge, "ui.state", json!({})).await?;
     if let Some(o) = out.as_object_mut() {
         o.insert("generation".into(), state["generation"].clone());
@@ -246,12 +256,22 @@ pub fn register_ui_tools(registry: &mut Registry, bridge: Arc<dyn UiBridge>) {
         "Run an action by name through GPUI dispatch. A disabled action is an error. Returns \
          the new ui.state generation and toasts.",
     );
+    input_tool::<super::input::MenuInput>(
+        registry,
+        &bridge,
+        "ui.menu",
+        "Inspect and drive the application menu. `list` returns ui.state.menus (style, open \
+         path, every menu with item id, label, enabled and binding). `invoke` runs an item by \
+         label path (e.g. [\"File\", \"Open Recent\", \"<label>\"]) through the same code as the \
+         native menu and the in-window click; a missing or disabled item is an error with the \
+         reason. `open` / `close` drive the in-window bar.",
+    );
     input_tool::<CommandInput>(
         registry,
         &bridge,
         "ui.command",
         "Typed operations that take arguments: open_tab, select_tab, toggle_dock, \
-         set_environment, search. One flat object: `command` plus its arguments.",
+         set_environment, search, set_menu_style. One flat object: `command` plus its arguments.",
     );
     input_tool::<KeyInput>(
         registry,
@@ -534,7 +554,7 @@ mod tests {
 
     #[tokio::test]
     async fn input_tools_report_generation_and_toasts() {
-        let b = fake(vec![]);
+        let b = fake(vec![(1, false)]);
         let v = with_outcome(&b, "ui.key", Map::new()).await.unwrap();
         assert_eq!(v["method"], "ui.key");
         assert_eq!(v["toasts"], json!(["hi"]));

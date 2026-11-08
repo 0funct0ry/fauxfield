@@ -1,0 +1,10 @@
+# UI state fixture (M3.2): File > Open Recent open, with one entry whose folder is missing.
+steps:
+  - reset
+  - resize: default
+  - invoke: clear_recent
+  - command: {command: add_recent, path: /nonexistent/old-mocks}
+  - command: {command: add_recent, path: fixtures/example-workspace}
+  - command: {command: set_menu_style, style: in_window}
+  - command: {command: open_menu, id: File/Open Recent}
+  - wait_idle

@@ -1,0 +1,6 @@
+# UI state fixture (M3.2): the in-window menu bar with every menu closed (workspace open).
+steps:
+  - reset
+  - resize: default
+  - command: {command: set_menu_style, style: in_window}
+  - wait_idle

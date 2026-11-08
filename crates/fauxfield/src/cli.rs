@@ -132,11 +132,27 @@ fn parse_transport(s: &str) -> Result<fauxfield_mcp::TransportKind, String> {
 
 /// Stable `version --json` schema.
 pub fn version_json() -> serde_json::Value {
+    let b = build_info();
     serde_json::json!({
         "name": "fauxfield",
-        "version": env!("CARGO_PKG_VERSION"),
+        "version": b.version,
         "gui": cfg!(feature = "gui"),
+        "commit": b.commit_label(),
+        "commit_date": b.commit_date,
+        "dirty": b.dirty,
+        "target": b.target,
+        "profile": b.profile,
+        "gpui": b.gpui,
     })
+}
+
+pub fn build_info() -> fauxfield_control::build_info::BuildInfo {
+    let features = if cfg!(feature = "dev-mcp") {
+        vec!["dev-mcp"]
+    } else {
+        vec![]
+    };
+    fauxfield_control::build_info::BuildInfo::current(features)
 }
 
 pub fn run() -> i32 {
@@ -170,7 +186,12 @@ pub fn run() -> i32 {
             if json {
                 println!("{}", serde_json::to_string_pretty(&version_json()).unwrap());
             } else {
-                println!("fauxfield {}", env!("CARGO_PKG_VERSION"));
+                let b = build_info();
+                println!("fauxfield {}", b.version);
+                // Then the commit, target and gpui lines (`copy_text()`, SPEC §20.14).
+                for line in b.copy_text().lines() {
+                    println!("{line}");
+                }
             }
             EXIT_OK
         }

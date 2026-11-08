@@ -3,6 +3,7 @@
 //! [`RemoteControl`] over the socket. Must not depend on GPUI.
 
 mod api;
+pub mod build_info;
 mod host;
 pub mod ipc;
 mod reload;

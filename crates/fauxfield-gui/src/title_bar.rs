@@ -2,7 +2,7 @@
 
 use gpui::{
     Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled,
-    WindowControlArea, div, px,
+    WindowControlArea, div, prelude::*, px,
 };
 
 use crate::keymap::display_keys;
@@ -36,6 +36,7 @@ impl Shell {
             .bg(t.title_bar)
             .border_b_1()
             .border_color(t.border)
+            .when(self.bar_visible(), |d| d.child(self.render_menubar(t, cx)))
             .child(crate::dev_id_meta!(
                 toolbar_button(t, "title-workspace")
                     .max_w(px(220.))

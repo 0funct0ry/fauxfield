@@ -1,0 +1,8 @@
+# UI state fixture (M3.2): a narrow window; the titles collapse into the hamburger, opened.
+steps:
+  - reset
+  - command: {command: set_menu_style, style: in_window}
+  - resize: "900x700"
+  - wait_idle
+  - command: {command: open_menu, id: File}
+  - wait_idle

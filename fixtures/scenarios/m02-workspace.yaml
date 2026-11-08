@@ -29,6 +29,7 @@ steps:
   - invoke: undo
   # Delete the route: its tab closes.
   - invoke: delete
+  - wait_for_idle: {}
   - assert: {pointer: /tabs, equals: []}
   # Clean up: deleting a server asks first.
   - command: {command: search, query: "@Scenario API"}

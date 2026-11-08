@@ -1,6 +1,11 @@
 # Fauxfield default keymap (SPEC §9.8). `secondary` is Cmd on macOS and Ctrl elsewhere.
 # `keys` with a space is a chord (first key, then second within the chord timeout).
 # A user keymap in the config dir (keymap.toml) uses the same format and overrides by action.
+# Optional per-binding fields:
+#   context  = "Picker"            only while a single-line text input has focus
+#   platform = "macos"                or ["windows", "linux"]; omitted means every platform.
+#                                     A binding for another platform is ignored; an unknown
+#                                     platform name is reported as a keymap problem.
 
 [[binding]]
 action = "quick_search"
@@ -93,3 +98,71 @@ keys = "secondary-9"
 [[binding]]
 action = "quit"
 keys = "secondary-q"
+
+# M3.2: application menu bindings.
+[[binding]]
+action = "open_folder"
+keys = "secondary-o"
+
+[[binding]]
+action = "close_workspace"
+keys = "secondary-shift-w"
+
+[[binding]]
+action = "undo"
+keys = "secondary-z"
+
+[[binding]]
+action = "redo"
+keys = "secondary-shift-z"
+platform = "macos"
+
+[[binding]]
+action = "redo"
+keys = "ctrl-y"
+platform = ["windows", "linux"]
+
+[[binding]]
+action = "edit_cut"
+keys = "secondary-x"
+context = "Picker"
+
+[[binding]]
+action = "edit_copy"
+keys = "secondary-c"
+context = "Picker"
+
+[[binding]]
+action = "edit_paste"
+keys = "secondary-v"
+context = "Picker"
+
+[[binding]]
+action = "edit_select_all"
+keys = "secondary-a"
+context = "Picker"
+
+[[binding]]
+action = "toggle_fullscreen"
+keys = "ctrl-cmd-f"
+platform = "macos"
+
+[[binding]]
+action = "toggle_fullscreen"
+keys = "f11"
+platform = ["windows", "linux"]
+
+[[binding]]
+action = "hide_app"
+keys = "cmd-h"
+platform = "macos"
+
+[[binding]]
+action = "hide_others"
+keys = "cmd-alt-h"
+platform = "macos"
+
+[[binding]]
+action = "minimize_window"
+keys = "cmd-m"
+platform = "macos"

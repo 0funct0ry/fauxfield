@@ -78,6 +78,8 @@ fn palette_lists_every_action_and_runs_the_chosen_one(cx: &mut TestAppContext) {
     cx.simulate_input("toggle left");
     cx.simulate_keystrokes("enter");
     assert!(read(&view, cx, |s| s.picker.is_none()));
+    cx.run_until_parked(); // the palette runs its command after two frames
+    cx.run_until_parked();
     assert!(!read(&view, cx, |s| s.layout.left_open));
 
     // The recently used command floats to the top next time.
@@ -244,10 +246,14 @@ fn run_all_toggles_and_environment_switch(cx: &mut TestAppContext) {
 #[gpui::test]
 fn new_route_needs_a_server_then_prompts(cx: &mut TestAppContext) {
     let (view, cx) = setup(cx, None);
+    // New Route is greyed without a current server, so its key does nothing (SPEC §9.11).
     cx.simulate_keystrokes("secondary-n");
-    let msg = read(&view, cx, |s| s.notice.as_ref().map(|(_, m)| m.clone()));
-    assert!(msg.unwrap().contains("Select a server"));
-    view.update(cx, |s, _| s.selected = Some("srv_payments".into()));
+    assert!(read(&view, cx, |s| s.notice.is_none() && s.prompt.is_none()));
+    view.update(cx, |s, cx| {
+        s.selected = Some("srv_payments".into());
+        cx.notify();
+    });
+    cx.run_until_parked();
     cx.simulate_keystrokes("secondary-n");
     assert_eq!(
         read(&view, cx, |s| s.picker.as_ref().map(|p| p.kind)),
@@ -900,6 +906,8 @@ fn the_route_method_dropdown_changes_the_verb(cx: &mut TestAppContext) {
             .clone()),
         "GET"
     );
+    view.update(cx, |_, cx| cx.notify());
+    cx.run_until_parked(); // render, so the menu gating sees the open tab
     view.update_in(cx, |s, w, cx| s.run_action_id("edit_route_method", w, cx));
     cx.run_until_parked();
     assert!(read(&view, cx, |s| s.lc.method_menu.is_some()));
@@ -925,4 +933,222 @@ fn a_vanished_active_environment_falls_back(cx: &mut TestAppContext) {
     view.update(cx, |s, cx| s.reload(cx));
     let env = read(&view, cx, |s| s.active_env.clone());
     assert!(!env.is_empty() && env != "deleted-env", "{env}");
+}
+
+// ---- M3.2: application menu, About box, Help links ----------------------------------------
+
+#[derive(Clone, Default)]
+struct Recorder(std::rc::Rc<std::cell::RefCell<Vec<String>>>);
+
+impl crate::menu_shell::UrlOpener for Recorder {
+    fn open(&self, url: &str, _: &mut gpui::App) {
+        self.0.borrow_mut().push(url.to_string());
+    }
+}
+
+struct CountingSink(std::rc::Rc<std::cell::Cell<usize>>);
+
+impl crate::menu_shell::MenuSink for CountingSink {
+    fn apply(&mut self, _: &[crate::menu::MenuDef], _: &mut gpui::App) {
+        self.0.set(self.0.get() + 1);
+    }
+}
+
+#[gpui::test]
+fn help_items_open_exact_urls_through_the_seam(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    let rec = Recorder::default();
+    view.update(cx, |s, _| s.set_url_opener(Box::new(rec.clone())));
+    for id in ["open_documentation", "open_release_notes", "report_issue"] {
+        view.update_in(cx, |s, w, cx| s.run_action_id(id, w, cx));
+    }
+    let repo = crate::menu::links::REPOSITORY;
+    assert_eq!(
+        *rec.0.borrow(),
+        vec![
+            format!("{repo}#readme"),
+            format!("{repo}/blob/main/CHANGELOG.md"),
+            format!("{repo}/issues/new"),
+        ]
+    );
+}
+
+#[gpui::test]
+fn about_opens_copies_and_closes_with_esc_or_enter(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    view.update_in(cx, |s, w, cx| s.run_action_id("show_about", w, cx));
+    cx.run_until_parked();
+    assert_eq!(read(&view, cx, |s| s.dialog_name()), Some("about"));
+    // A second About refocuses, it does not stack.
+    view.update_in(cx, |s, w, cx| s.run_action_id("show_about", w, cx));
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s.about_open));
+
+    view.update(cx, |s, cx| s.copy_version_info(cx));
+    let text = cx.read_from_clipboard().and_then(|c| c.text()).unwrap();
+    assert_eq!(text, Shell::build_info().copy_text());
+    assert!(text.starts_with("Fauxfield "));
+    let toast = read(&view, cx, |s| s.notice.as_ref().map(|(_, m)| m.clone()));
+    assert_eq!(toast.as_deref(), Some("Version info copied"));
+    assert!(read(&view, cx, |s| s.about_open), "Copy keeps the box open");
+
+    cx.simulate_keystrokes("escape");
+    assert!(!read(&view, cx, |s| s.about_open));
+    view.update(cx, |s, cx| s.show_about(cx));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("enter");
+    assert!(!read(&view, cx, |s| s.about_open));
+}
+
+#[gpui::test]
+fn open_recent_with_a_missing_folder_toasts(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    cx.update(|w, cx| {
+        w.dispatch_action(
+            Box::new(crate::actions::OpenRecent {
+                path: "/definitely/not/here".into(),
+            }),
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    let toast = read(&view, cx, |s| s.notice.as_ref().map(|(_, m)| m.clone()));
+    assert_eq!(
+        toast.as_deref(),
+        Some("/definitely/not/here no longer exists")
+    );
+}
+
+#[gpui::test]
+fn identical_contexts_apply_the_native_menu_once(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    let n = std::rc::Rc::new(std::cell::Cell::new(0));
+    view.update(cx, |s, cx| {
+        s.menu_style = crate::menu::MenuStyle::Native;
+        s.set_menu_sink(Box::new(CountingSink(n.clone())));
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert_eq!(n.get(), 1);
+    for _ in 0..3 {
+        view.update(cx, |_, cx| cx.notify());
+        cx.run_until_parked();
+    }
+    assert_eq!(
+        n.get(),
+        1,
+        "an unchanged model must not call set_menus again"
+    );
+    view.update(cx, |s, cx| s.toggle_left(cx));
+    cx.run_until_parked();
+    assert_eq!(n.get(), 2, "the dock label changed");
+}
+
+// ---- M3.2: in-window menu bar ---------------------------------------------------------------
+
+fn welcome(cx: &mut TestAppContext) -> (Entity<Shell>, &mut VisualTestContext) {
+    let (view, cx) = cx.add_window_view(|w, cx| Shell::new(ShellOptions::default(), w, cx));
+    cx.run_until_parked();
+    (view, cx)
+}
+
+fn in_window(view: &Entity<Shell>, cx: &mut VisualTestContext) {
+    view.update(cx, |s, cx| {
+        s.menu_style = crate::menu::MenuStyle::InWindow;
+        cx.notify();
+    });
+    cx.run_until_parked();
+}
+
+#[gpui::test]
+fn alt_mnemonic_opens_arrows_skip_disabled_and_esc_layers(cx: &mut TestAppContext) {
+    let (view, cx) = welcome(cx);
+    in_window(&view, cx);
+    cx.simulate_keystrokes("alt-f");
+    assert_eq!(read(&view, cx, |s| s.bar.open), Some(0));
+    // Welcome: New Server/Route/Folder are disabled, so Down lands on Create Workspace.
+    cx.simulate_keystrokes("down");
+    let first = read(&view, cx, |s| s.bar.hi[0]).unwrap();
+    let entries = read(&view, cx, |s| s.bar_entries(0));
+    assert!(matches!(
+        &entries[first],
+        crate::menu::MenuEntry::Action {
+            id: "create_workspace",
+            ..
+        }
+    ));
+    // Right switches to Edit, Left comes back.
+    cx.simulate_keystrokes("right");
+    assert_eq!(read(&view, cx, |s| s.bar.open), Some(1));
+    cx.simulate_keystrokes("left");
+    assert_eq!(read(&view, cx, |s| s.bar.open), Some(0));
+    // Open Recent is a submenu: type-ahead to it, Right opens, Esc closes one level at a time.
+    cx.simulate_keystrokes("o o");
+    cx.simulate_keystrokes("right");
+    assert!(read(&view, cx, |s| s.bar.sub.is_some()));
+    cx.simulate_keystrokes("escape");
+    assert!(read(&view, cx, |s| s.bar.sub.is_none() && s.bar.open.is_some()));
+    cx.simulate_keystrokes("escape");
+    assert_eq!(read(&view, cx, |s| s.bar.open), None);
+}
+
+#[gpui::test]
+fn enter_runs_the_highlighted_item_and_closes(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    in_window(&view, cx);
+    let n = read(&view, cx, |s| s.bar_menus().len());
+    assert_eq!(n, 7, "no Fauxfield menu in the in-window bar");
+    view.update(cx, |s, cx| s.bar_open_menu(2, cx)); // View
+    cx.simulate_keystrokes("down down enter"); // Quick Search…, Command Palette…
+    assert_eq!(read(&view, cx, |s| s.bar.open), None);
+    cx.run_until_parked();
+    assert_eq!(
+        read(&view, cx, |s| s.picker.as_ref().map(|p| p.kind)),
+        Some(PickerKind::Palette)
+    );
+}
+
+#[gpui::test]
+fn hovering_another_title_switches_the_open_menu(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    in_window(&view, cx);
+    view.update(cx, |s, cx| s.bar_open_menu(0, cx));
+    view.update(cx, |s, cx| s.bar_open_menu(3, cx)); // what the hover handler calls
+    assert_eq!(read(&view, cx, |s| s.bar.open), Some(3));
+}
+
+#[gpui::test]
+fn disabled_items_refuse_and_say_why(cx: &mut TestAppContext) {
+    let (view, cx) = welcome(cx);
+    cx.run_until_parked();
+    let err = view
+        .update_in(cx, |s, w, cx| {
+            s.run_menu_path(&["File".into(), "Close Workspace".into()], w, cx)
+        })
+        .unwrap_err();
+    assert_eq!(
+        err,
+        "menu item disabled: Close Workspace (no workspace open)"
+    );
+    let err = view
+        .update_in(cx, |s, w, cx| {
+            s.run_menu_path(&["File".into(), "Open Recent".into(), "Nope".into()], w, cx)
+        })
+        .unwrap_err();
+    assert_eq!(err, "no menu item File/Open Recent/Nope");
+}
+
+#[gpui::test]
+fn narrow_windows_collapse_to_the_hamburger(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    in_window(&view, cx);
+    cx.simulate_resize(gpui::size(gpui::px(900.), gpui::px(700.)));
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s.bar_collapsed()));
+    let top = read(&view, cx, |s| s.bar_entries(0));
+    assert_eq!(top.len(), 7);
+    assert!(matches!(&top[0], crate::menu::MenuEntry::Submenu { label, .. } if label == "File"));
+    cx.simulate_resize(gpui::size(gpui::px(1200.), gpui::px(700.)));
+    cx.run_until_parked();
+    assert!(!read(&view, cx, |s| s.bar_collapsed()));
 }

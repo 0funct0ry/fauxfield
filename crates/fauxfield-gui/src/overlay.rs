@@ -48,6 +48,7 @@ impl Shell {
         #[cfg(feature = "dev-mcp")]
         crate::dev_mcp::tree::Registry::set_total(cx, "picker-items", n);
         let query = p.query.clone();
+        let all_selected = p.all_selected;
         div()
             .id("picker-backdrop")
             .absolute()
@@ -98,7 +99,10 @@ impl Shell {
                                         .text_color(t.text_placeholder)
                                         .child(placeholder(kind))
                                 } else {
-                                    div().flex_1().child(format!("{query}▏"))
+                                    div()
+                                        .flex_1()
+                                        .when(all_selected, |d| d.bg(t.element_selected))
+                                        .child(format!("{query}▏"))
                                 },
                                 1,
                                 "picker-input",

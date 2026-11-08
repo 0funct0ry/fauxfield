@@ -3,6 +3,16 @@
 ## Unreleased
 
 ### Added
+- M3.2 Application menu and About box: one data-driven menu model (`fauxfield-gui::menu`) drawn
+  natively on macOS and as an in-window bar on Windows and Linux (collapses to a hamburger below
+  1000 px; Alt mnemonics, arrow keys, type-ahead), with state-driven enabling and labels, Open
+  Recent (missing folders greyed) and a modal-aware rule so greyed items and their keys do nothing.
+  New actions: About, Hide/Hide Others/Show All, Minimize, Zoom, Full Screen, Reveal Workspace,
+  Documentation, Release Notes, Report an Issue, Cut/Copy/Paste/Select All in text inputs. About
+  box with `Copy Version Info`; `BuildInfo` (commit, date, target, gpui) in `fauxfield-control`
+  and `fauxfield version [--json]`. Keymap `platform` field and new defaults (Open Folder, Close
+  Workspace, Undo/Redo, Full Screen, Minimize). Dev-mcp: `ui.menu`, `ui.state.menus`,
+  `menu`/`about` events, `set_menu_style`, scenario `m032-menu`, six state fixtures.
 - M3.1 Workspace lifecycle and M3 completion: native folder picker (typed-path fallback), Close
   workspace with a shared guard and confirmation, a Recent list (remove, clear, missing folders),
   rename workspace (`Store::set_workspace_name`, `fauxfield workspace info|rename`, MCP

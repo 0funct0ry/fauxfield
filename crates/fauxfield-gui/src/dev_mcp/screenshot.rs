@@ -104,6 +104,12 @@ fixtures!(
     "delete-confirm",
     "workspace-menu-open",
     "rename-workspace-prompt",
+    "menubar-closed",
+    "menubar-file",
+    "menubar-recent",
+    "menubar-disabled",
+    "menubar-collapsed",
+    "about-box",
 );
 
 pub fn named_steps(name: &str) -> Result<Vec<Step>, String> {

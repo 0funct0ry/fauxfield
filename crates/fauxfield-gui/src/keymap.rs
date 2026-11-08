@@ -13,6 +13,53 @@ pub struct BindingDef {
     pub keys: String,
     #[serde(default)]
     pub context: Option<String>,
+    /// Optional `platform = "macos"` or `["windows", "linux"]`; absent means every platform.
+    #[serde(default)]
+    pub platform: Option<PlatformSpec>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+pub enum PlatformSpec {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl PlatformSpec {
+    fn names(&self) -> Vec<&str> {
+        match self {
+            PlatformSpec::One(s) => vec![s.as_str()],
+            PlatformSpec::Many(v) => v.iter().map(String::as_str).collect(),
+        }
+    }
+}
+
+/// The platforms a keymap `platform` field can name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Platform {
+    Macos,
+    Windows,
+    Linux,
+}
+
+impl Platform {
+    pub fn current() -> Platform {
+        if cfg!(target_os = "macos") {
+            Platform::Macos
+        } else if cfg!(target_os = "windows") {
+            Platform::Windows
+        } else {
+            Platform::Linux
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Platform::Macos => "macos",
+            Platform::Windows => "windows",
+            Platform::Linux => "linux",
+        }
+    }
 }
 
 impl BindingDef {
@@ -34,15 +81,41 @@ pub struct Keymap {
 }
 
 impl Keymap {
+    /// Parses for the running platform.
     pub fn parse(src: &str) -> Result<Keymap> {
+        Keymap::parse_for(src, Platform::current())
+    }
+
+    /// Parses and drops bindings whose `platform` does not include `platform`. An unknown
+    /// platform name is an error (reported as a keymap problem by `load`), not a panic.
+    pub fn parse_for(src: &str, platform: Platform) -> Result<Keymap> {
         let f: File = toml::from_str(src).context("keymap is not valid TOML")?;
-        Ok(Keymap {
-            bindings: f.binding,
-        })
+        let mut bindings = Vec::new();
+        for b in f.binding {
+            if let Some(spec) = &b.platform {
+                for n in spec.names() {
+                    if !matches!(n, "macos" | "windows" | "linux") {
+                        anyhow::bail!(
+                            "binding for {:?}: unknown platform {n:?} (expected macos, windows or linux)",
+                            b.action
+                        );
+                    }
+                }
+                if !spec.names().contains(&platform.name()) {
+                    continue;
+                }
+            }
+            bindings.push(b);
+        }
+        Ok(Keymap { bindings })
     }
 
     pub fn bundled() -> Keymap {
-        Keymap::parse(DEFAULT_KEYMAP).expect("bundled keymap parses")
+        Keymap::bundled_for(Platform::current())
+    }
+
+    pub fn bundled_for(platform: Platform) -> Keymap {
+        Keymap::parse_for(DEFAULT_KEYMAP, platform).expect("bundled keymap parses")
     }
 
     /// Applies a user keymap: an action named there loses its default bindings. An empty `keys`
@@ -170,6 +243,62 @@ mod tests {
         assert!(err.unwrap().contains("keymap.toml"));
         let (_, none) = Keymap::load(Some(tempfile::tempdir().unwrap().path()));
         assert!(none.is_none());
+    }
+
+    #[test]
+    fn platform_field_filters_and_rejects_unknown() {
+        let src = "[[binding]]\naction='redo'\nkeys='secondary-shift-z'\nplatform='macos'\n\
+                   [[binding]]\naction='redo'\nkeys='secondary-y'\nplatform=['windows','linux']\n\
+                   [[binding]]\naction='undo'\nkeys='secondary-z'\n";
+        let mac = Keymap::parse_for(src, Platform::Macos).unwrap();
+        assert_eq!(mac.binding_for("redo"), Some("secondary-shift-z"));
+        assert_eq!(mac.bindings.len(), 2);
+        let win = Keymap::parse_for(src, Platform::Windows).unwrap();
+        assert_eq!(win.binding_for("redo"), Some("secondary-y"));
+        let lin = Keymap::parse_for(src, Platform::Linux).unwrap();
+        assert_eq!(lin.binding_for("redo"), Some("secondary-y"));
+        let bad = "[[binding]]\naction='undo'\nkeys='x'\nplatform='beos'\n";
+        let e = Keymap::parse_for(bad, Platform::Macos)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("beos"), "{e}");
+    }
+
+    #[test]
+    fn bad_platform_in_user_file_is_a_problem_not_a_panic() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("keymap.toml"),
+            "[[binding]]\naction='undo'\nkeys='x'\nplatform='beos'\n",
+        )
+        .unwrap();
+        let (k, err) = Keymap::load(Some(dir.path()));
+        assert_eq!(k, Keymap::bundled());
+        assert!(err.unwrap().contains("beos"));
+    }
+
+    #[test]
+    fn no_binding_conflicts_on_any_platform() {
+        for p in [Platform::Macos, Platform::Windows, Platform::Linux] {
+            let k = Keymap::bundled_for(p);
+            let mut seen = std::collections::HashMap::new();
+            for b in &k.bindings {
+                let key = (b.keys.clone(), b.context.clone());
+                if let Some(prev) = seen.insert(key, b.action.clone()) {
+                    panic!("{p:?}: {} and {} share {:?}", prev, b.action, b.keys);
+                }
+            }
+        }
+        let mac = Keymap::bundled_for(Platform::Macos);
+        for (keys, action) in [
+            ("cmd-h", "hide_app"),
+            ("cmd-m", "minimize_window"),
+            ("cmd-alt-h", "hide_others"),
+        ] {
+            for b in mac.bindings.iter().filter(|b| b.keys == keys) {
+                assert_eq!(b.action, action, "{keys} is reserved on macOS");
+            }
+        }
     }
 
     #[test]

@@ -1,0 +1,6 @@
+# UI state fixture (M3.2): the About box.
+steps:
+  - reset
+  - invoke: show_about
+  - wait_for: {condition: {pointer: /modal, equals: about}}
+  - wait_idle
