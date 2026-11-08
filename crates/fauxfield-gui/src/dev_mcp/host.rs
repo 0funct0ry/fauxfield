@@ -6,7 +6,7 @@ use fauxfield_mcp::{
     AllowedClasses, McpConfig, ToolClass, TransportKind, UiBridge, UiRequest, serve_with,
     tools::{ServerFacts, core_registry},
 };
-use gpui::{App, WindowHandle};
+use gpui::{App, AppContext as _, WindowHandle};
 use serde_json::Value;
 
 use super::DevMcpOptions;
@@ -92,6 +92,15 @@ pub fn start(opts: DevMcpOptions, window: WindowHandle<Shell>, cx: &mut App) {
             let result = if req.method == QUIT {
                 let _ = cx.update(|cx| cx.quit());
                 Ok(Value::Null)
+            } else if super::handler::is_key_method(&req.method) {
+                cx.update_window(window.into(), |_, w, app| {
+                    super::handler::dispatch_keys(&req, w, app)
+                })
+                .unwrap_or_else(|e| {
+                    Err(fauxfield_mcp::UiError::Failed(format!(
+                        "the window is gone: {e}"
+                    )))
+                })
             } else {
                 window
                     .update(cx, |shell, window, cx| {

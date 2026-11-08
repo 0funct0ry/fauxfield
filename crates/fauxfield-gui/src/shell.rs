@@ -801,6 +801,12 @@ impl Shell {
 
     // ---- actions -----------------------------------------------------------------------
 
+    /// True while the first key of a chord waits for its second key or the 400 ms timeout.
+    #[cfg(feature = "dev-mcp")]
+    pub(crate) fn chord_pending(&self) -> bool {
+        self.chord.is_pending()
+    }
+
     pub fn run_action_id(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(info) = actions::find(id) {
             window.dispatch_action((info.build)(), cx);

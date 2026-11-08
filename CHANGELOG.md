@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Added
+- M1.3 Actions and input over MCP (dev builds): `ui.list_actions`, `ui.invoke_action`
+  (disabled action is an error, `quit` is refused), `ui.command` (open_tab, select_tab,
+  toggle_dock, set_environment, search), `ui.key` (keystrokes and chords, same 400 ms Cmd+K
+  timeout), `ui.type_text`, `ui.wait_for_idle`, `ui.wait_for` (JSON-pointer conditions), and
+  `ui.click` / `ui.scroll` (return a clear error: the pinned GPUI cannot inject pointer events).
+  Input tools return the new `ui.state` generation and toasts.
 - M1.2 In-app MCP host (dev builds only): `dev-mcp` feature on `fauxfield-gui` and `fauxfield`,
   `fauxfield --mcp-socket [PATH]` and `--mcp-stdio`, the `GuiBridge` into the GPUI thread (5 s
   "ui thread busy" timeout), and the `ui.state`, `ui.open_workspace`, `ui.open_tab` and

@@ -2,15 +2,15 @@
 //! method name; the same function is called by the host loop and by the tests.
 
 use fauxfield_mcp::{UiError, UiRequest};
-use gpui::{Context, Window};
+use gpui::{App, Context, Window};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::capture::WindowBounds;
+use super::input;
 use super::state::{Tracker, snapshot};
 use crate::shell::Shell;
-use crate::tabs::TabKind;
 
 /// Mutable host state that lives next to the loop that drains the bridge.
 #[derive(Default)]
@@ -46,6 +46,26 @@ fn args<T: for<'de> Deserialize<'de>>(params: &Value) -> Result<T, UiError> {
         .map_err(|e| UiError::Failed(format!("bad arguments: {e}")))
 }
 
+/// `ui.key` and `ui.type_text` run the shell's own key listeners, which update the `Shell`
+/// entity, so they must be served outside `dispatch` (which holds the `Shell` mutably).
+pub fn is_key_method(method: &str) -> bool {
+    matches!(method, "ui.key" | "ui.type_text")
+}
+
+pub fn dispatch_keys(req: &UiRequest, window: &mut Window, cx: &mut App) -> Result<Value, UiError> {
+    match req.method.as_str() {
+        "ui.key" => {
+            let i: input::KeyInput = args(&req.params)?;
+            input::key(&i.keys, window, cx)
+        }
+        "ui.type_text" => {
+            let i: input::TypeTextInput = args(&req.params)?;
+            input::type_text(&i.text, window, cx)
+        }
+        other => Err(UiError::Failed(format!("unknown ui method {other:?}"))),
+    }
+}
+
 pub fn dispatch(
     req: &UiRequest,
     host: &mut HostState,
@@ -69,28 +89,23 @@ pub fn dispatch(
         }
         "ui.open_tab" => {
             let input: OpenTabInput = args(&req.params)?;
-            let (kind, row_id) = match input.kind {
-                TabKindArg::Route => (TabKind::Route, input.id.clone()),
-                TabKindArg::Server => (TabKind::Server, input.id.clone()),
-                TabKindArg::Environment => (TabKind::Environment, format!("env:{}", input.id)),
-            };
-            match shell.tab_for_row(&row_id) {
-                Some((k, _)) if k == kind => {}
-                _ => {
-                    return Err(UiError::Failed(format!(
-                        "no {} with id {:?}",
-                        serde_json::to_value(kind)
-                            .unwrap_or_default()
-                            .as_str()
-                            .unwrap_or("tab"),
-                        input.id
-                    )));
-                }
-            }
-            // The same path as a single click on the tree row: a preview tab.
-            shell.click_row(&row_id, 1, cx);
-            let tab = shell.tabs.active().cloned();
-            Ok(json!({ "tab": tab }))
+            input::open_tab(shell, input.kind, &input.id, cx)
+        }
+        "ui.list_actions" => Ok(input::list_actions(shell, window, cx)),
+        "ui.invoke_action" => {
+            let i: input::InvokeActionInput = args(&req.params)?;
+            input::invoke_action(&i.name, window, cx)
+        }
+        "ui.command" => input::command(args(&req.params)?, shell, window, cx),
+        "ui.click" => input::click(args(&req.params)?),
+        "ui.scroll" => input::scroll(args(&req.params)?),
+        "ui.idle_probe" => {
+            let s = snapshot(shell, window, cx, host.workspace_path.as_deref());
+            let generation = host.tracker.observe(s).generation;
+            Ok(json!({
+                "generation": generation,
+                "pending": shell.chord_pending() || shell.resize.is_some(),
+            }))
         }
         "ui.window_bounds" => {
             // Bring the window forward so a capture sees it.
@@ -141,6 +156,9 @@ mod tests {
             method: method.into(),
             params,
         };
+        if is_key_method(method) {
+            return cx.update(|w, app| dispatch_keys(&req, w, app));
+        }
         view.update_in(cx, |s, w, cx| dispatch(&req, host, s, w, cx))
     }
 
@@ -300,5 +318,255 @@ mod tests {
         let b = call(&view, cx, &mut h, "ui.window_bounds", json!({})).unwrap();
         assert!(b["width"].as_f64().unwrap() > 0.0);
         assert!(b["scale"].as_f64().unwrap() >= 1.0);
+    }
+
+    fn run(
+        view: &Entity<Shell>,
+        cx: &mut VisualTestContext,
+        h: &mut HostState,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, UiError> {
+        let r = call(view, cx, h, method, params);
+        cx.run_until_parked();
+        r
+    }
+
+    #[gpui::test]
+    fn list_actions_covers_the_table(cx: &mut TestAppContext) {
+        let (view, cx) = setup(cx);
+        let mut h = HostState::default();
+        let v = run(&view, cx, &mut h, "ui.list_actions", json!({})).unwrap();
+        let list = v["actions"].as_array().unwrap();
+        assert_eq!(list.len(), crate::actions::ACTIONS.len());
+        let theme = list.iter().find(|a| a["name"] == "select_theme").unwrap();
+        assert_eq!(theme["binding"], "secondary-k secondary-t");
+        assert_eq!(theme["label"], "Theme Selector: Toggle");
+        assert!(list.iter().all(|a| a["enabled"].is_boolean()));
+        for a in list {
+            eprintln!("{} enabled={}", a["name"], a["enabled"]);
+        }
+    }
+
+    #[gpui::test]
+    fn invoke_action_errors_and_effects(cx: &mut TestAppContext) {
+        let (view, cx) = setup(cx);
+        let mut h = HostState::default();
+        let e = run(
+            &view,
+            cx,
+            &mut h,
+            "ui.invoke_action",
+            json!({"name": "nope"}),
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("unknown action"), "{e}");
+        let e = run(
+            &view,
+            cx,
+            &mut h,
+            "ui.invoke_action",
+            json!({"name": "quit"}),
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("refused"), "{e}");
+
+        run(
+            &view,
+            cx,
+            &mut h,
+            "ui.invoke_action",
+            json!({"name": "toggle_right_dock"}),
+        )
+        .unwrap();
+        assert_eq!(state(&view, cx, &mut h)["docks"]["right"]["open"], true);
+        run(
+            &view,
+            cx,
+            &mut h,
+            "ui.invoke_action",
+            json!({"name": "command_palette"}),
+        )
+        .unwrap();
+        assert_eq!(state(&view, cx, &mut h)["command_palette"]["open"], true);
+    }
+
+    #[gpui::test]
+    fn scripted_sequence_through_tools_only(cx: &mut TestAppContext) {
+        let (view, cx) = setup(cx);
+        let mut h = HostState::default();
+        let theme0 = state(&view, cx, &mut h)["theme"].clone();
+
+        // Palette by keystroke, filter to "theme", run the theme selector.
+        run(
+            &view,
+            cx,
+            &mut h,
+            "ui.key",
+            json!({"keys": "secondary-shift-p"}),
+        )
+        .unwrap();
+        run(&view, cx, &mut h, "ui.type_text", json!({"text": "theme"})).unwrap();
+        let s = state(&view, cx, &mut h);
+        assert_eq!(s["command_palette"]["query"], "theme");
+        assert!(s["command_palette"]["result_count"].as_u64().unwrap() >= 1);
+        run(&view, cx, &mut h, "ui.key", json!({"keys": "enter"})).unwrap();
+        let s = state(&view, cx, &mut h);
+        assert_eq!(s["theme_selector"]["open"], true);
+        assert_eq!(s["command_palette"]["open"], false);
+
+        // Move the highlight: the theme previews live, escape reverts it.
+        // The highlight starts on the current theme, which may be the last entry: try both ways.
+        run(&view, cx, &mut h, "ui.key", json!({"keys": "down"})).unwrap();
+        run(&view, cx, &mut h, "ui.key", json!({"keys": "up up"})).unwrap();
+        let s = state(&view, cx, &mut h);
+        assert_ne!(s["theme"], theme0, "highlight previews another theme");
+        run(&view, cx, &mut h, "ui.key", json!({"keys": "escape"})).unwrap();
+        let s = state(&view, cx, &mut h);
+        assert_eq!(s["theme"], theme0);
+        assert_eq!(s["theme_selector"]["open"], false);
+
+        // Quick Search with the `/` prefix, open the route as a preview tab.
+        run(
+            &view,
+            cx,
+            &mut h,
+            "ui.command",
+            json!({"command": "search", "query": "/health"}),
+        )
+        .unwrap();
+        let s = state(&view, cx, &mut h);
+        assert_eq!(s["quick_search"]["open"], true);
+        assert!(s["quick_search"]["result_count"].as_u64().unwrap() >= 1);
+        run(&view, cx, &mut h, "ui.key", json!({"keys": "enter"})).unwrap();
+        let s = state(&view, cx, &mut h);
+        assert_eq!(s["quick_search"]["open"], false);
+        assert_eq!(s["tabs"][0]["preview"], true);
+        assert_eq!(s["tabs"].as_array().unwrap().len(), 1);
+
+        // All three docks, by command and by key.
+        let before = state(&view, cx, &mut h)["docks"].clone();
+        for d in ["left", "right", "bottom"] {
+            run(
+                &view,
+                cx,
+                &mut h,
+                "ui.command",
+                json!({"command": "toggle_dock", "dock": d}),
+            )
+            .unwrap();
+        }
+        let after = state(&view, cx, &mut h)["docks"].clone();
+        for d in ["left", "right", "bottom"] {
+            assert_ne!(before[d]["open"], after[d]["open"], "{d}");
+        }
+        run(
+            &view,
+            cx,
+            &mut h,
+            "ui.key",
+            json!({"keys": "secondary-b secondary-alt-b secondary-`"}),
+        )
+        .unwrap();
+        assert_eq!(state(&view, cx, &mut h)["docks"], before);
+    }
+
+    #[gpui::test]
+    fn chord_timeout_matches_the_keyboard(cx: &mut TestAppContext) {
+        let (view, cx) = setup(cx);
+        let mut h = HostState::default();
+        let probe = |view: &Entity<Shell>, cx: &mut VisualTestContext, h: &mut HostState| {
+            call(view, cx, h, "ui.idle_probe", json!({})).unwrap()["pending"]
+                .as_bool()
+                .unwrap()
+        };
+
+        // The full chord opens the theme selector.
+        run(
+            &view,
+            cx,
+            &mut h,
+            "ui.key",
+            json!({"keys": "secondary-k secondary-t"}),
+        )
+        .unwrap();
+        assert_eq!(state(&view, cx, &mut h)["theme_selector"]["open"], true);
+        run(&view, cx, &mut h, "ui.key", json!({"keys": "escape"})).unwrap();
+
+        // A lone Cmd+K waits 400 ms, then opens Quick Search.
+        run(&view, cx, &mut h, "ui.key", json!({"keys": "secondary-k"})).unwrap();
+        assert!(probe(&view, cx, &mut h), "chord pending");
+        assert_eq!(state(&view, cx, &mut h)["quick_search"]["open"], false);
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(300));
+        cx.run_until_parked();
+        assert_eq!(state(&view, cx, &mut h)["quick_search"]["open"], false);
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(150));
+        cx.run_until_parked();
+        assert_eq!(state(&view, cx, &mut h)["quick_search"]["open"], true);
+        assert!(!probe(&view, cx, &mut h));
+    }
+
+    #[gpui::test]
+    fn command_arguments_and_pointer_errors(cx: &mut TestAppContext) {
+        let (view, cx) = setup(cx);
+        let mut h = HostState::default();
+        let e = run(
+            &view,
+            cx,
+            &mut h,
+            "ui.command",
+            json!({"command": "toggle_dock"}),
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("needs `dock`"), "{e}");
+        let e = run(
+            &view,
+            cx,
+            &mut h,
+            "ui.command",
+            json!({"command": "set_environment", "name": "zzz"}),
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("no environment"), "{e}");
+        let e = run(
+            &view,
+            cx,
+            &mut h,
+            "ui.command",
+            json!({"command": "select_tab", "index": 3}),
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("out of range"), "{e}");
+        run(
+            &view,
+            cx,
+            &mut h,
+            "ui.command",
+            json!({"command": "open_tab", "kind": "route", "id": "rt_health"}),
+        )
+        .unwrap();
+        run(
+            &view,
+            cx,
+            &mut h,
+            "ui.command",
+            json!({"command": "select_tab", "index": 1}),
+        )
+        .unwrap();
+        let e = run(&view, cx, &mut h, "ui.key", json!({"keys": "not-a-key-"})).unwrap_err();
+        assert!(e.to_string().contains("bad keystroke"), "{e}");
+        let e = run(&view, cx, &mut h, "ui.click", json!({"x": 10, "y": 10})).unwrap_err();
+        assert!(e.to_string().contains("pointer injection"), "{e}");
+        let e = run(
+            &view,
+            cx,
+            &mut h,
+            "ui.scroll",
+            json!({"x": 10, "y": 10, "dy": -50}),
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("pointer injection"), "{e}");
     }
 }

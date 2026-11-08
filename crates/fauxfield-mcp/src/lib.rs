@@ -3,6 +3,7 @@
 
 pub mod bridge;
 pub mod class;
+pub mod condition;
 pub mod registry;
 pub mod run;
 pub mod server;

@@ -5,6 +5,7 @@ pub mod bridge;
 pub mod capture;
 pub mod handler;
 pub mod host;
+pub mod input;
 pub mod state;
 pub mod tools;
 

@@ -1,0 +1,21 @@
+# Draft scenario for M1.3 (input tools). The runner arrives in M1.7; until then these are the
+# tool calls an agent makes, in order. Selectors use ui.state only (no element ids before M1.4).
+name: m01-input
+size: default
+steps:
+  - key: secondary-shift-p
+  - type_text: theme
+  - assert: {pointer: /command_palette/query, equals: theme}
+  - key: enter
+  - assert: {pointer: /theme_selector/open, equals: true}
+  - key: escape
+  - assert: {pointer: /theme_selector/open, equals: false}
+  - command: {command: search, query: /health}
+  - key: enter
+  - assert: {pointer: /tabs/0/preview, equals: true}
+  - command: {command: toggle_dock, dock: left}
+  - command: {command: toggle_dock, dock: right}
+  - command: {command: toggle_dock, dock: bottom}
+  - key: secondary-k
+  - wait_for_idle: {}
+  - assert: {pointer: /quick_search/open, equals: true}
