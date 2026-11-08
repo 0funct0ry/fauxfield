@@ -39,6 +39,7 @@ tools only, no `ui.*`.
 | Group | Tools |
 |---|---|
 | State | `ui.state`, `ui.open_workspace`, `ui.open_tab` |
+| Run | `start_server`, `stop_server`, `restart_server`, `send_test_request`, `get_traffic` (product tools, not `ui.*`; they drive the engine the window hosts) |
 | Input | `ui.list_actions`, `ui.invoke_action`, `ui.command`, `ui.key`, `ui.type_text`, `ui.wait_for_idle`, `ui.wait_for` (`ui.click` and `ui.scroll` return an error: GPUI 0.2.2 cannot inject pointer events) |
 | Tree | `ui.tree`, `ui.find`, `ui.click_element` |
 | Screenshots | `ui.screenshot`, `ui.screenshot_all`, `ui.set_theme`, `ui.resize` |

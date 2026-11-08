@@ -56,6 +56,12 @@ actions!(
         EditResponseHeader,
         EditResponseBody,
         SetDefaultResponse,
+        RestartServer,
+        ClearTraffic,
+        CopyAsCurl,
+        EditServerPort,
+        QuitAnyway,
+        CancelQuit,
         Quit,
     ]
 );
@@ -120,6 +126,12 @@ pub static ACTIONS: &[ActionInfo] = &[
         "Server: Start / Stop Current",
         ToggleServer
     ),
+    row!("restart_server", "Server: Restart Current", RestartServer),
+    row!("edit_server_port", "Server: Change Port…", EditServerPort),
+    row!("clear_traffic", "Traffic: Clear", ClearTraffic),
+    row!("copy_as_curl", "Traffic: Copy as cURL", CopyAsCurl),
+    row!("quit_anyway", "Quit: Stop Servers and Quit", QuitAnyway),
+    row!("cancel_quit", "Quit: Cancel", CancelQuit),
     row!("new_server", "Server: New…", NewServer),
     row!("new_route", "Route: New…", NewRoute),
     row!("send_test", "Route: Send Test Request", SendTest),

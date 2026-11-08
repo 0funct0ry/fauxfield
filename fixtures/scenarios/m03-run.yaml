@@ -1,0 +1,33 @@
+# M3 scenario: run a server, send a request, see it in Traffic and the Inspector, stop it.
+# Needs the example workspace as the launch workspace (scripts/smoke-ui.sh copies it) and
+# port 4010 free. `invoke: clear_traffic` removes the synthetic rows dev-mcp builds start with.
+name: m03-run
+size: default
+steps:
+  - state: [reset]
+  - invoke: clear_traffic
+  - assert: {pointer: /traffic/row_count, equals: 0}
+  - assert: {pointer: /servers/0/id, equals: srv_users}
+  - assert: {pointer: /servers/0/status, equals: stopped}
+  # Start the server of the open route with the binding's action.
+  - open: {kind: route, id: rt_users_list}
+  - invoke: toggle_server
+  - wait_for: {condition: {pointer: /servers/0/status, equals: running}}
+  - assert: {pointer: /servers/0/address, equals: "127.0.0.1:4010"}
+  - wait_event: {kind: server, timeout_ms: 3000}
+  # Send test fires the route's request; its row is selected and the Inspector opens.
+  - invoke: send_test
+  - wait_for: {condition: {pointer: /traffic/row_count, equals: 1}}
+  - assert: {pointer: /traffic/last/method, equals: GET}
+  - assert: {pointer: /traffic/last/status, equals: 200}
+  - assert: {pointer: /traffic/last/route, equals: rt_users_list}
+  - assert: {pointer: /traffic/selected, equals: 0}
+  - assert: {pointer: /docks/right/open, equals: true}
+  - wait_event: {kind: traffic, timeout_ms: 3000}
+  - find: {label: Copy as cURL, role: button}
+  - screenshot: {name: traffic-live}
+  - audit: {states: [traffic-live], themes: [one-dark]}
+  # Stop it again.
+  - invoke: toggle_server
+  - wait_for: {condition: {pointer: /servers/0/status, equals: stopped}}
+  - state: [reset]

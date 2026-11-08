@@ -74,6 +74,19 @@ impl Shell {
                 self.notice.as_ref().map(|(_, m)| m.as_str()).unwrap_or(""),
                 None
             ))
+            .children(self.notice_action.clone().map(|a| {
+                crate::dev_id!(
+                    toolbar_button(t, "toast-action")
+                        .child(a.label)
+                        .on_click(cx.listener(|this, _, w, cx| {
+                            this.run_action_id("edit_server_port", w, cx)
+                        })),
+                    "toast-action",
+                    Button,
+                    a.label,
+                    Action("edit_server_port")
+                )
+            }))
             .child(div().id("status-network").child("Network: no throttling"))
             .child(crate::dev_id!(
                 toolbar_button(t, "status-environment")

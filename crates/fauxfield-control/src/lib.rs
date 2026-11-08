@@ -1,1 +1,16 @@
-//! Fauxfield control crate. Stub: implemented in a later milestone. Must not depend on GPUI.
+//! Fauxfield control plane (SPEC §3.1): the [`ControlApi`] trait, the host lock file, and a
+//! JSON-RPC 2.0 control socket. The GUI uses [`LocalControl`] in-process; the CLI and MCP use
+//! [`RemoteControl`] over the socket. Must not depend on GPUI.
+
+mod api;
+mod host;
+pub mod ipc;
+mod reload;
+mod rpc;
+mod runtime;
+
+pub use api::{ControlApi, ControlError, LocalControl};
+pub use host::{HostInfo, HostLock, control_socket_path, read_host};
+pub use reload::attach_store;
+pub use rpc::{RemoteControl, serve};
+pub use runtime::{Host, HostError, HostOptions};

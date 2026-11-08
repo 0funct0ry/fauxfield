@@ -10,6 +10,8 @@ pub const EXIT_OK: i32 = 0;
 pub const EXIT_RUNTIME: i32 = 1;
 pub const EXIT_USAGE: i32 = 2;
 pub const EXIT_VALIDATION: i32 = 3;
+pub const EXIT_NO_HOST: i32 = 4;
+pub const EXIT_PORT_IN_USE: i32 = 5;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -64,6 +66,14 @@ pub enum Command {
         #[command(subcommand)]
         action: crate::workspace_cmd::RouteAction,
     },
+    /// Serve a workspace headless: become the host and run its servers until stopped.
+    Run(crate::host_cmd::RunArgs),
+    /// Show the running host and its servers (exit code 4 when no host is running).
+    Status(crate::host_cmd::StatusArgs),
+    /// Stop servers on the running host; without --server also ends a headless host.
+    Stop(crate::host_cmd::StopArgs),
+    /// Print request logs from the running host.
+    Logs(crate::host_cmd::LogsArgs),
     /// Run the MCP server for agents (SPEC §11.1). Logs go to stderr; stdout is protocol-only.
     Mcp(McpArgs),
     /// Print version information.
@@ -145,6 +155,10 @@ pub fn run() -> i32 {
         Some(Command::Validate(a)) => crate::workspace_cmd::validate(&a),
         Some(Command::Server { action }) => crate::workspace_cmd::server(action),
         Some(Command::Route { action }) => crate::workspace_cmd::route(action),
+        Some(Command::Run(a)) => crate::host_cmd::run(a),
+        Some(Command::Status(a)) => crate::host_cmd::status(a),
+        Some(Command::Stop(a)) => crate::host_cmd::stop(a),
+        Some(Command::Logs(a)) => crate::host_cmd::logs(a),
         Some(Command::Mcp(args)) => mcp(args),
         Some(Command::Version { json }) => {
             if json {
@@ -202,20 +216,58 @@ fn mcp(args: McpArgs) -> i32 {
             return EXIT_RUNTIME;
         }
     };
-    let registry = workspace_registry(&config, &args.path);
-    match rt.block_on(fauxfield_mcp::serve_with(config, registry)) {
+    // A host started by a tool call lives here so it is dropped outside the runtime.
+    let hosted: HostSlot = Default::default();
+    let registry = workspace_registry(&config, &args.path, &hosted);
+    let code = match rt.block_on(fauxfield_mcp::serve_with(config, registry)) {
         Ok(()) => EXIT_OK,
         Err(e) => {
             eprintln!("error: {e}");
             EXIT_RUNTIME
         }
-    }
+    };
+    drop(rt);
+    hosted.lock().unwrap().take();
+    code
+}
+
+type HostSlot = std::sync::Arc<std::sync::Mutex<Option<fauxfield_control::Host>>>;
+
+/// Attach to a live host for this workspace, else become the host on first use (SPEC §3.1, §11.1).
+fn control_provider(
+    root: PathBuf,
+    slot: &HostSlot,
+) -> fauxfield_mcp::control_tools::ControlProvider {
+    use fauxfield_control::{ControlApi, Host, HostOptions, RemoteControl, read_host};
+    let slot = slot.clone();
+    std::sync::Arc::new(move || {
+        let mut g = slot.lock().unwrap();
+        if let Some(h) = g.as_ref() {
+            return Ok(h.control() as std::sync::Arc<dyn ControlApi>);
+        }
+        if let Some(info) = read_host(&root) {
+            return Ok(std::sync::Arc::new(RemoteControl::new(&info.socket)));
+        }
+        let host = Host::start(
+            &root,
+            HostOptions {
+                watch: true,
+                publish: true,
+                ..Default::default()
+            },
+        )
+        .map_err(|e| e.to_string())?;
+        let control = host.control() as std::sync::Arc<dyn ControlApi>;
+        *g = Some(host);
+        Ok(control)
+    })
 }
 
 /// Core tools plus the workspace tools when PATH (or the cwd's nearest ancestor) is a workspace.
 fn workspace_registry(
     config: &fauxfield_mcp::McpConfig,
     path: &Option<PathBuf>,
+    hosted: &HostSlot,
 ) -> Option<fauxfield_mcp::Registry> {
     let root = match path {
         Some(p) => Some(p.clone()),
@@ -225,7 +277,9 @@ fn workspace_registry(
     }?;
     match fauxfield_store::Store::open(&root) {
         Ok(store) => {
+            let provider = control_provider(store.root(), hosted);
             let mut r = fauxfield_mcp::build_registry(config);
+            fauxfield_mcp::control_tools::register_control_tools(&mut r, provider);
             fauxfield_mcp::workspace_tools::register_workspace_tools(
                 &mut r,
                 fauxfield_mcp::workspace_tools::fixed_store(store),
@@ -312,8 +366,8 @@ mod tests {
                 .command,
             Some(Command::Open { .. })
         ));
-        // Unimplemented subcommands are not exposed: `run` is read as a PATH and rejected.
-        let c = Cli::try_parse_from(["fauxfield", "run"]).unwrap();
+        // Unimplemented subcommands are not exposed: `doctor` is read as a PATH and rejected.
+        let c = Cli::try_parse_from(["fauxfield", "doctor"]).unwrap();
         assert!(c.command.is_none());
         assert_eq!(check_path(&c.path), Err(EXIT_RUNTIME));
         assert_eq!(check_path(&Some(std::env::temp_dir())), Ok(()));

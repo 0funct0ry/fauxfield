@@ -5,6 +5,7 @@ pub mod audit;
 pub mod bridge;
 pub mod class;
 pub mod condition;
+pub mod control_tools;
 pub mod events;
 pub mod registry;
 pub mod run;

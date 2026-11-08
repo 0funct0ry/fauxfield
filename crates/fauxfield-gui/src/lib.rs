@@ -13,6 +13,7 @@ pub mod layout;
 pub mod left_dock;
 pub mod mock;
 pub mod overlay;
+pub mod run;
 pub mod search;
 pub mod shell;
 pub mod status_bar;
@@ -70,6 +71,7 @@ fn launch(
                 config_dir: dirs.as_ref().map(|d| d.config_dir().to_path_buf()),
                 workspace: workspace.clone(),
                 recent_path: dirs.as_ref().map(|d| d.data_dir().join("recent.json")),
+                port_offset: 0,
             };
             cx.on_window_closed(|cx| {
                 if cx.windows().is_empty() {

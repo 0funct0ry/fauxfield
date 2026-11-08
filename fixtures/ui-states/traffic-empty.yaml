@@ -1,0 +1,5 @@
+# UI state fixture (M3): captured by `ui.screenshot {state: "traffic-empty"}`. Traffic panel empty state.
+steps:
+  - reset
+  - invoke: clear_traffic
+  - wait_idle

@@ -279,6 +279,7 @@ fn row_context_menu_opens_and_runs_items(cx: &mut TestAppContext) {
 
     view.update_in(cx, |s, w, cx| s.run_menu(MenuAct::StartStop, w, cx));
     assert!(read(&view, cx, |s| s.menu.is_none()));
+    cx.run_until_parked();
     assert_eq!(read(&view, cx, |s| s.ws.running_count()), 1);
 
     // Sections have no menu.
@@ -427,5 +428,99 @@ fn external_edits_reload_the_view(cx: &mut TestAppContext) {
             .unwrap()
             .port),
         4999
+    );
+}
+
+/// Wait (real time) until `done` holds, letting the poll loop and the engine make progress.
+fn settle(cx: &mut VisualTestContext, view: &Entity<Shell>, done: impl Fn(&Shell) -> bool) {
+    cx.executor().allow_parking();
+    for _ in 0..100 {
+        cx.executor().advance_clock(Duration::from_millis(100));
+        cx.run_until_parked();
+        if read(view, cx, |s| done(s)) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    panic!("condition never held");
+}
+
+#[gpui::test]
+fn starting_a_server_serves_requests_and_fills_traffic(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    view.update(cx, |s, cx| {
+        s.clear_traffic(cx);
+        s.open_tab("rt_users_get", TabKind::Route, "Get user", false);
+    });
+    let index = read(&view, cx, |s| {
+        s.ws.servers
+            .iter()
+            .position(|x| x.all_routes().any(|r| r.id == "rt_users_get"))
+            .unwrap()
+    });
+    // Sending before the server runs explains what to do instead of failing silently.
+    view.update(cx, |s, cx| s.send_test(cx));
+    assert!(read(&view, cx, |s| s.notice.clone().unwrap().1).contains("Start"));
+
+    view.update(cx, |s, cx| s.toggle_server_at(index, cx));
+    settle(cx, &view, |s| s.ws.servers[index].running);
+
+    view.update(cx, |s, cx| s.send_test(cx));
+    settle(cx, &view, |s| s.traffic.iter().any(|r| r.id > 0));
+    let (route, source, selected) = read(&view, cx, |s| {
+        let r = s.traffic.last().unwrap();
+        (
+            r.route.clone(),
+            r.rec.as_ref().unwrap().source.clone(),
+            s.traffic_selected,
+        )
+    });
+    assert_eq!(route, "rt_users_get");
+    assert_eq!(source, "test");
+    assert_eq!(
+        selected,
+        Some(0),
+        "Send test selects its row for the Inspector"
+    );
+    assert!(read(&view, cx, |s| s
+        .logs
+        .iter()
+        .any(|l| l.contains("listening on"))));
+    cx.run_until_parked(); // the Inspector detail renders
+
+    // Quitting with a server running asks first; Cancel keeps the app open.
+    view.update(cx, |s, cx| s.request_quit(cx));
+    assert!(read(&view, cx, |s| s.quit_confirm));
+    cx.run_until_parked(); // the modal renders
+    view.update(cx, |s, cx| s.cancel_quit(cx));
+    assert!(!read(&view, cx, |s| s.quit_confirm));
+
+    view.update(cx, |s, cx| s.toggle_server_at(index, cx));
+    settle(cx, &view, |s| !s.ws.servers[index].running);
+}
+
+#[gpui::test]
+fn a_port_in_use_becomes_a_toast_with_a_change_port_action(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    let (index, port) = read(&view, cx, |s| (0, s.ws.servers[0].port + s.port_offset));
+    let _blocker = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
+    view.update(cx, |s, cx| s.toggle_server_at(index, cx));
+    settle(cx, &view, |s| s.notice_action.is_some());
+    let (msg, action) = read(&view, cx, |s| {
+        (
+            s.notice.clone().unwrap().1,
+            s.notice_action.clone().unwrap(),
+        )
+    });
+    assert!(msg.contains("already in use"), "{msg}");
+    assert_eq!(action.label, "Change port");
+    cx.run_until_parked(); // the toast button renders
+    assert!(!read(&view, cx, |s| s.ws.servers[index].running));
+
+    // Change port opens the Server tab and prompts with the current port.
+    view.update_in(cx, |s, w, cx| s.change_port(&action.server_id, w, cx));
+    assert_eq!(
+        read(&view, cx, |s| s.picker.as_ref().map(|p| p.kind)),
+        Some(PickerKind::Prompt)
     );
 }

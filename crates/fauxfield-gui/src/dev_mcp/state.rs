@@ -40,6 +40,8 @@ pub struct UiState {
     /// Open one-line prompt (rename, new item, field edit), if any.
     pub prompt: Option<String>,
     pub servers: Vec<ServerState>,
+    /// Label of the button beside the toast (for example `Change port`), if any.
+    pub toast_action: Option<String>,
     pub active_environment: String,
     pub window: WindowState,
     pub theme: String,
@@ -104,6 +106,18 @@ pub struct TrafficState {
     pub row_count: usize,
     pub filters: Vec<String>,
     pub selected: Option<usize>,
+    /// Newest engine recording ID shown (0 when only synthetic rows or none).
+    pub last_id: u64,
+    pub last: Option<LastRequest>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct LastRequest {
+    pub method: String,
+    pub path: String,
+    pub status: u16,
+    pub route: String,
+    pub server: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -112,6 +126,10 @@ pub struct ServerState {
     pub name: String,
     pub port: u16,
     pub status: &'static str,
+    /// `host:port` while running.
+    pub address: Option<String>,
+    /// Why the last start failed, while it is in `failed`.
+    pub error: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -201,12 +219,35 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
         command_palette: picker(shell, PickerKind::Palette),
         theme_selector: picker(shell, PickerKind::Theme),
         environment_picker: picker(shell, PickerKind::Environment),
-        modal: shell.menu.as_ref().map(|_| "row_menu".to_string()),
+        modal: if shell.quit_confirm {
+            Some("quit_confirm".to_string())
+        } else {
+            shell.menu.as_ref().map(|_| "row_menu".to_string())
+        },
         toasts: shell.notice.iter().map(|(_, m)| m.clone()).collect(),
+        toast_action: shell.notice_action.as_ref().map(|a| a.label.to_string()),
         traffic: TrafficState {
             row_count: shell.traffic.len(),
             filters: Vec::new(),
             selected: shell.traffic_selected,
+            last_id: shell
+                .traffic
+                .iter()
+                .rev()
+                .find(|r| r.id > 0)
+                .map(|r| r.id)
+                .unwrap_or(0),
+            last: shell
+                .traffic
+                .last()
+                .filter(|r| r.id > 0)
+                .map(|r| LastRequest {
+                    method: r.method.clone(),
+                    path: r.path.clone(),
+                    status: r.status,
+                    route: r.route.clone(),
+                    server: r.server.clone(),
+                }),
         },
         problems: shell.problems.len(),
         problem_list: shell
@@ -242,11 +283,29 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
             .ws
             .servers
             .iter()
-            .map(|s| ServerState {
-                id: s.id.clone(),
-                name: s.name.clone(),
-                port: s.port,
-                status: if s.running { "running" } else { "stopped" },
+            .map(|s| {
+                let info = shell
+                    .host
+                    .as_ref()
+                    .and_then(|h| h.engine().list().into_iter().find(|i| i.id == s.id));
+                let (status, address, error) = match info.map(|i| i.status) {
+                    Some(fauxfield_engine::ServerStatus::Running { addr }) => {
+                        ("running", Some(addr), None)
+                    }
+                    Some(fauxfield_engine::ServerStatus::Failed { error, .. }) => {
+                        ("failed", None, Some(error))
+                    }
+                    Some(fauxfield_engine::ServerStatus::Stopped) => ("stopped", None, None),
+                    None => (if s.running { "running" } else { "stopped" }, None, None),
+                };
+                ServerState {
+                    id: s.id.clone(),
+                    name: s.name.clone(),
+                    port: s.port,
+                    status,
+                    address,
+                    error,
+                }
             })
             .collect(),
         active_environment: shell.active_env.clone(),

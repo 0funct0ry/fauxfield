@@ -48,6 +48,23 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p fauxfield --no-default-features --features headless --test mcp
 
+  # Headless run (M3): the engine and control crates on every OS; `fauxfield run` serving a
+  # workspace with `status`, `logs` and `stop` attached over the control socket where there is one
+  # (no named pipe on Windows yet).
+  headless-run:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p fauxfield-engine -p fauxfield-control
+      - if: runner.os != 'Windows'
+        run: cargo test -p fauxfield --no-default-features --features headless --test run
+
   # The dev-mcp app driven by the scenarios in fixtures/scenarios; fails on a failed step or an
   # audit error. Linux runs under xvfb with ImageMagick for screenshots; macOS runners have no
   # Screen Recording permission, so it skips screenshots.

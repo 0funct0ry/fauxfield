@@ -1,15 +1,39 @@
-//! Mock Traffic and Logs until the engine arrives in M3 (runtime-only data, never files).
+//! Traffic rows (runtime-only, never files). Real rows come from engine recordings; the
+//! synthetic generator below exists for tests, screenshots and the dev-mcp scroll scenarios.
+
+use fauxfield_engine::Recording;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TrafficRow {
+    /// Engine recording ID; 0 for synthetic rows.
+    pub id: u64,
+    /// The full recording, for the Inspector detail and Copy as cURL.
+    pub rec: Option<Box<Recording>>,
     pub time: String,
     pub server: String,
-    pub method: &'static str,
+    pub method: String,
     pub path: String,
     pub status: u16,
     pub route: String,
     pub duration_ms: f32,
     pub size: u32,
+}
+
+impl TrafficRow {
+    pub fn from_recording(r: &Recording) -> TrafficRow {
+        TrafficRow {
+            id: r.id,
+            time: r.ts.get(11..23).unwrap_or(&r.ts).to_string(),
+            server: r.server.clone(),
+            method: r.method.clone(),
+            path: r.url.clone(),
+            status: r.status,
+            route: r.route.clone(),
+            duration_ms: r.timing.total_ms as f32,
+            size: r.response_body.len() as u32,
+            rec: Some(Box::new(r.clone())),
+        }
+    }
 }
 
 /// `n` deterministic rows (xorshift, fixed seed) shaped like real mocked traffic.
@@ -35,6 +59,8 @@ pub fn traffic(n: usize) -> Vec<TrafficRow> {
                 ("Users API", format!("/api/users/{id}"), "Get user")
             };
             TrafficRow {
+                id: 0,
+                rec: None,
                 time: format!(
                     "{:02}:{:02}:{:02}.{:03}",
                     secs / 3600,
@@ -43,7 +69,7 @@ pub fn traffic(n: usize) -> Vec<TrafficRow> {
                     (r >> 30) % 1000
                 ),
                 server: server.into(),
-                method,
+                method: method.to_string(),
                 path,
                 status: STATUS[((r >> 40) % 8) as usize],
                 route: route.into(),
@@ -52,18 +78,6 @@ pub fn traffic(n: usize) -> Vec<TrafficRow> {
             }
         })
         .collect()
-}
-
-pub fn logs() -> Vec<String> {
-    [
-        "10:02:11  INFO   host      workspace example-workspace loaded (2 servers, 8 routes)",
-        "10:02:11  INFO   engine    Users API listening on http://127.0.0.1:4010",
-        "10:02:12  WARN   validate  Payments: response \"200 OK\" of PUT /refunds/:id has an empty object body",
-        "10:02:40  INFO   engine    GET /api/users/412 -> 200 (2.1 ms)",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect()
 }
 
 #[cfg(test)]

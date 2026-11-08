@@ -1,0 +1,13 @@
+---
+source: crates/fauxfield/tests/run.rs
+expression: v
+---
+{
+  "duration_ms": "<ms>",
+  "method": "GET",
+  "path": "/health",
+  "route": "<route>",
+  "server": "Example API",
+  "status": 200,
+  "ts": "<ts>"
+}

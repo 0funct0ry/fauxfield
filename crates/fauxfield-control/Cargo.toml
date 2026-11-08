@@ -1,11 +1,25 @@
 [package]
 name = "fauxfield-control"
-description = "Fauxfield control crate (stub until its milestone)."
+description = "Fauxfield control plane: ControlApi, host lock file, JSON-RPC 2.0 control socket."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+
+[dependencies]
+fauxfield-engine.workspace = true
+fauxfield-model.workspace = true
+fauxfield-store.workspace = true
+async-trait = "0.1"
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

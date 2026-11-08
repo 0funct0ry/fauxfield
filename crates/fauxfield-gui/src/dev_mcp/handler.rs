@@ -112,6 +112,15 @@ fn reset_view(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) {
     shell.layout.bottom_tab = crate::layout::BottomTab::Traffic;
     shell.traffic_selected = None;
     shell.mask_volatile = false;
+    shell.quit_confirm = false;
+    shell.notice_action = None;
+    // Baseline Traffic is the synthetic 10k rows; real requests and the engine's buffer go.
+    shell.traffic = crate::mock::traffic(crate::shell::TRAFFIC_ROWS);
+    if let Some(h) = &shell.host {
+        h.engine().stop_all();
+        h.engine().clear_traffic();
+    }
+    shell.sync_running();
     cx.notify();
 }
 

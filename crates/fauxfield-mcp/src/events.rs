@@ -22,7 +22,8 @@ pub const CAPACITY: usize = 1024;
 #[derive(Clone, Debug)]
 pub struct Event {
     pub seq: u64,
-    /// `generation`, `toast`; later milestones add `server`, `traffic`, `run`.
+    /// `generation`, `toast`, `server` (a server's run state changed) and `traffic` (a new request was
+    /// recorded); later milestones add `run`.
     pub kind: String,
     pub data: Value,
 }
@@ -137,7 +138,7 @@ pub struct EventsInput {
     /// result's `last_seq` to continue.
     #[serde(default)]
     pub since: Option<u64>,
-    /// Only these kinds (`generation`, `toast`). Default: all.
+    /// Only these kinds (`generation`, `toast`, `server`, `traffic`). Default: all.
     #[serde(default)]
     pub kinds: Vec<String>,
     /// If nothing matches yet, wait up to this many milliseconds (max 30000).
@@ -156,7 +157,7 @@ pub fn batch_json(b: &Batch) -> Value {
 pub fn register(registry: &mut Registry, buffer: EventBuffer) {
     registry.register(ToolDef::new::<EventsInput>(
         "ui.events",
-        "Events from a replay buffer (1024 entries): `generation` (ui.state changed) and `toast`. \
+        "Events from a replay buffer (1024 entries): `generation` (ui.state changed), `toast`, `server` (run state) and `traffic` (new request). \
          Each has a monotonic `seq`; `gap` is true when events before `since` were dropped. With \
          `wait_ms` it blocks until a matching event arrives, so wait here instead of polling \
          ui.state.",

@@ -1,0 +1,7 @@
+# UI state fixture (M3): captured by `ui.screenshot {state: "server-running"}`. Server tab for Users API with the server running.
+steps:
+  - reset
+  - open: {kind: server, id: srv_users}
+  - invoke: toggle_server
+  - wait_for: {condition: {pointer: /servers/0/status, equals: running}}
+  - wait_idle

@@ -1,0 +1,26 @@
+---
+source: crates/fauxfield/tests/run.rs
+expression: v
+---
+{
+  "host": {
+    "pid": "<pid>",
+    "started_at": "<ts>",
+    "version": "<version>",
+    "workspace": "<workspace>"
+  },
+  "servers": [
+    {
+      "enabled": true,
+      "host": "127.0.0.1",
+      "id": "<id>",
+      "name": "Example API",
+      "port": "<port>",
+      "routes": 1,
+      "status": {
+        "addr": "<addr>",
+        "state": "running"
+      }
+    }
+  ]
+}

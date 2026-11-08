@@ -591,7 +591,7 @@ impl Shell {
                             )),
                     )
                     .child(if section == 0 {
-                        self.server_general(t, s).into_any_element()
+                        self.server_general(t, s, cx).into_any_element()
                     } else {
                         div()
                             .text_color(t.text_muted)
@@ -605,7 +605,7 @@ impl Shell {
             )
     }
 
-    fn server_general(&self, t: &Theme, s: &Server) -> impl IntoElement {
+    fn server_general(&self, t: &Theme, s: &Server, cx: &mut Context<Self>) -> impl IntoElement {
         let kv = |k: &str, v: String| {
             div()
                 .flex()
@@ -625,7 +625,20 @@ impl Shell {
             .flex_col()
             .child(kv("Name", s.name.clone()))
             .child(kv("Host", s.host.clone()))
-            .child(kv("Port", s.port.to_string()))
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .h(px(ROW_H + 4.))
+                    .items_center()
+                    .child(div().w(px(120.)).text_color(t.text_muted).child("Port"))
+                    .child(field_button(
+                        "server-port",
+                        s.port.to_string(),
+                        "edit_server_port",
+                        cx,
+                    )),
+            )
             .child(kv(
                 "Prefix",
                 if s.prefix.is_empty() {
@@ -750,8 +763,129 @@ impl Shell {
 
     // ---- Right dock ----------------------------------------------------------------------
 
+    /// Request, response and timing of a recorded request (SPEC §9.3 detail split).
+    fn render_inspector_detail(
+        &self,
+        t: &Theme,
+        row: &crate::mock::TrafficRow,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let Some(rec) = row.rec.as_deref() else {
+            return div().into_any_element();
+        };
+        let section = |title: &str| {
+            div()
+                .pt(px(8.))
+                .pb(px(2.))
+                .text_size(px(11.))
+                .text_color(t.text_muted)
+                .child(title.to_string())
+        };
+        let line = |k: String, v: String| {
+            div()
+                .flex()
+                .flex_row()
+                .gap(px(6.))
+                .py(px(1.))
+                .font_family(BUFFER_FONT)
+                .text_size(px(11.))
+                .child(div().flex_none().text_color(t.text_muted).child(k))
+                .child(div().flex_1().min_w_0().child(v))
+        };
+        let body = |s: &str| {
+            div()
+                .py(px(2.))
+                .font_family(BUFFER_FONT)
+                .text_size(px(11.))
+                .text_color(t.syntax_string)
+                .child(if s.is_empty() {
+                    "(empty body)".to_string()
+                } else {
+                    s.to_string()
+                })
+        };
+        let mut col = div()
+            .id("inspector-detail")
+            .size_full()
+            .p(px(10.))
+            .flex()
+            .flex_col()
+            .overflow_y_scroll()
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(8.))
+                    .child(
+                        div()
+                            .text_color(t.method_color(&rec.method))
+                            .child(rec.method.clone()),
+                    )
+                    .child(div().flex_1().truncate().child(rec.url.clone()))
+                    .child(
+                        div()
+                            .text_color(t.status_color(rec.status))
+                            .child(rec.status.to_string()),
+                    ),
+            )
+            .child(line("Server".into(), rec.server.clone()))
+            .child(line("Route".into(), rec.route.clone()))
+            .child(line("Source".into(), rec.source.clone()))
+            .child(section("TIMING"))
+            .child(line("Match".into(), format!("{} µs", rec.timing.match_us)))
+            .child(line("Delay".into(), format!("{} ms", rec.timing.delay_ms)))
+            .child(line("Total".into(), format!("{} ms", rec.timing.total_ms)))
+            .child(section("REQUEST"));
+        for (k, v) in &rec.request_headers {
+            col = col.child(line(format!("{k}:"), v.clone()));
+        }
+        col = col
+            .child(body(&rec.request_body))
+            .child(section("RESPONSE"));
+        for (k, v) in &rec.response_headers {
+            col = col.child(line(format!("{k}:"), v.clone()));
+        }
+        col = col.child(body(&rec.response_body));
+        if rec.truncated {
+            col = col.child(
+                div()
+                    .text_color(t.text_muted)
+                    .child("Body truncated at 1 MiB."),
+            );
+        }
+        div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .child(div().px(px(10.)).py(px(4.)).child(crate::dev_id!(
+                    toolbar_button(t, "copy-curl")
+                        .child(icon("copy", 12., t.icon_muted))
+                        .child("Copy as cURL")
+                        .on_click(cx.listener(|this, _, w, cx| this.run_action_id(
+                            "copy_as_curl",
+                            w,
+                            cx
+                        ))),
+                    "copy-curl",
+                    Button,
+                    "Copy as cURL",
+                    Action("copy_as_curl")
+                )))
+            .child(crate::dev_id!(
+                col,
+                "inspector-detail",
+                Text,
+                "Request detail",
+                None
+            ))
+            .into_any_element()
+    }
+
     pub(crate) fn render_right_dock(&self, t: &Theme, _cx: &mut Context<Self>) -> impl IntoElement {
         let body: AnyElement = match self.traffic_selected.and_then(|i| self.traffic.get(i)) {
+            Some(r) if r.rec.is_some() => self.render_inspector_detail(t, r, _cx),
             Some(r) => {
                 let kv = |k: &str, v: String| {
                     div()

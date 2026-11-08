@@ -153,61 +153,17 @@ pub fn default_socket_path() -> PathBuf {
 }
 
 #[cfg(unix)]
-pub use unix::{SocketGuard, bind_unix};
+pub use fauxfield_control::ipc::SocketGuard;
 
+/// Bind the MCP socket; stale-socket logic is shared with the control socket.
 #[cfg(unix)]
-mod unix {
-    use super::*;
-    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-    use tokio::net::{UnixListener, UnixStream};
-
-    /// Removes the socket file when dropped (clean exit).
-    pub struct SocketGuard(PathBuf);
-
-    impl SocketGuard {
-        pub fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-
-    impl Drop for SocketGuard {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_file(&self.0);
-        }
-    }
-
-    /// Bind at `path`: stale socket files are replaced, live ones refused, mode 0600.
-    pub async fn bind_unix(path: &Path) -> Result<(UnixListener, SocketGuard), String> {
-        if let Some(parent) = path.parent()
-            && !parent.exists()
-        {
-            // Owner-only parent closes the window between bind and chmod.
-            std::fs::DirBuilder::new()
-                .recursive(true)
-                .mode(0o700)
-                .create(parent)
-                .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
-        }
-        if path.exists() {
-            match UnixStream::connect(path).await {
-                Ok(_) => {
-                    return Err(format!(
-                        "{} is in use by a running Fauxfield MCP server; \
-                         choose another path with --socket",
-                        path.display()
-                    ));
-                }
-                Err(_) => std::fs::remove_file(path)
-                    .map_err(|e| format!("cannot remove stale socket {}: {e}", path.display()))?,
-            }
-        }
-        let listener =
-            UnixListener::bind(path).map_err(|e| format!("cannot bind {}: {e}", path.display()))?;
-        let guard = SocketGuard(path.to_path_buf());
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-            .map_err(|e| format!("cannot chmod {}: {e}", path.display()))?;
-        Ok((listener, guard))
-    }
+pub async fn bind_unix(path: &Path) -> Result<(tokio::net::UnixListener, SocketGuard), String> {
+    fauxfield_control::ipc::bind_unix(
+        path,
+        "Fauxfield MCP server",
+        "choose another path with --socket",
+    )
+    .await
 }
 
 #[cfg(test)]

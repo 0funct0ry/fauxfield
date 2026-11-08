@@ -1,11 +1,25 @@
 [package]
 name = "fauxfield-engine"
-description = "Fauxfield engine crate (stub until its milestone)."
+description = "Fauxfield engine: hyper listeners, exact routing, static responses, recording."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+
+[dependencies]
+fauxfield-model.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+bytes = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "server", "http1", "server-graceful"] }
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

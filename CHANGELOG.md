@@ -3,6 +3,23 @@
 ## Unreleased
 
 ### Added
+- M3 Run a mock server (GUI and headless): `fauxfield-engine` (a hyper listener per Server, exact
+  Route matching with the Server prefix, static Responses with headers, `body_file` and delay, a
+  404 `application/problem+json` with the closest Routes, atomic route-table hot reload, port-in-use
+  errors, a 2000-entry recording ring buffer with header redaction and Copy as cURL) and
+  `fauxfield-control` (`ControlApi`, the host lock `.fauxfield/run/host.json`, a JSON-RPC 2.0
+  control socket with owner-only permissions, shared stale-socket handling). CLI: `fauxfield run`
+  (`--server`, `--port-offset`, `--host`, `--watch`, `--log-format`), `status`, `stop`, `logs
+  [--follow] [--status] [--since]`, all with `--json`; exit code 4 without a host and 5 for a port
+  in use. The app starts, stops and restarts Servers (`Cmd/Ctrl+R`, `Cmd/Ctrl+Shift+R`), shows live
+  Traffic with a request, response and timing Inspector, Copy as cURL, Send test
+  (`Cmd/Ctrl+Enter`), a port-in-use toast with Change port, Logs, and a quit confirmation. MCP
+  tools `start_server`, `stop_server`, `restart_server`, `get_traffic`, `send_test_request`;
+  `fauxfield mcp` attaches to a live host or becomes one; `ui.events` gains `server` and `traffic`;
+  `ui.state` gains server status, address and error, the latest request, and `toast_action`.
+  Scenario `m03-run`, state fixtures `server-running`, `traffic-live`, `traffic-empty`, CI job
+  `headless-run`. Known gaps: no Windows control socket or MCP named pipe yet; the mock Traffic
+  generator remains only for tests and dev-mcp builds.
 - M2 Workspace files and persistence: `fauxfield-model` (file types, prefixed IDs, validation
   diagnostics, server JSON Schema via `cargo xtask schema`), `fauxfield-store` (toml_edit
   round-tripping that keeps comments and order, atomic debounced autosave, file watcher with

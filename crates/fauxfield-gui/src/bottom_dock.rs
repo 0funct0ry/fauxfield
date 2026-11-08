@@ -135,7 +135,19 @@ impl Shell {
                         .child(head(COLS[5], "DURATION"))
                         .child(head(COLS[6], "SIZE")),
                 )
-                .child(
+                .child(if self.traffic.is_empty() {
+                    div()
+                        .id("traffic-empty")
+                        .flex_1()
+                        .p(px(12.))
+                        .text_color(t.text_muted)
+                        .child(if self.ws.servers.iter().any(|s| s.running) {
+                            "No requests yet. Send one with curl, or press Cmd/Ctrl+Enter on a route."
+                        } else {
+                            "No requests yet. Start a server with Cmd/Ctrl+R, then send a request."
+                        })
+                        .into_any_element()
+                } else {
                     uniform_list(
                         "traffic-rows",
                         self.traffic.len(),
@@ -149,8 +161,9 @@ impl Shell {
                     )
                     .track_scroll(self.traffic_scroll.clone())
                     .flex_1()
-                    .min_h_0(),
-                ),
+                    .min_h_0()
+                    .into_any_element()
+                }),
             "traffic",
             Table,
             "Traffic",
@@ -201,8 +214,8 @@ impl Shell {
                     div()
                         .w(px(COLS[2]))
                         .flex_none()
-                        .text_color(t.method_color(r.method))
-                        .child(r.method),
+                        .text_color(t.method_color(&r.method))
+                        .child(r.method.clone()),
                 )
                 .child(div().flex_1().truncate().child(r.path.clone()))
                 .child(
@@ -303,6 +316,9 @@ impl Shell {
             .font_family(BUFFER_FONT)
             .text_size(px(11.))
             .text_color(t.text_muted)
+            .when(self.logs.is_empty(), |d| {
+                d.child("No log lines yet. Servers log when they start, stop and handle requests.")
+            })
             .children(self.logs.iter().map(|l| div().child(l.clone())))
             .into_any_element()
     }

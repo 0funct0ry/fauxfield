@@ -302,8 +302,13 @@ pub fn example_store() -> (tempfile::TempDir, fauxfield_store::Store) {
 #[cfg(test)]
 pub fn test_options() -> crate::shell::ShellOptions {
     let (dir, _store) = example_store();
+    // Tests start real servers: bind each test's servers at a distinct offset so parallel tests
+    // never collide (the files and the UI keep the example ports).
+    static NEXT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     crate::shell::ShellOptions {
         workspace: Some(dir.keep()),
+        port_offset: 20_000 + (std::process::id() % 200) as u16 * 150 + (n % 40) * 20,
         ..Default::default()
     }
 }

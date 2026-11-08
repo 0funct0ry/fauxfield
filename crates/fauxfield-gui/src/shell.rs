@@ -60,6 +60,9 @@ pub enum PickerKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PromptAction {
     NewServer,
+    ServerPort {
+        server: String,
+    },
     OpenFolder,
     CreateWorkspace,
     ResponseBody {
@@ -116,6 +119,7 @@ impl PromptAction {
     pub fn title(&self) -> &'static str {
         match self {
             PromptAction::NewServer => "New server name",
+            PromptAction::ServerPort { .. } => "Port (1-65535)",
             PromptAction::OpenFolder => "Open workspace folder",
             PromptAction::CreateWorkspace => "Create workspace in folder",
             PromptAction::NewFolder { .. } => "New folder name",
@@ -173,6 +177,8 @@ pub struct ShellOptions {
     pub workspace: Option<PathBuf>,
     /// File holding the recent-workspaces list; `None` disables it (tests).
     pub recent_path: Option<PathBuf>,
+    /// Added to every server port when binding (tests run servers side by side).
+    pub port_offset: u16,
 }
 
 pub struct Shell {
@@ -218,6 +224,17 @@ pub struct Shell {
     pub(crate) menu: Option<RowMenu>,
     pub(crate) problems: Vec<Problem>,
     pub(crate) logs: Vec<String>,
+    /// The host for the open workspace (engine, control socket). Declared before `rt` so it
+    /// drops first.
+    pub(crate) host: Option<fauxfield_control::Host>,
+    pub(crate) rt: Option<tokio::runtime::Runtime>,
+    pub(crate) engine_events:
+        Option<tokio::sync::broadcast::Receiver<fauxfield_engine::EngineEvent>>,
+    pub(crate) notice_action: Option<crate::run::NoticeAction>,
+    pub(crate) quit_confirm: bool,
+    pub(crate) quit_confirmed: bool,
+    pub(crate) select_next_test: bool,
+    pub(crate) port_offset: u16,
     pub(crate) focus: FocusHandle,
     pub(crate) picker_focus: FocusHandle,
 }
@@ -335,7 +352,12 @@ impl Shell {
             theme_before_preview: None,
             recent: Vec::new(),
             picker_scroll: UniformListScrollHandle::new(),
-            traffic: mock::traffic(TRAFFIC_ROWS),
+            // Real rows come from the engine; synthetic ones feed tests and dev-mcp scenarios.
+            traffic: if cfg!(any(test, feature = "dev-mcp")) {
+                mock::traffic(TRAFFIC_ROWS)
+            } else {
+                Vec::new()
+            },
             traffic_scroll: UniformListScrollHandle::new(),
             traffic_selected: None,
             route_sub: HashMap::new(),
@@ -348,7 +370,15 @@ impl Shell {
             resize: None,
             menu: None,
             problems: store_problems,
-            logs: mock::logs(),
+            logs: Vec::new(),
+            host: None,
+            rt: None,
+            engine_events: None,
+            notice_action: None,
+            quit_confirm: false,
+            quit_confirmed: false,
+            select_next_test: false,
+            port_offset: opts.port_offset,
             focus,
             picker_focus: cx.focus_handle(),
         };
@@ -359,6 +389,10 @@ impl Shell {
             shell.notify(format!("Could not open workspace: {e}"), cx);
         }
         shell.attach_store(cx);
+        let weak = cx.entity().downgrade();
+        window.on_window_should_close(cx, move |_w, cx| {
+            weak.update(cx, |s, cx| s.should_close(cx)).unwrap_or(true)
+        });
         shell
     }
 
@@ -376,6 +410,7 @@ impl Shell {
             .start_background(std::time::Duration::from_millis(300))
             .map_err(|e| eprintln!("fauxfield: watcher unavailable: {e}"))
             .ok();
+        self.attach_engine(cx);
         cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor()
@@ -391,6 +426,7 @@ impl Shell {
     }
 
     fn poll_store(&mut self, cx: &mut Context<Self>) {
+        self.poll_engine(cx);
         let Some(rx) = &self.store_events else { return };
         let mut changed = false;
         while let Ok(ev) = rx.try_recv() {
@@ -404,7 +440,9 @@ impl Shell {
 
     /// Rebuild the view from the store (after an edit, undo, or external reload).
     pub fn reload(&mut self, cx: &mut Context<Self>) {
-        let Some(store) = &self.store else { return };
+        let Some(store) = self.store.clone() else {
+            return;
+        };
         let snap = store.snapshot();
         let running: HashSet<String> = self
             .ws
@@ -417,6 +455,7 @@ impl Shell {
         for s in &mut self.ws.servers {
             s.running = running.contains(&s.id);
         }
+        self.sync_running();
         self.problems = Workspace::problems(&snap);
         self.conflicts = store.conflicts();
         let ws = &self.ws;
@@ -496,6 +535,7 @@ impl Shell {
         self.notice_gen += 1;
         let id = self.notice_gen;
         self.notice = Some((id, msg));
+        self.notice_action = None;
         cx.spawn(async move |this, cx| {
             cx.background_executor()
                 .timer(std::time::Duration::from_secs(4))
@@ -503,6 +543,7 @@ impl Shell {
             this.update(cx, |this, cx| {
                 if this.notice.as_ref().is_some_and(|(g, _)| *g == id) {
                     this.notice = None;
+                    this.notice_action = None;
                     cx.notify();
                 }
             })
@@ -731,7 +772,7 @@ impl Shell {
     // ---- servers and environments (mock state until M3 / M7) ----------------------------
 
     /// Server of the active tab, else of the selected tree row.
-    fn current_server(&self) -> Option<usize> {
+    pub(crate) fn current_server(&self) -> Option<usize> {
         let id = self
             .tabs
             .active()
@@ -741,31 +782,6 @@ impl Shell {
             .servers
             .iter()
             .position(|s| s.id == id || s.all_routes().any(|r| r.id == id))
-    }
-
-    pub fn toggle_server_at(&mut self, i: usize, cx: &mut Context<Self>) {
-        if let Some(s) = self.ws.servers.get_mut(i) {
-            s.running = !s.running;
-            let msg = format!(
-                "{} {} (mock: engine arrives in M3)",
-                s.name,
-                if s.running { "started" } else { "stopped" }
-            );
-            self.notify(msg, cx);
-        }
-    }
-
-    pub fn run_all(&mut self, cx: &mut Context<Self>) {
-        let start = self.ws.running_count() < self.ws.servers.len();
-        for s in &mut self.ws.servers {
-            s.running = start;
-        }
-        let msg = if start {
-            "All servers started (mock: engine arrives in M3)"
-        } else {
-            "All servers stopped (mock: engine arrives in M3)"
-        };
-        self.notify(msg.into(), cx);
     }
 
     pub fn set_environment(&mut self, name: &str, cx: &mut Context<Self>) {
@@ -1433,6 +1449,14 @@ impl Shell {
                     self.notify(e, cx);
                 }
             }
+            PromptAction::ServerPort { server } => match v.parse::<u16>() {
+                Ok(p) if p > 0 => {
+                    self.store_op(cx, |s| {
+                        s.set_int(&T::Server(server.clone()), "port", Some(p.into()))
+                    });
+                }
+                _ => self.notify("A port is a number from 1 to 65535.".into(), cx),
+            },
             PromptAction::NewServer => {
                 if v.is_empty() {
                     return self.notify("A server needs a name.".into(), cx);
@@ -1732,7 +1756,7 @@ impl Render for Shell {
                 if this.picker.is_some() {
                     this.run_picker_selection(OpenMode::Pinned, w, cx);
                 } else {
-                    this.stub("Send test", "M3", cx);
+                    this.send_test(cx);
                 }
             },
             Duplicate => |this, _w, cx| match this.current_response_id().filter(|_| this.selected_is_route()).or(this.selected.clone()) {
@@ -1740,7 +1764,16 @@ impl Render for Shell {
                 None => this.notify("Select something to duplicate.".into(), cx),
             },
             ResetState => |this, _w, cx| this.stub("Resetting dataset state", "M8", cx),
-            Quit => |_this, _w, cx| cx.quit(),
+            RestartServer => |this, _w, cx| this.restart_current(cx),
+            ClearTraffic => |this, _w, cx| this.clear_traffic(cx),
+            CopyAsCurl => |this, _w, cx| this.copy_curl(cx),
+            EditServerPort => |this, w, cx| match this.notice_action.as_ref().map(|a| a.server_id.clone()).or_else(|| this.current_server().and_then(|i| this.ws.servers.get(i)).map(|s| s.id.clone())) {
+                Some(id) => this.change_port(&id, w, cx),
+                None => this.notify("Select a server first.".into(), cx),
+            },
+            QuitAnyway => |this, _w, cx| this.quit_now(cx),
+            CancelQuit => |this, _w, cx| this.cancel_quit(cx),
+            Quit => |this, _w, cx| this.request_quit(cx),
         });
 
         root.child(crate::dev_id!(
@@ -1771,6 +1804,9 @@ impl Render for Shell {
                 self.picker_ids().1,
                 None
             ))
+        })
+        .when(self.quit_confirm, |d| {
+            d.child(self.render_quit_confirm(&t, cx))
         })
         .when(self.menu.is_some(), |d| {
             d.child(crate::dev_id_z!(

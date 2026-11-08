@@ -49,7 +49,7 @@ fn completions_for_every_shell_mention_the_binary() {
 
 #[test]
 fn unknown_subcommand_is_rejected_as_a_missing_folder() {
-    let (code, _, err) = run(&["run"]);
+    let (code, _, err) = run(&["doctor"]);
     assert_eq!(code, 1);
     assert!(err.contains("not a folder"));
 }

@@ -54,6 +54,17 @@ pub fn start(opts: DevMcpOptions, window: WindowHandle<Shell>, cx: &mut App) {
         &mut registry,
         std::sync::Arc::new(shared_store),
     );
+    // Server lifecycle and traffic tools drive the engine the window hosts (M3).
+    fauxfield_mcp::control_tools::register_control_tools(
+        &mut registry,
+        std::sync::Arc::new(|| {
+            CONTROL
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone()
+                .ok_or_else(|| "no workspace is open; call ui.open_workspace".to_string())
+        }),
+    );
     let events = EventBuffer::default();
     fauxfield_mcp::events::register(&mut registry, events.clone());
     let recorder = Recorder::default();
@@ -150,6 +161,8 @@ pub fn start(opts: DevMcpOptions, window: WindowHandle<Shell>, cx: &mut App) {
 async fn feed_events(bridge: Arc<dyn UiBridge>, events: EventBuffer) {
     let mut last_generation = None;
     let mut last_toasts: Vec<Value> = Vec::new();
+    let mut last_servers: Vec<Value> = Vec::new();
+    let mut last_traffic_id = 0u64;
     loop {
         tokio::time::sleep(Duration::from_millis(100)).await;
         let Ok(state) = bridge
@@ -176,6 +189,28 @@ async fn feed_events(bridge: Arc<dyn UiBridge>, events: EventBuffer) {
             }
         }
         last_toasts = toasts;
+        // Server run state and live traffic (M3).
+        let servers = state["servers"].as_array().cloned().unwrap_or_default();
+        for s in &servers {
+            if !last_servers.contains(s) {
+                events.push("server", s.clone());
+            }
+        }
+        last_servers = servers;
+        let id = state["traffic"]["last_id"].as_u64().unwrap_or(0);
+        if id != last_traffic_id {
+            last_traffic_id = id;
+            if id > 0 {
+                events.push(
+                    "traffic",
+                    serde_json::json!({
+                        "last_id": id,
+                        "row_count": state["traffic"]["row_count"],
+                        "last": state["traffic"]["last"],
+                    }),
+                );
+            }
+        }
     }
 }
 
@@ -184,6 +219,14 @@ static STORE: std::sync::Mutex<Option<fauxfield_store::Store>> = std::sync::Mute
 /// The store of the workspace the window shows; set by `Shell` when it opens one.
 pub fn publish_store(store: Option<fauxfield_store::Store>) {
     *STORE.lock().unwrap_or_else(|p| p.into_inner()) = store;
+}
+
+type SharedControl = std::sync::Arc<dyn fauxfield_control::ControlApi>;
+static CONTROL: std::sync::Mutex<Option<SharedControl>> = std::sync::Mutex::new(None);
+
+/// The control handle of the engine the window hosts; set by `Shell` when it opens a workspace.
+pub fn publish_control(control: Option<SharedControl>) {
+    *CONTROL.lock().unwrap_or_else(|p| p.into_inner()) = control;
 }
 
 fn shared_store() -> Option<fauxfield_store::Store> {

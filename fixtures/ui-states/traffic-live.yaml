@@ -1,0 +1,10 @@
+# UI state fixture (M3): captured by `ui.screenshot {state: "traffic-live"}`. One real request in Traffic with the Inspector detail open.
+steps:
+  - reset
+  - invoke: clear_traffic
+  - open: {kind: route, id: rt_users_list}
+  - invoke: toggle_server
+  - wait_for: {condition: {pointer: /servers/0/status, equals: running}}
+  - invoke: send_test
+  - wait_for: {condition: {pointer: /traffic/row_count, equals: 1}}
+  - wait_idle

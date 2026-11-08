@@ -91,6 +91,9 @@ fixtures!(
     "no-tabs",
     "quick-search-empty",
     "palette-empty",
+    "server-running",
+    "traffic-live",
+    "traffic-empty",
 );
 
 pub fn named_steps(name: &str) -> Result<Vec<Step>, String> {
