@@ -1,0 +1,42 @@
+# M3.3 scenario: the tabbed sidebar (Servers, Environments, Datasets).
+# Needs the example workspace as the launch workspace. Bindings use `secondary` (Cmd on macOS,
+# Ctrl elsewhere); the scenario runner translates it like the keymap does.
+name: m033-sidebar
+size: default
+steps:
+  - state: [reset]
+  - assert: {pointer: /sidebar/tab, equals: servers}
+  - assert_find: {role: tab_list, ids: [sidebar-tabs]}
+  - assert_find: {text: sidebar-tab-servers, ids: [sidebar-tab-servers]}
+  - assert_find: {text: sidebar-tab-environments, ids: [sidebar-tab-environments]}
+  - assert_find: {text: sidebar-tab-datasets, ids: [sidebar-tab-datasets]}
+  # Environments by click: only env rows are visible.
+  - click_element: {id: sidebar-tab-environments}
+  - wait_for_idle: {}
+  - assert: {pointer: /sidebar/tab, equals: environments}
+  - assert: {pointer: /tree/visible_rows, equals: ["env:local", "env:staging"]}
+  - click_element: {id: row-env:staging}
+  - assert: {pointer: /tabs/0/id, equals: staging}
+  # Datasets by binding.
+  - key: secondary-alt-3
+  - wait_for_idle: {}
+  - assert: {pointer: /sidebar/tab, equals: datasets}
+  # Back to Servers through View > Sidebar.
+  - menu: {action: invoke, path: [View, Sidebar, Servers]}
+  - wait_for_idle: {}
+  - assert: {pointer: /sidebar/tab, equals: servers}
+  # Hide the dock; the binding reopens it on that tab.
+  - command: {command: toggle_dock, dock: left}
+  - assert: {pointer: /docks/left/open, equals: false}
+  - key: secondary-alt-2
+  - wait_for_idle: {}
+  - assert: {pointer: /docks/left/open, equals: true}
+  - assert: {pointer: /sidebar/tab, equals: environments}
+  - key: secondary-alt-3
+  - wait_for_idle: {}
+  # Quick Search reveal moves the tab back to Servers.
+  - command: {command: search, query: "@Payments"}
+  - key: enter
+  - wait_for_idle: {}
+  - assert: {pointer: /sidebar/tab, equals: servers}
+  - state: [reset]

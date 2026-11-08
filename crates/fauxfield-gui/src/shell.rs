@@ -228,6 +228,7 @@ pub struct Shell {
     pub(crate) commands: Vec<CommandEntry>,
     chord: ChordState,
     pub(crate) collapsed: HashSet<String>,
+    pub(crate) sidebar_tab: tree::SidebarTab,
     pub(crate) selected: Option<String>,
     pub(crate) active_env: String,
     pub(crate) picker: Option<Picker>,
@@ -365,6 +366,7 @@ impl Shell {
 
         let focus = cx.focus_handle();
         window.focus(&focus);
+        let layout_sidebar_tab = layout.sidebar_tab.clone();
         let mut shell = Shell {
             commands: actions::commands(&keymap),
             chord: ChordState::new(&chords, &singles),
@@ -373,6 +375,7 @@ impl Shell {
             layout_path: opts.layout_path,
             keymap,
             collapsed: HashSet::new(),
+            sidebar_tab: tree::SidebarTab::from_id(&layout_sidebar_tab),
             selected: None,
             active_env: ws
                 .environments
@@ -741,6 +744,11 @@ impl Shell {
             TabKind::Environment => tree::env_row_id(id),
             _ => id.to_string(),
         });
+        if let Some(sel) = &self.selected {
+            let tab = tree::SidebarTab::of_row(sel);
+            self.sidebar_tab = tab;
+            self.layout.sidebar_tab = tab.id().into();
+        }
         self.save_layout();
     }
 
@@ -781,14 +789,30 @@ impl Shell {
                 }
             }
         }
-        if id.starts_with("env:") {
-            self.collapsed.remove(tree::SEC_ENVIRONMENTS);
-        }
-        if id.starts_with("ds:") {
-            self.collapsed.remove(tree::SEC_DATASETS);
-        }
+        self.sidebar_tab = tree::SidebarTab::of_row(id);
+        self.layout.sidebar_tab = self.sidebar_tab.id().into();
         self.selected = Some(id.to_string());
         self.save_layout();
+    }
+
+    /// Selects a sidebar tab, showing the left dock if hidden. Re-selecting the active tab
+    /// only reveals a hidden dock; it never collapses it.
+    pub fn set_sidebar_tab(&mut self, tab: tree::SidebarTab, cx: &mut Context<Self>) {
+        if self.sidebar_tab == tab && self.layout.left_open {
+            return;
+        }
+        self.sidebar_tab = tab;
+        self.layout.sidebar_tab = tab.id().into();
+        self.layout.left_open = true;
+        self.save_layout();
+        cx.notify();
+    }
+
+    /// The selected row, only while it belongs to the visible sidebar tab.
+    pub(crate) fn selected_visible(&self) -> Option<String> {
+        self.selected
+            .clone()
+            .filter(|id| tree::SidebarTab::of_row(id) == self.sidebar_tab)
     }
 
     pub fn activate_tab(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -850,7 +874,12 @@ impl Shell {
             cx.notify();
             return;
         }
-        let rows = tree::flatten(&self.ws, &self.collapsed, &self.active_env);
+        let rows = tree::flatten(
+            &self.ws,
+            &self.collapsed,
+            &self.active_env,
+            self.sidebar_tab,
+        );
         let Some(row) = rows.into_iter().find(|r| r.id == row_id) else {
             return;
         };
@@ -1443,9 +1472,8 @@ impl Shell {
     }
 
     fn selected_is_route(&self) -> bool {
-        self.selected
-            .as_deref()
-            .is_some_and(|id| self.ws.find_route(id).is_some())
+        self.selected_visible()
+            .is_some_and(|id| self.ws.find_route(&id).is_some())
     }
 
     fn folder_server(&self, folder: &str) -> Option<String> {
@@ -2023,11 +2051,11 @@ impl Render for Shell {
                 Some(r) => this.new_response_for(&r, cx),
                 None => this.notify("Open a route first.".into(), cx),
             },
-            Rename => |this, w, cx| match this.selected.clone() {
+            Rename => |this, w, cx| match this.selected_visible() {
                 Some(id) => this.rename_row(&id, w, cx),
                 None => this.notify("Select something to rename.".into(), cx),
             },
-            Delete => |this, _w, cx| match this.selected.clone() {
+            Delete => |this, _w, cx| match this.selected_visible() {
                 Some(id) => this.delete_row(&id, cx),
                 None => this.notify("Select something to delete.".into(), cx),
             },
@@ -2082,7 +2110,7 @@ impl Render for Shell {
                     this.send_test(cx);
                 }
             },
-            Duplicate => |this, _w, cx| match this.current_response_id().filter(|_| this.selected_is_route()).or(this.selected.clone()) {
+            Duplicate => |this, _w, cx| match this.current_response_id().filter(|_| this.selected_is_route()).or(this.selected_visible()) {
                 Some(id) => this.duplicate_row(&id, cx),
                 None => this.notify("Select something to duplicate.".into(), cx),
             },
@@ -2131,6 +2159,30 @@ impl Render for Shell {
                  _w: &mut Window,
                  cx: &mut Context<Shell>| {
                     this.guard(crate::lifecycle::Intent::Close, cx)
+                },
+            ))
+            .on_action(cx.listener(
+                |this: &mut Shell,
+                 _: &actions::ShowSidebarServers,
+                 _w: &mut Window,
+                 cx: &mut Context<Shell>| {
+                    this.set_sidebar_tab(tree::SidebarTab::Servers, cx)
+                },
+            ))
+            .on_action(cx.listener(
+                |this: &mut Shell,
+                 _: &actions::ShowSidebarEnvironments,
+                 _w: &mut Window,
+                 cx: &mut Context<Shell>| {
+                    this.set_sidebar_tab(tree::SidebarTab::Environments, cx)
+                },
+            ))
+            .on_action(cx.listener(
+                |this: &mut Shell,
+                 _: &actions::ShowSidebarDatasets,
+                 _w: &mut Window,
+                 cx: &mut Context<Shell>| {
+                    this.set_sidebar_tab(tree::SidebarTab::Datasets, cx)
                 },
             ))
             .on_action(cx.listener(

@@ -113,6 +113,8 @@ fn reset_view(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) {
     while !shell.tabs.is_empty() {
         shell.tabs.close(0);
     }
+    shell.sidebar_tab = crate::tree::SidebarTab::Servers;
+    shell.layout.sidebar_tab = "servers".into();
     shell.layout.left_open = true;
     shell.layout.right_open = false;
     shell.layout.bottom_open = true;

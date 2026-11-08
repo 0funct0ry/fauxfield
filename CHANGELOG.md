@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### Added
+- M3.3 Tabbed sidebar: the left dock has an icon-only tab strip (Servers, Environments, Datasets)
+  under the workspace header, one list at a time, with the count in the panel title. Actions
+  `Sidebar: Show Servers/Environments/Datasets` (Cmd/Ctrl+Alt+1..3), View > Sidebar submenu with
+  the active tab checked, tab persisted in layout.json, reveal switches tab, hidden rows cannot be
+  renamed/duplicated/deleted by shortcut. dev-mcp: `ui.state` `sidebar` and `tree.visible_rows`,
+  `ui.command set_sidebar_tab`, `sidebar` events, seven `sidebar-*` fixtures, `m033-sidebar`.
+- Toggle switches now match the mockup (26x14 track, 10 pt knob).
 - M3.2 Application menu and About box: one data-driven menu model (`fauxfield-gui::menu`) drawn
   natively on macOS and as an in-window bar on Windows and Linux (collapses to a hamburger below
   1000 px; Alt mnemonics, arrow keys, type-ahead), with state-driven enabling and labels, Open

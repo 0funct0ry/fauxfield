@@ -7,8 +7,79 @@ use crate::view::Workspace;
 
 /// Row id of the workspace header (and its hamburger menu).
 pub const WORKSPACE_ROW: &str = "ws:workspace";
-pub const SEC_ENVIRONMENTS: &str = "sec_environments";
-pub const SEC_DATASETS: &str = "sec_datasets";
+
+/// A tab of the left dock's sidebar (never an editor tab).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SidebarTab {
+    #[default]
+    Servers,
+    Environments,
+    Datasets,
+}
+
+/// Every sidebar tab in strip order; a later milestone adds a tab by adding one variant.
+pub const SIDEBAR_TABS: [SidebarTab; 3] = [
+    SidebarTab::Servers,
+    SidebarTab::Environments,
+    SidebarTab::Datasets,
+];
+
+impl SidebarTab {
+    pub fn id(self) -> &'static str {
+        match self {
+            SidebarTab::Servers => "servers",
+            SidebarTab::Environments => "environments",
+            SidebarTab::Datasets => "datasets",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            SidebarTab::Servers => "Servers",
+            SidebarTab::Environments => "Environments",
+            SidebarTab::Datasets => "Datasets",
+        }
+    }
+    pub fn icon(self) -> &'static str {
+        match self {
+            SidebarTab::Servers => "server",
+            SidebarTab::Environments => "layers",
+            SidebarTab::Datasets => "database",
+        }
+    }
+    pub fn action_id(self) -> &'static str {
+        match self {
+            SidebarTab::Servers => "show_sidebar_servers",
+            SidebarTab::Environments => "show_sidebar_environments",
+            SidebarTab::Datasets => "show_sidebar_datasets",
+        }
+    }
+    pub fn empty_text(self) -> &'static str {
+        match self {
+            SidebarTab::Servers => "No servers yet.",
+            SidebarTab::Environments => {
+                "No environments. Add one as environments/<name>.toml in the workspace folder."
+            }
+            SidebarTab::Datasets => "No datasets. Datasets arrive in M8.",
+        }
+    }
+    /// Parses a persisted id; anything unknown falls back to Servers.
+    pub fn from_id(id: &str) -> SidebarTab {
+        SIDEBAR_TABS
+            .into_iter()
+            .find(|t| t.id() == id)
+            .unwrap_or_default()
+    }
+    /// The tab that owns a row id.
+    pub fn of_row(id: &str) -> SidebarTab {
+        if id.starts_with("env:") {
+            SidebarTab::Environments
+        } else if id.starts_with("ds:") {
+            SidebarTab::Datasets
+        } else {
+            SidebarTab::Servers
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RowKind {
@@ -23,7 +94,6 @@ pub enum RowKind {
     Route {
         method: String,
     },
-    Section,
     Environment {
         active: bool,
     },
@@ -48,7 +118,12 @@ pub fn dataset_row_id(name: &str) -> String {
     format!("ds:{name}")
 }
 
-pub fn flatten(ws: &Workspace, collapsed: &HashSet<String>, active_env: &str) -> Vec<TreeRow> {
+pub fn flatten(
+    ws: &Workspace,
+    collapsed: &HashSet<String>,
+    active_env: &str,
+    tab: SidebarTab,
+) -> Vec<TreeRow> {
     let mut rows = Vec::new();
     let node = |rows: &mut Vec<TreeRow>, id: &str, depth, label: &str, kind, expandable| {
         rows.push(TreeRow {
@@ -61,83 +136,74 @@ pub fn flatten(ws: &Workspace, collapsed: &HashSet<String>, active_env: &str) ->
         });
         expandable && !collapsed.contains(id)
     };
-    for s in &ws.servers {
-        let open = node(
-            &mut rows,
-            &s.id,
-            0,
-            &s.name,
-            RowKind::Server {
-                port: s.port,
-                running: s.running,
-                enabled: s.enabled,
-            },
-            true,
-        );
-        if !open {
-            continue;
-        }
-        for f in &s.folders {
-            let open = node(&mut rows, &f.id, 1, &f.name, RowKind::Folder, true);
-            if open {
-                for r in &f.routes {
-                    node(
-                        &mut rows,
-                        &r.id,
-                        2,
-                        &r.path,
-                        RowKind::Route {
-                            method: r.method.clone(),
-                        },
-                        false,
-                    );
+    if tab == SidebarTab::Servers {
+        for s in &ws.servers {
+            let open = node(
+                &mut rows,
+                &s.id,
+                0,
+                &s.name,
+                RowKind::Server {
+                    port: s.port,
+                    running: s.running,
+                    enabled: s.enabled,
+                },
+                true,
+            );
+            if !open {
+                continue;
+            }
+            for f in &s.folders {
+                let open = node(&mut rows, &f.id, 1, &f.name, RowKind::Folder, true);
+                if open {
+                    for r in &f.routes {
+                        node(
+                            &mut rows,
+                            &r.id,
+                            2,
+                            &r.path,
+                            RowKind::Route {
+                                method: r.method.clone(),
+                            },
+                            false,
+                        );
+                    }
                 }
             }
-        }
-        for r in &s.routes {
-            node(
-                &mut rows,
-                &r.id,
-                1,
-                &r.path,
-                RowKind::Route {
-                    method: r.method.clone(),
-                },
-                false,
-            );
-        }
-    }
-    if node(
-        &mut rows,
-        SEC_ENVIRONMENTS,
-        0,
-        "Environments",
-        RowKind::Section,
-        true,
-    ) {
-        for e in &ws.environments {
-            node(
-                &mut rows,
-                &env_row_id(&e.name),
-                1,
-                &e.name,
-                RowKind::Environment {
-                    active: e.name == active_env,
-                },
-                false,
-            );
+            for r in &s.routes {
+                node(
+                    &mut rows,
+                    &r.id,
+                    1,
+                    &r.path,
+                    RowKind::Route {
+                        method: r.method.clone(),
+                    },
+                    false,
+                );
+            }
         }
     }
-    if node(
-        &mut rows,
-        SEC_DATASETS,
-        0,
-        "Datasets",
-        RowKind::Section,
-        true,
-    ) {
-        for d in &ws.datasets {
-            node(&mut rows, &dataset_row_id(d), 1, d, RowKind::Dataset, false);
+    match tab {
+        SidebarTab::Servers => {}
+        SidebarTab::Environments => {
+            for e in &ws.environments {
+                node(
+                    &mut rows,
+                    &env_row_id(&e.name),
+                    0,
+                    &e.name,
+                    RowKind::Environment {
+                        active: e.name == active_env,
+                    },
+                    false,
+                );
+            }
+        }
+        SidebarTab::Datasets => {
+            for d in &ws.datasets {
+                node(&mut rows, &dataset_row_id(d), 0, d, RowKind::Dataset, false);
+            }
         }
     }
     rows
@@ -277,7 +343,6 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
             v
         }
         RowKind::Dataset => vec![("Reset to seed", ResetDataset)],
-        RowKind::Section => vec![],
     }
 }
 
@@ -293,7 +358,7 @@ mod tests {
     #[test]
     fn expanded_tree_lists_everything_in_order() {
         let ws = workspace();
-        let rows = flatten(&ws, &HashSet::new(), "local");
+        let rows = flatten(&ws, &HashSet::new(), "local", SidebarTab::Servers);
         assert_eq!(rows[0].id, "srv_users");
         assert_eq!(rows[1].id, "fld_users");
         assert_eq!(rows[2].id, "rt_users_list");
@@ -301,16 +366,45 @@ mod tests {
         let pos = |id: &str| rows.iter().position(|r| r.id == id).unwrap();
         assert!(pos("rt_health") > pos("rt_users_delete"));
         assert!(pos("srv_payments") > pos("rt_health"));
-        assert!(pos(SEC_ENVIRONMENTS) > pos("rt_refunds"));
-        assert!(pos("env:local") == pos(SEC_ENVIRONMENTS) + 1);
-        assert!(rows.iter().any(|r| r.id == "ds:users"));
+        assert!(
+            rows.iter()
+                .all(|r| { !matches!(r.kind, RowKind::Environment { .. } | RowKind::Dataset) })
+        );
+    }
+
+    #[test]
+    fn each_tab_lists_only_its_rows() {
+        let ws = workspace();
+        let c = HashSet::new();
+        let env = flatten(&ws, &c, "local", SidebarTab::Environments);
+        assert!(!env.is_empty() && env.iter().all(|r| r.id.starts_with("env:") && r.depth == 0));
+        let ds = flatten(&ws, &c, "local", SidebarTab::Datasets);
+        assert!(ds.iter().any(|r| r.id == "ds:users"));
+        assert!(ds.iter().all(|r| r.id.starts_with("ds:")));
+        // Collapsing a server does not affect other tabs.
+        let c: HashSet<String> = ["srv_users".to_string()].into();
+        assert_eq!(flatten(&ws, &c, "local", SidebarTab::Environments), env);
+    }
+
+    #[test]
+    fn sidebar_tab_ids_are_unique_and_parse() {
+        let ids: HashSet<_> = SIDEBAR_TABS.iter().map(|t| t.id()).collect();
+        assert_eq!(ids.len(), SIDEBAR_TABS.len());
+        for t in SIDEBAR_TABS {
+            assert_eq!(SidebarTab::from_id(t.id()), t);
+        }
+        assert_eq!(SidebarTab::from_id("history"), SidebarTab::Servers);
+        assert_eq!(SidebarTab::from_id(""), SidebarTab::Servers);
+        assert_eq!(SidebarTab::of_row("env:x"), SidebarTab::Environments);
+        assert_eq!(SidebarTab::of_row("ds:x"), SidebarTab::Datasets);
+        assert_eq!(SidebarTab::of_row("rt_x"), SidebarTab::Servers);
     }
 
     #[test]
     fn collapsing_hides_descendants() {
         let ws = workspace();
         let c: HashSet<String> = ["fld_users".to_string(), "srv_payments".to_string()].into();
-        let rows = flatten(&ws, &c, "local");
+        let rows = flatten(&ws, &c, "local", SidebarTab::Servers);
         let ids = ids(&rows);
         assert!(ids.contains(&"fld_users"));
         assert!(!ids.contains(&"rt_users_get"));
@@ -324,7 +418,7 @@ mod tests {
     #[test]
     fn active_environment_is_marked() {
         let ws = workspace();
-        let rows = flatten(&ws, &HashSet::new(), "staging");
+        let rows = flatten(&ws, &HashSet::new(), "staging", SidebarTab::Environments);
         let active: Vec<&str> = rows
             .iter()
             .filter(|r| matches!(r.kind, RowKind::Environment { active: true }))
@@ -375,7 +469,6 @@ mod tests {
                 .all(|l| *l != "Set active")
         );
         assert!(labels(&RowKind::Environment { active: false }, false).contains(&"Set active"));
-        assert!(menu_items(&RowKind::Section, false).is_empty());
         assert_eq!(labels(&RowKind::Dataset, false), ["Reset to seed"]);
     }
 }

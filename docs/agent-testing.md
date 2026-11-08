@@ -129,3 +129,10 @@ use `capture: false` (or `--no-capture`) to keep going. On Linux install `grim` 
 - A native macOS menu cannot be seen or screenshotted: assert on `ui.state.menus` / `ui.menu list`, which reflect the built model exactly. To screenshot the bar, `ui.command set_menu_style in_window`.
 - A greyed item is an item whose handler is not registered, so `ui.invoke_action` on it fails. When state changed in the same call sequence, an action is dispatched after the next frames; input tools wait for that, so no extra `ui.wait_for_idle` is needed for it.
 - `ui.menu invoke` on a Recent entry accepts the bare workspace name as the last path segment.
+
+## Sidebar (M3.3)
+
+- `ui.state`: `sidebar {tab, tabs[{id,label,count}]}`, `tree.visible_rows` (rows of the active tab).
+- `ui.command {command: set_sidebar_tab, tab: servers|environments|datasets}`; `ui.events` kind `sidebar` `{tab}`.
+- Dev ids: `sidebar-tabs`, `sidebar-tab-<tab>`, `sidebar-title`, `sidebar-new-server`, `sidebar-empty-<tab>`, `sidebar-empty-new-server`.
+- Rows of a hidden tab are not in `ui.tree`; click the tab first. Fixtures `sidebar-*`; scenario `m033-sidebar`.

@@ -58,10 +58,16 @@ fn to_items(entries: &[MenuEntry]) -> Vec<MenuItem> {
             MenuEntry::Services => {
                 out.push(MenuItem::os_submenu("Services", SystemMenuType::Services))
             }
-            MenuEntry::Action { id, label } => {
+            MenuEntry::Action { id, label, checked } => {
                 if let Some(info) = actions::find(id) {
+                    // gpui 0.2.2 native items have no check state: prefix a check mark.
+                    let name = if *checked {
+                        format!("✓ {label}")
+                    } else {
+                        label.clone()
+                    };
                     out.push(MenuItem::Action {
-                        name: label.clone().into(),
+                        name: name.into(),
                         action: (info.build)(),
                         os_action: os_action(id),
                     });
@@ -139,6 +145,7 @@ impl Shell {
         c.active_tab_is_preview = self.tabs.active().is_some_and(|t| t.preview);
         c.tab_titles = self.tabs.iter().map(|t| t.title.clone()).collect();
         c.left_dock = self.layout.left_open;
+        c.sidebar_tab = self.sidebar_tab.id();
         c.bottom_dock = self.layout.bottom_open;
         c.right_dock = self.layout.right_open;
         c.traffic_rows = self.traffic.len();

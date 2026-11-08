@@ -110,6 +110,13 @@ fixtures!(
     "menubar-disabled",
     "menubar-collapsed",
     "about-box",
+    "sidebar-servers",
+    "sidebar-environments",
+    "sidebar-datasets",
+    "sidebar-servers-empty",
+    "sidebar-environments-empty",
+    "sidebar-datasets-empty",
+    "sidebar-many-servers",
 );
 
 pub fn named_steps(name: &str) -> Result<Vec<Step>, String> {

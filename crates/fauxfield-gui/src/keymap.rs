@@ -213,6 +213,9 @@ mod tests {
             ("toggle_left_dock", "secondary-b"),
             ("toggle_bottom_dock", "secondary-`"),
             ("toggle_right_dock", "secondary-alt-b"),
+            ("show_sidebar_servers", "secondary-alt-1"),
+            ("show_sidebar_environments", "secondary-alt-2"),
+            ("show_sidebar_datasets", "secondary-alt-3"),
             ("select_theme", "secondary-k secondary-t"),
             ("reset_state", "secondary-shift-backspace"),
         ] {

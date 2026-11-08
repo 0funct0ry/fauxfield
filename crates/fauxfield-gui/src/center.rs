@@ -1060,28 +1060,35 @@ fn toggle_button(
     crate::dev_id!(
         div()
             .id(id)
-            // 36x20 pt: a comfortable hit area (UX103) around the 16 pt knob track.
-            .w(px(36.))
+            // MOCKUP .toggle: 26x14 track, 10 pt knob inset 2. The element is 26x20 so the hit
+            // area stays >= 20 pt tall (UX103); the track is drawn centred inside it.
+            .w(px(26.))
             .h(px(20.))
             .flex_none()
-            .rounded_full()
-            .cursor_pointer()
-            .border_1()
-            .border_color(t.border)
-            .bg(if on { t.accent } else { t.surface })
             .flex()
             .items_center()
-            .px(px(2.))
-            .when(on, |d| d.justify_end())
+            .cursor_pointer()
             .on_click(on_click)
-            .child(div().size(px(14.)).rounded_full().bg(
-                // A light knob on the accent fill; the light theme's text colour is dark.
-                if on && t.appearance == crate::theme_model::Appearance::Light {
-                    t.background
-                } else {
-                    t.text
-                },
-            )),
+            .child(
+                div()
+                    .w(px(26.))
+                    .h(px(14.))
+                    .rounded_full()
+                    .bg(if on {
+                        t.border_focused
+                    } else {
+                        t.element_selected
+                    })
+                    .flex()
+                    .items_center()
+                    .px(px(2.))
+                    .when(on, |d| d.justify_end())
+                    .child(div().size(px(10.)).rounded_full().bg(if on {
+                        t.text
+                    } else {
+                        t.text_muted
+                    }),),
+            ),
         id,
         Button,
         if on { "On" } else { "Off" },
@@ -1251,7 +1258,7 @@ impl Shell {
                         .on_click(
                             cx.listener(move |this, _, _, cx| this.open_recent(&open_path, cx))
                         )
-                        .tooltip(crate::lifecycle::tip(path_s.clone()))
+                        .tooltip(crate::ui::tooltip(path_s.clone()))
                         .child(icon("folder", 16., t.icon_muted))
                         .child(
                             div()
@@ -1298,7 +1305,7 @@ impl Shell {
                             .rounded(px(4.))
                             .cursor_pointer()
                             .hover(move |s| s.bg(hover))
-                            .tooltip(crate::lifecycle::tip("Remove from recent".to_string()))
+                            .tooltip(crate::ui::tooltip("Remove from recent".to_string()))
                             .on_click(
                                 cx.listener(move |this, _, _, cx| this.remove_recent(&rm_path, cx))
                             )

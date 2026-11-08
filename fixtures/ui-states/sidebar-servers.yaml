@@ -1,0 +1,4 @@
+# UI state fixture (M3.3): example workspace, Servers tab.
+steps:
+  - reset
+  - wait_idle

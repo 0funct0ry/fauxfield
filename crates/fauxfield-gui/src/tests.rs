@@ -288,10 +288,8 @@ fn row_context_menu_opens_and_runs_items(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(read(&view, cx, |s| s.ws.running_count()), 1);
 
-    // Sections have no menu.
-    view.update(cx, |s, cx| {
-        s.open_menu(crate::tree::SEC_DATASETS, 0.0, 0.0, cx)
-    });
+    // A row of a hidden sidebar tab has no menu.
+    view.update(cx, |s, cx| s.open_menu("ds:users", 0.0, 0.0, cx));
     assert!(read(&view, cx, |s| s.menu.is_none()));
     // Delete removes the route from the workspace files.
     view.update_in(cx, |s, w, cx| {
@@ -301,6 +299,7 @@ fn row_context_menu_opens_and_runs_items(cx: &mut TestAppContext) {
     assert!(read(&view, cx, |s| s.ws.find_route("rt_health").is_none()));
 
     view.update_in(cx, |s, w, cx| {
+        s.set_sidebar_tab(crate::tree::SidebarTab::Environments, cx);
         s.open_menu("env:staging", 0.0, 0.0, cx);
         s.run_menu(MenuAct::SetActive, w, cx);
     });
@@ -1151,4 +1150,43 @@ fn narrow_windows_collapse_to_the_hamburger(cx: &mut TestAppContext) {
     cx.simulate_resize(gpui::size(gpui::px(1200.), gpui::px(700.)));
     cx.run_until_parked();
     assert!(!read(&view, cx, |s| s.bar_collapsed()));
+}
+
+#[gpui::test]
+fn sidebar_tabs_switch_reveal_and_guard_hidden_rows(cx: &mut TestAppContext) {
+    use crate::tree::SidebarTab;
+    let (view, cx) = setup(cx, None);
+    assert_eq!(read(&view, cx, |s| s.sidebar_tab), SidebarTab::Servers);
+
+    // The shipped binding switches tabs and reopens a hidden dock.
+    view.update(cx, |s, cx| s.toggle_left(cx));
+    cx.simulate_keystrokes("secondary-alt-2");
+    assert_eq!(read(&view, cx, |s| s.sidebar_tab), SidebarTab::Environments);
+    assert!(read(&view, cx, |s| s.layout.left_open));
+    assert_eq!(
+        read(&view, cx, |s| s.layout.sidebar_tab.clone()),
+        "environments"
+    );
+
+    // Reveal moves the tab to the row's owner.
+    view.update(cx, |s, _| s.reveal_row("rt_health"));
+    assert_eq!(read(&view, cx, |s| s.sidebar_tab), SidebarTab::Servers);
+    view.update(cx, |s, _| s.reveal_row("ds:users"));
+    assert_eq!(read(&view, cx, |s| s.sidebar_tab), SidebarTab::Datasets);
+
+    // A selected row on a hidden tab is not actionable.
+    view.update(cx, |s, _| s.reveal_row("rt_health"));
+    view.update(cx, |s, cx| s.set_sidebar_tab(SidebarTab::Datasets, cx));
+    assert_eq!(read(&view, cx, |s| s.selected_visible()), None);
+    view.update_in(cx, |s, w, cx| s.run_action_id("delete", w, cx));
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s.ws.find_route("rt_health").is_some()));
+
+    // Editor-tab activation does not change the sidebar tab.
+    view.update(cx, |s, cx| {
+        s.open_tab("rt_users_get", TabKind::Route, "Get user", false);
+        s.set_sidebar_tab(SidebarTab::Environments, cx);
+        s.activate_tab(0, cx);
+    });
+    assert_eq!(read(&view, cx, |s| s.sidebar_tab), SidebarTab::Environments);
 }

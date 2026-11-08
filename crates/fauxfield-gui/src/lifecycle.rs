@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use gpui::{
-    Context, InteractiveElement, IntoElement, ParentElement, PathPromptOptions, Render,
-    SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*, px,
+    Context, InteractiveElement, IntoElement, ParentElement, PathPromptOptions,
+    StatefulInteractiveElement, Styled, Window, div, px,
 };
 
 use crate::run::{NoticeAction, ToastAction};
@@ -57,33 +57,6 @@ pub struct Lifecycle {
     pub method_menu: Option<(String, f32, f32)>,
     /// When each workspace was opened in this session.
     pub opened_at: std::collections::HashMap<PathBuf, SystemTime>,
-}
-
-/// A one-line tooltip view.
-struct TextTip(SharedString);
-
-impl Render for TextTip {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let t = crate::theme::theme(cx).clone();
-        div()
-            .px(px(8.))
-            .py(px(4.))
-            .rounded(px(4.))
-            .border_1()
-            .border_color(t.border)
-            .bg(t.elevated)
-            .text_size(px(12.))
-            .text_color(t.text)
-            .child(self.0.clone())
-    }
-}
-
-/// A tooltip builder showing `text`.
-pub(crate) fn tip(text: String) -> impl Fn(&mut Window, &mut gpui::App) -> gpui::AnyView + 'static {
-    move |_, cx| {
-        let s = SharedString::from(text.clone());
-        cx.new(|_| TextTip(s.clone())).into()
-    }
 }
 
 fn relative(t: SystemTime) -> String {

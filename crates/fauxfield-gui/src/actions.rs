@@ -16,6 +16,9 @@ actions!(
         ToggleLeftDock,
         ToggleBottomDock,
         ToggleRightDock,
+        ShowSidebarServers,
+        ShowSidebarEnvironments,
+        ShowSidebarDatasets,
         ShowTraffic,
         ShowProblems,
         ShowLogs,
@@ -132,6 +135,21 @@ pub static ACTIONS: &[ActionInfo] = &[
         SwitchEnvironment
     ),
     row!("toggle_left_dock", "View: Toggle Left Dock", ToggleLeftDock),
+    row!(
+        "show_sidebar_servers",
+        "Sidebar: Show Servers",
+        ShowSidebarServers
+    ),
+    row!(
+        "show_sidebar_environments",
+        "Sidebar: Show Environments",
+        ShowSidebarEnvironments
+    ),
+    row!(
+        "show_sidebar_datasets",
+        "Sidebar: Show Datasets",
+        ShowSidebarDatasets
+    ),
     row!(
         "toggle_bottom_dock",
         "View: Toggle Bottom Dock",

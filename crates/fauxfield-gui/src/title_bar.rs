@@ -47,7 +47,7 @@ impl Shell {
                         "No workspace".to_string()
                     }))
                     .child(icon("chevron-down", 12., t.icon_muted))
-                    .tooltip(crate::lifecycle::tip(if self.store.is_some() {
+                    .tooltip(crate::ui::tooltip(if self.store.is_some() {
                         self.ws.root.display().to_string()
                     } else {
                         "No workspace is open".to_string()

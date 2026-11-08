@@ -1,0 +1,20 @@
+schema = 1
+id = "srv_service_08"
+name = "Service 08"
+enabled = true
+host = "127.0.0.1"
+port = 4708
+
+[[routes]]
+id = "rt_service_08_health"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_service_08_health_1"
+  name = "200 OK"
+  default = true
+  status = 200
+  content_type = "application/json"
+  body = '''{ "ok": true }'''

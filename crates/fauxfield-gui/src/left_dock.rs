@@ -10,21 +10,20 @@ use crate::theme::Theme;
 use crate::tree::{self, RowKind, TreeRow};
 use crate::ui::{ROW_H, icon, method_badge, status_dot};
 
+pub(crate) const SIDEBAR_TAB_H: f32 = 30.;
+
 impl Shell {
     pub(crate) fn render_left_dock(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        let rows = tree::flatten(&self.ws, &self.collapsed, &self.active_env);
-        div()
-            .id("left-dock")
-            .w(px(self.layout.left_width))
-            .h_full()
-            .flex_none()
-            .flex()
-            .flex_col()
-            .bg(t.panel)
-            .child(self.render_workspace_header(t, cx))
-            .child(crate::dev_id!(
+        let tab = self.sidebar_tab;
+        let rows = tree::flatten(&self.ws, &self.collapsed, &self.active_env, tab);
+        let count = self.sidebar_count(tab);
+        let body: gpui::AnyElement = if rows.is_empty() {
+            self.render_sidebar_empty(t, tab, cx).into_any_element()
+        } else {
+            crate::dev_id!(
                 div()
-                    .id("tree")
+                    // One id per tab keeps each tab's scroll position for the session.
+                    .id(crate::ui::eid(format!("tree-{}", tab.id())))
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
@@ -35,7 +34,214 @@ impl Shell {
                 List,
                 "Workspace tree",
                 None
-            ))
+            )
+            .into_any_element()
+        };
+        div()
+            .id("left-dock")
+            .w(px(self.layout.left_width))
+            .h_full()
+            .flex_none()
+            .flex()
+            .flex_col()
+            .bg(t.panel)
+            .child(self.render_workspace_header(t, cx))
+            .child(self.render_sidebar_tabs(t, cx))
+            .child(self.render_sidebar_title(t, tab, count, cx))
+            .child(body)
+    }
+
+    /// Item count shown in the panel title: servers, environments or datasets.
+    pub(crate) fn sidebar_count(&self, tab: tree::SidebarTab) -> usize {
+        match tab {
+            tree::SidebarTab::Servers => self.ws.servers.len(),
+            tree::SidebarTab::Environments => self.ws.environments.len(),
+            tree::SidebarTab::Datasets => self.ws.datasets.len(),
+        }
+    }
+
+    fn tab_tooltip(&self, tab: tree::SidebarTab) -> String {
+        let mac = crate::keymap::Platform::current() == crate::keymap::Platform::Macos;
+        match self.keymap.binding_for(tab.action_id()) {
+            Some(keys) => format!(
+                "{} ({})",
+                tab.label(),
+                crate::keymap::display_keys(keys, mac)
+            ),
+            None => tab.label().to_string(),
+        }
+    }
+
+    fn render_sidebar_tabs(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        let (hover, text, muted, accent) = (t.element_hover, t.text, t.icon_muted, t.accent);
+        let buttons = tree::SIDEBAR_TABS.into_iter().map(|tab| {
+            let active = tab == self.sidebar_tab;
+            let tip = self.tab_tooltip(tab);
+            crate::dev_id_meta!(
+                div()
+                    .id(crate::ui::eid(format!("sidebar-tab-{}", tab.id())))
+                    .w(px(40.))
+                    .h(px(SIDEBAR_TAB_H))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .cursor_pointer()
+                    .border_b_2()
+                    .border_color(if active {
+                        accent
+                    } else {
+                        gpui::transparent_black()
+                    })
+                    .when(!active, |d| d.hover(move |s| s.bg(hover)))
+                    .tooltip(crate::ui::tooltip(tip.clone()))
+                    .on_click(cx.listener(move |this, _, _, cx| this.set_sidebar_tab(tab, cx)))
+                    .child(icon(tab.icon(), 16., if active { text } else { muted })),
+                crate::dev_mcp::tree::Meta {
+                    tooltip: true,
+                    ..Default::default()
+                },
+                format!("sidebar-tab-{}", tab.id()),
+                Tab,
+                tab.label(),
+                Action(tab.action_id())
+            )
+        });
+        crate::dev_id!(
+            div()
+                .id("sidebar-tabs")
+                .h(px(SIDEBAR_TAB_H))
+                .w_full()
+                .flex_none()
+                .flex()
+                .flex_row()
+                .border_b_1()
+                .border_color(t.border_variant)
+                .children(buttons),
+            "sidebar-tabs",
+            TabList,
+            "Sidebar tabs",
+            None
+        )
+    }
+
+    fn render_sidebar_title(
+        &self,
+        t: &Theme,
+        tab: tree::SidebarTab,
+        count: usize,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let sel = t.element_selected;
+        let mac = crate::keymap::Platform::current() == crate::keymap::Platform::Macos;
+        let tip = match self.keymap.binding_for("new_server") {
+            Some(k) => format!("New server… ({})", crate::keymap::display_keys(k, mac)),
+            None => "New server…".to_string(),
+        };
+        crate::dev_id!(
+            div()
+                .id("sidebar-title")
+                .h(px(ROW_H))
+                .w_full()
+                .flex_none()
+                .flex()
+                .flex_row()
+                .items_center()
+                .pl(px(10.))
+                .pr(px(6.))
+                .gap(px(4.))
+                .text_size(px(11.))
+                .text_color(t.text_muted)
+                .child(
+                    div()
+                        .flex_1()
+                        .child(format!("{} {count}", tab.label().to_uppercase()))
+                )
+                .when(tab == tree::SidebarTab::Servers, |d| {
+                    d.child(crate::dev_id_meta!(
+                        div()
+                            .id("sidebar-new-server")
+                            .size(px(20.))
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(3.))
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(sel))
+                            .tooltip(crate::ui::tooltip(tip.clone()))
+                            .on_click(cx.listener(|this, _, w, cx| {
+                                this.begin_prompt(crate::shell::PromptAction::NewServer, "", w, cx)
+                            }))
+                            .child(icon("plus", 14., t.icon_muted)),
+                        crate::dev_mcp::tree::Meta {
+                            tooltip: true,
+                            ..Default::default()
+                        },
+                        "sidebar-new-server",
+                        Button,
+                        "New server",
+                        Action("new_server")
+                    ))
+                }),
+            "sidebar-title",
+            Row,
+            tab.label(),
+            None
+        )
+    }
+
+    fn render_sidebar_empty(
+        &self,
+        t: &Theme,
+        tab: tree::SidebarTab,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let (hover, border) = (t.element_hover, t.border);
+        crate::dev_id!(
+            div()
+                .id(crate::ui::eid(format!("sidebar-empty-{}", tab.id())))
+                .flex_1()
+                .min_h_0()
+                .w_full()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .gap(px(8.))
+                .px(px(12.))
+                .text_size(px(12.))
+                .text_color(t.text_muted)
+                .child(div().text_center().child(tab.empty_text()))
+                .when(tab == tree::SidebarTab::Servers, |d| {
+                    d.child(crate::dev_id!(
+                        div()
+                            .id("sidebar-empty-new-server")
+                            .h(px(24.))
+                            .px(px(10.))
+                            .flex()
+                            .items_center()
+                            .rounded(px(4.))
+                            .border_1()
+                            .border_color(border)
+                            .text_color(t.text)
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(hover))
+                            .on_click(cx.listener(|this, _, w, cx| {
+                                this.begin_prompt(crate::shell::PromptAction::NewServer, "", w, cx)
+                            }))
+                            .child("New server…"),
+                        "sidebar-empty-new-server",
+                        Button,
+                        "New server…",
+                        Action("new_server")
+                    ))
+                }),
+            format!("sidebar-empty-{}", tab.id()),
+            Text,
+            tab.empty_text(),
+            None
+        )
     }
 
     fn render_tree_row(&self, t: &Theme, r: &TreeRow, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -47,7 +253,6 @@ impl Shell {
         let dots_id = r.id.clone();
         let group = crate::ui::eid(format!("grp-{}", r.id));
         let group_name = format!("grp-{}", r.id);
-        let is_section = matches!(r.kind, RowKind::Section);
         let is_server = matches!(r.kind, RowKind::Server { .. });
         let disabled = matches!(r.kind, RowKind::Server { enabled: false, .. });
         let lead: gpui::AnyElement = match &r.kind {
@@ -59,14 +264,14 @@ impl Shell {
             )
             .into_any_element(),
             RowKind::Route { method } => method_badge(t, method).into_any_element(),
-            RowKind::Section | RowKind::Workspace => div().into_any_element(),
+            RowKind::Workspace => div().into_any_element(),
             RowKind::Environment { active } => icon(
                 if *active { "check" } else { "layers" },
                 13.,
                 if *active { t.created } else { t.icon_muted },
             )
             .into_any_element(),
-            RowKind::Dataset => icon("server", 13., t.icon_muted).into_any_element(),
+            RowKind::Dataset => icon("table", 13., t.icon_muted).into_any_element(),
         };
         let chevron: gpui::AnyElement = if r.expandable {
             crate::dev_id!(
@@ -156,15 +361,11 @@ impl Shell {
                 .flex_row()
                 .items_center()
                 .gap(px(5.))
-                .pl(px(6. + (f32::from(r.depth) + 1.) * 12.))
+                .pl(px(6. + f32::from(r.depth) * 12.))
                 .pr(px(8.))
                 .cursor_pointer()
-                .text_size(px(if is_section { 11. } else { 13. }))
-                .text_color(if is_section || disabled {
-                    t.text_muted
-                } else {
-                    t.text
-                })
+                .text_size(px(13.))
+                .text_color(if disabled { t.text_muted } else { t.text })
                 .when(selected, |d| d.bg(sel))
                 .hover(move |s| s.bg(hover))
                 .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| {
@@ -183,11 +384,7 @@ impl Shell {
                 )
                 .child(chevron)
                 .child(lead)
-                .child(div().flex_1().truncate().child(if is_section {
-                    r.label.to_uppercase()
-                } else {
-                    r.label.clone()
-                }))
+                .child(div().flex_1().truncate().child(r.label.clone()))
                 .children(match &r.kind {
                     RowKind::Server { port, enabled, .. } => Some(
                         div()
@@ -250,7 +447,7 @@ impl Shell {
                         .min_w_0()
                         .truncate()
                         .text_size(px(12.))
-                        .tooltip(crate::lifecycle::tip(path))
+                        .tooltip(crate::ui::tooltip(path))
                         .child(name.clone()),
                     crate::dev_mcp::tree::Meta {
                         tooltip: true,

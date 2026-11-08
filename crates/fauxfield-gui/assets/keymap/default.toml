@@ -99,6 +99,19 @@ keys = "secondary-9"
 action = "quit"
 keys = "secondary-q"
 
+# M3.3: sidebar tabs (`secondary` is Cmd on macOS, Ctrl elsewhere).
+[[binding]]
+action = "show_sidebar_servers"
+keys = "secondary-alt-1"
+
+[[binding]]
+action = "show_sidebar_environments"
+keys = "secondary-alt-2"
+
+[[binding]]
+action = "show_sidebar_datasets"
+keys = "secondary-alt-3"
+
 # M3.2: application menu bindings.
 [[binding]]
 action = "open_folder"

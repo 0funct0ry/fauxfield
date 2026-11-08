@@ -1,0 +1,6 @@
+# UI state fixture (M3.3): empty workspace, Datasets tab.
+steps:
+  - reset
+  - open_workspace: fixtures/empty-workspace
+  - command: {command: set_sidebar_tab, tab: datasets}
+  - wait_idle

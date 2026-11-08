@@ -20,6 +20,7 @@ pub struct UiState {
     pub docks: Docks,
     pub bottom_tab: BottomTab,
     pub tree: TreeState,
+    pub sidebar: SidebarState,
     pub quick_search: PickerState,
     pub command_palette: PickerState,
     pub theme_selector: PickerState,
@@ -78,6 +79,8 @@ pub struct MenuItemState {
     pub label: String,
     pub enabled: bool,
     pub binding: Option<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub checked: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub items: Option<Vec<MenuItemState>>,
 }
@@ -94,10 +97,11 @@ fn menu_items(
             let enabled = entry_enabled(e, ctx);
             Some(match e {
                 MenuEntry::Separator | MenuEntry::Services => return None,
-                MenuEntry::Action { id, label } => MenuItemState {
+                MenuEntry::Action { id, label, checked } => MenuItemState {
                     id: id.to_string(),
                     label: label.clone(),
                     enabled,
+                    checked: *checked,
                     binding: ctx.binding(id).map(str::to_string),
                     items: None,
                 },
@@ -108,6 +112,7 @@ fn menu_items(
                         label: label.clone(),
                         enabled,
                         binding: None,
+                        checked: false,
                         items: None,
                     }
                 }
@@ -116,6 +121,7 @@ fn menu_items(
                     label: label.clone(),
                     enabled: false,
                     binding: None,
+                    checked: false,
                     items: None,
                 },
                 MenuEntry::Submenu {
@@ -128,6 +134,7 @@ fn menu_items(
                     label: label.clone(),
                     enabled,
                     binding: None,
+                    checked: false,
                     items: Some(menu_items(entries, ctx)),
                 },
             })
@@ -240,6 +247,21 @@ pub struct Docks {
 pub struct TreeState {
     pub selected: Option<String>,
     pub expanded: Vec<String>,
+    /// Row ids currently drawn (the active sidebar tab).
+    pub visible_rows: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct SidebarTabState {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct SidebarState {
+    pub tab: &'static str,
+    pub tabs: Vec<SidebarTabState>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
@@ -320,7 +342,17 @@ fn tab_dirty(shell: &Shell, kind: TabKind, id: &str) -> bool {
 
 /// Builds the snapshot with `generation` 0; [`Tracker::observe`] assigns the real one.
 pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option<&str>) -> UiState {
-    let rows = tree::flatten(&shell.ws, &shell.collapsed, &shell.active_env);
+    let visible = tree::flatten(
+        &shell.ws,
+        &shell.collapsed,
+        &shell.active_env,
+        shell.sidebar_tab,
+    );
+    // `expanded` describes the whole workspace, not just the visible tab.
+    let rows: Vec<_> = tree::SIDEBAR_TABS
+        .into_iter()
+        .flat_map(|t| tree::flatten(&shell.ws, &shell.collapsed, &shell.active_env, t))
+        .collect();
     let size = window.viewport_size();
     UiState {
         generation: 0,
@@ -371,6 +403,18 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
                 .iter()
                 .filter(|r| r.expandable && r.expanded)
                 .map(|r| r.id.clone())
+                .collect(),
+            visible_rows: visible.iter().map(|r| r.id.clone()).collect(),
+        },
+        sidebar: SidebarState {
+            tab: shell.sidebar_tab.id(),
+            tabs: tree::SIDEBAR_TABS
+                .into_iter()
+                .map(|t| SidebarTabState {
+                    id: t.id(),
+                    label: t.label(),
+                    count: shell.sidebar_count(t),
+                })
                 .collect(),
         },
         quick_search: picker(shell, PickerKind::Search),

@@ -77,6 +77,8 @@ pub struct MenuContext {
     pub active_tab_is_preview: bool,
     pub tab_titles: Vec<String>,
     pub left_dock: bool,
+    /// Active sidebar tab id (`servers`|`environments`|`datasets`).
+    pub sidebar_tab: &'static str,
     pub bottom_dock: bool,
     pub right_dock: bool,
     pub traffic_rows: usize,
@@ -110,6 +112,7 @@ impl MenuContext {
             active_tab_is_preview: false,
             tab_titles: Vec::new(),
             left_dock: true,
+            sidebar_tab: "servers",
             bottom_dock: true,
             right_dock: false,
             traffic_rows: 0,
@@ -134,6 +137,8 @@ pub enum MenuEntry {
     Action {
         id: &'static str,
         label: String,
+        /// Drawn with a check mark (radio-style groups such as View > Sidebar).
+        checked: bool,
     },
     /// An Open Recent entry; runs `OpenRecent { path }`.
     Recent {
@@ -202,6 +207,15 @@ fn act(id: &'static str, label: &str) -> MenuEntry {
     MenuEntry::Action {
         id,
         label: label.to_string(),
+        checked: false,
+    }
+}
+
+fn act_checked(id: &'static str, label: &str, checked: bool) -> MenuEntry {
+    MenuEntry::Action {
+        id,
+        label: label.to_string(),
+        checked,
     }
 }
 
@@ -361,6 +375,14 @@ pub fn build_menus(ctx: &MenuContext) -> Vec<MenuDef> {
             act("command_palette", "Command Palette…"),
             MenuEntry::Separator,
             act("toggle_left_dock", &dock(ctx.left_dock, "Left Dock")),
+            sub(
+                "sidebar",
+                "Sidebar",
+                crate::tree::SIDEBAR_TABS
+                    .iter()
+                    .map(|t| act_checked(t.action_id(), t.label(), ctx.sidebar_tab == t.id()))
+                    .collect(),
+            ),
             act("toggle_bottom_dock", &dock(ctx.bottom_dock, "Bottom Dock")),
             act("toggle_right_dock", &dock(ctx.right_dock, "Inspector")),
             MenuEntry::Separator,
@@ -517,8 +539,14 @@ pub fn enabled(id: &str, ctx: &MenuContext) -> bool {
         return false;
     }
     match id {
-        "new_server" | "close_workspace" | "rename_workspace" | "reveal_workspace"
-        | "switch_environment" => ctx.workspace_open,
+        "new_server"
+        | "close_workspace"
+        | "rename_workspace"
+        | "reveal_workspace"
+        | "switch_environment"
+        | "show_sidebar_servers"
+        | "show_sidebar_environments"
+        | "show_sidebar_datasets" => ctx.workspace_open,
         "new_route" | "new_folder" => ctx.current_server.is_some(),
         "create_workspace" | "open_folder" | "clear_recent" => true,
         "close_tab" => !ctx.tab_titles.is_empty(),
@@ -565,7 +593,7 @@ pub fn find_path(menus: &[MenuDef], id: &str) -> Option<Vec<String>> {
     fn walk(es: &[MenuEntry], id: &str, path: &mut Vec<String>) -> bool {
         for e in es {
             match e {
-                MenuEntry::Action { id: i, label } if *i == id => {
+                MenuEntry::Action { id: i, label, .. } if *i == id => {
                     path.push(label.clone());
                     return true;
                 }
@@ -606,6 +634,9 @@ pub fn why_disabled(id: &str, ctx: &MenuContext) -> &'static str {
             | "rename_workspace"
             | "reveal_workspace"
             | "switch_environment"
+            | "show_sidebar_servers"
+            | "show_sidebar_environments"
+            | "show_sidebar_datasets"
     ) {
         "no workspace open"
     } else if matches!(
@@ -925,7 +956,9 @@ mod tests {
         fn walk(es: &[MenuEntry], id: &str) -> Option<String> {
             for e in es {
                 match e {
-                    MenuEntry::Action { id: i, label } if *i == id => return Some(label.clone()),
+                    MenuEntry::Action { id: i, label, .. } if *i == id => {
+                        return Some(label.clone());
+                    }
                     MenuEntry::Submenu { entries, .. } => {
                         if let Some(l) = walk(entries, id) {
                             return Some(l);

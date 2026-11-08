@@ -85,3 +85,10 @@ fauxfield workspace rename "My Mocks"
 ```
 
 An invalid name (empty, over 80 characters, control characters) exits with code 3.
+
+## The sidebar
+
+The left dock has a header with the workspace name, an icon-only tab strip and one list. The tabs are
+Servers, Environments and Datasets; hover one for its name and shortcut (Cmd/Ctrl+Alt+1, 2, 3, also in
+View > Sidebar and the Command Palette). The selected tab is remembered between launches. Opening an
+item from Quick Search or Problems switches to the tab that owns it.

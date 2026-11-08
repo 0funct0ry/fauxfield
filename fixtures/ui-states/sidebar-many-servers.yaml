@@ -1,0 +1,5 @@
+# UI state fixture (M3.3): 40 servers; the strip and title stay fixed while the list scrolls.
+steps:
+  - reset
+  - open_workspace: fixtures/many-servers-workspace
+  - wait_idle

@@ -623,13 +623,13 @@ impl Shell {
                 .text_color(color)
                 .when(hi && enabled, |d| d.bg(t.element_hover))
                 .when(enabled, |d| d.cursor_pointer())
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .child(label_of(e).to_string()),
-                );
+                .child(div().flex_1().min_w_0().truncate().child(
+                    if matches!(e, MenuEntry::Action { checked: true, .. }) {
+                        format!("✓ {}", label_of(e))
+                    } else {
+                        label_of(e).to_string()
+                    },
+                ));
             if let Some(b) = &binding {
                 row = row.child(div().text_color(t.text_muted).child(b.clone()));
             }
@@ -716,7 +716,7 @@ impl Shell {
 fn find_label(entries: &[MenuEntry], id: &str) -> Option<String> {
     for e in entries {
         match e {
-            MenuEntry::Action { id: i, label } if *i == id => return Some(label.clone()),
+            MenuEntry::Action { id: i, label, .. } if *i == id => return Some(label.clone()),
             MenuEntry::Submenu { entries, .. } => {
                 if let Some(l) = find_label(entries, id) {
                     return Some(l);

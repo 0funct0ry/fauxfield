@@ -46,6 +46,8 @@ pub struct Layout {
     pub right_width: f32,
     pub bottom_height: f32,
     pub bottom_tab: BottomTab,
+    /// Selected sidebar tab id (`servers`|`environments`|`datasets`); unknown loads as servers.
+    pub sidebar_tab: String,
     pub theme: Option<String>,
     pub tabs: Vec<Tab>,
     pub active_tab: Option<String>,
@@ -62,6 +64,7 @@ impl Default for Layout {
             right_width: RIGHT.1,
             bottom_height: BOTTOM.1,
             bottom_tab: BottomTab::Traffic,
+            sidebar_tab: "servers".into(),
             theme: None,
             tabs: Vec::new(),
             active_tab: None,
@@ -82,6 +85,9 @@ impl Layout {
         self.left_width = clamp(self.left_width, LEFT);
         self.right_width = clamp(self.right_width, RIGHT);
         self.bottom_height = clamp(self.bottom_height, BOTTOM);
+        self.sidebar_tab = crate::tree::SidebarTab::from_id(&self.sidebar_tab)
+            .id()
+            .into();
         self
     }
 
@@ -168,5 +174,28 @@ mod tests {
         assert_eq!(l.bottom_height, BOTTOM.0);
         l.set_right_width(f32::NAN);
         assert_eq!(l.right_width, RIGHT.1);
+    }
+
+    #[test]
+    fn sidebar_tab_falls_back_to_servers() {
+        let dir = std::env::temp_dir().join(format!("ff-layout-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("layout.json");
+        for (json, want) in [
+            (r#"{"version":1}"#, "servers"),
+            (r#"{"version":1,"sidebar_tab":""}"#, "servers"),
+            (r#"{"version":1,"sidebar_tab":"history"}"#, "servers"),
+            (r#"{"version":1,"sidebar_tab":"datasets"}"#, "datasets"),
+        ] {
+            std::fs::write(&p, json).unwrap();
+            assert_eq!(Layout::load(&p).sidebar_tab, want);
+        }
+        let l = Layout {
+            sidebar_tab: "environments".into(),
+            ..Layout::default()
+        };
+        l.save(&p).unwrap();
+        assert_eq!(Layout::load(&p), l);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

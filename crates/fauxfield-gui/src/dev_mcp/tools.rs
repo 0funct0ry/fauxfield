@@ -271,7 +271,7 @@ pub fn register_ui_tools(registry: &mut Registry, bridge: Arc<dyn UiBridge>) {
         &bridge,
         "ui.command",
         "Typed operations that take arguments: open_tab, select_tab, toggle_dock, \
-         set_environment, search, set_menu_style. One flat object: `command` plus its arguments.",
+         set_environment, search, set_menu_style, set_sidebar_tab (tab). One flat object: `command` plus its arguments.",
     );
     input_tool::<KeyInput>(
         registry,

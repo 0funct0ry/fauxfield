@@ -168,6 +168,7 @@ async fn feed_events(bridge: Arc<dyn UiBridge>, events: EventBuffer) {
     let mut last_menu_open = Value::Null;
     let mut last_invoked_seq = 0u64;
     let mut last_about = false;
+    let mut last_sidebar = Value::Null;
     loop {
         tokio::time::sleep(Duration::from_millis(100)).await;
         let Ok(state) = bridge
@@ -242,6 +243,13 @@ async fn feed_events(bridge: Arc<dyn UiBridge>, events: EventBuffer) {
                 "about",
                 serde_json::json!({ "event": if about { "opened" } else { "closed" } }),
             );
+        }
+        let sidebar = state["sidebar"]["tab"].clone();
+        if sidebar != last_sidebar {
+            if !last_sidebar.is_null() {
+                events.push("sidebar", serde_json::json!({ "tab": sidebar }));
+            }
+            last_sidebar = sidebar;
         }
         let toasts = state["toasts"].as_array().cloned().unwrap_or_default();
         for t in &toasts {

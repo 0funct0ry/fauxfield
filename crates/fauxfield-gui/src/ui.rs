@@ -2,7 +2,8 @@
 //! primitives can be swapped later (docs/adr/002: no `gpui-component`). No colour literals.
 
 use gpui::{
-    Div, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div, px, svg,
+    AppContext, Context, Div, Hsla, InteractiveElement, IntoElement, ParentElement, Render,
+    SharedString, Styled, Window, div, px, svg,
 };
 
 use crate::assets::BUFFER_FONT;
@@ -162,4 +163,33 @@ macro_rules! dev_id_z {
     ($el:expr, $($rest:tt)*) => {
         $el
     };
+}
+
+/// A one-line tooltip view.
+struct TextTip(SharedString);
+
+impl Render for TextTip {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = crate::theme::theme(cx).clone();
+        div()
+            .px(px(8.))
+            .py(px(4.))
+            .rounded(px(4.))
+            .border_1()
+            .border_color(t.border)
+            .bg(t.elevated)
+            .text_size(px(12.))
+            .text_color(t.text)
+            .child(self.0.clone())
+    }
+}
+
+/// A tooltip builder (formerly `lifecycle::tip`) showing `text`.
+pub(crate) fn tooltip(
+    text: String,
+) -> impl Fn(&mut Window, &mut gpui::App) -> gpui::AnyView + 'static {
+    move |_, cx| {
+        let s = SharedString::from(text.clone());
+        cx.new(|_| TextTip(s.clone())).into()
+    }
 }

@@ -92,6 +92,8 @@ pub enum CommandName {
     SetMenuStyle,
     /// Open an in-window menu: `id` = `File` or `File/Open Recent` (for state fixtures).
     OpenMenu,
+    /// Select a sidebar tab: `tab` = `servers`, `environments` or `datasets`.
+    SetSidebarTab,
 }
 
 #[derive(Clone, Copy, Deserialize, JsonSchema)]
@@ -136,6 +138,9 @@ pub struct CommandInput {
     /// set_menu_style: `native` or `in_window`.
     #[serde(default)]
     pub style: Option<String>,
+    /// set_sidebar_tab: `servers`, `environments` or `datasets`.
+    #[serde(default)]
+    pub tab: Option<String>,
 }
 
 #[derive(Clone, Copy, Deserialize, JsonSchema)]
@@ -346,6 +351,19 @@ pub fn command(
             }
             shell.set_environment(&name, cx);
             Ok(json!({ "ok": true, "active_environment": shell.active_env }))
+        }
+        CommandName::SetSidebarTab => {
+            let name = need(input.tab, "tab", "set_sidebar_tab")?;
+            let Some(tab) = crate::tree::SIDEBAR_TABS
+                .into_iter()
+                .find(|t| t.id() == name)
+            else {
+                return fail(format!(
+                    "unknown tab {name:?}; use servers, environments or datasets"
+                ));
+            };
+            shell.set_sidebar_tab(tab, cx);
+            Ok(json!({ "ok": true, "tab": tab.id() }))
         }
         CommandName::SetMenuStyle => {
             let name = need(input.style, "style", "set_menu_style")?;
