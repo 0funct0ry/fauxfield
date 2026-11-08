@@ -25,6 +25,9 @@ clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 serde_json.workspace = true
 fauxfield-mcp.workspace = true
+fauxfield-model.workspace = true
+fauxfield-store.workspace = true
+serde.workspace = true
 tokio.workspace = true
 tracing-subscriber.workspace = true
 rmcp.workspace = true

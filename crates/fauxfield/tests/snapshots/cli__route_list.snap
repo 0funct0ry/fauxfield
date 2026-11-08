@@ -1,0 +1,18 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: redact(out)
+---
+{
+  "routes": [
+    {
+      "folder": null,
+      "id": "<rte-id>",
+      "kind": "http",
+      "method": "GET",
+      "name": "Health",
+      "path": "/health",
+      "responses": 1,
+      "server": "<srv-id>"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+# UI state fixture (M2): a workspace with no servers (empty tree and empty centre pane).
+steps:
+  - reset
+  - open_workspace: fixtures/empty-workspace
+  - wait_idle

@@ -12,6 +12,8 @@ workspace = true
 
 [dependencies]
 rmcp.workspace = true
+fauxfield-model.workspace = true
+fauxfield-store.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

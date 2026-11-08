@@ -371,8 +371,8 @@ verify-headless: ## Fail if the headless build depends on GPUI (architecture rul
 update: ## Update Cargo.lock to the newest compatible versions (review the diff before committing)
 	$(CARGO) update
 
-schema: ## (M2) Regenerate the JSON Schemas under docs/schema/
-	$(call not_yet,M2,schema)
+schema: ## Regenerate the server-file JSON Schema (site/public/schema/v1/server.json)
+	$(CARGO) xtask schema
 
 
 ##@ Aggregates

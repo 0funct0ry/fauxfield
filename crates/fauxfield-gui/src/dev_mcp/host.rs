@@ -49,6 +49,11 @@ pub fn start(opts: DevMcpOptions, window: WindowHandle<Shell>, cx: &mut App) {
         features: vec!["dev-mcp"],
     });
     register_ui_tools(&mut registry, bridge.clone());
+    // Product tools edit the same store the window shows (SPEC §11.4: one in-process host).
+    fauxfield_mcp::workspace_tools::register_workspace_tools(
+        &mut registry,
+        std::sync::Arc::new(shared_store),
+    );
     let events = EventBuffer::default();
     fauxfield_mcp::events::register(&mut registry, events.clone());
     let recorder = Recorder::default();
@@ -172,4 +177,15 @@ async fn feed_events(bridge: Arc<dyn UiBridge>, events: EventBuffer) {
         }
         last_toasts = toasts;
     }
+}
+
+static STORE: std::sync::Mutex<Option<fauxfield_store::Store>> = std::sync::Mutex::new(None);
+
+/// The store of the workspace the window shows; set by `Shell` when it opens one.
+pub fn publish_store(store: Option<fauxfield_store::Store>) {
+    *STORE.lock().unwrap_or_else(|p| p.into_inner()) = store;
+}
+
+fn shared_store() -> Option<fauxfield_store::Store> {
+    STORE.lock().unwrap_or_else(|p| p.into_inner()).clone()
 }

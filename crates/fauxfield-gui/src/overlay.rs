@@ -23,6 +23,7 @@ fn placeholder(kind: PickerKind) -> &'static str {
         PickerKind::Palette => "Type a command…",
         PickerKind::Theme => "Select a theme (Esc reverts)…",
         PickerKind::Environment => "Switch environment…",
+        PickerKind::Prompt => "Type a value, Enter to confirm, Esc to cancel",
     }
 }
 
@@ -34,6 +35,7 @@ impl Shell {
             Some(PickerKind::Search) => ("quick-search", "Quick Search"),
             Some(PickerKind::Palette) => ("command-palette", "Command Palette"),
             Some(PickerKind::Theme) => ("theme-selector", "Theme selector"),
+            Some(PickerKind::Prompt) => ("prompt", "Prompt"),
             _ => ("environment-picker", "Environment picker"),
         }
     }

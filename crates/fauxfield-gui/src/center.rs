@@ -7,11 +7,11 @@ use gpui::{
 };
 
 use crate::assets::BUFFER_FONT;
-use crate::mock::{Environment, Route, Server};
 use crate::shell::{ROUTE_SUBTABS, SERVER_SECTIONS, Shell};
 use crate::tabs::{Tab, TabKind};
 use crate::theme::Theme;
 use crate::ui::{ROW_H, TAB_BAR_H, icon, status_dot, toolbar_button};
+use crate::view::{Environment, Route, Server};
 
 /// Drag payload of a tab being reordered.
 #[derive(Clone)]
@@ -70,6 +70,7 @@ impl Shell {
             .flex_col()
             .bg(t.editor)
             .child(self.render_tab_bar(t, cx))
+            .children((!self.conflicts.is_empty()).then(|| self.render_merge_banner(t, cx)))
             .child(
                 div()
                     .id("tab-body")
@@ -252,23 +253,45 @@ impl Shell {
                     .gap(px(10.))
                     .border_b_1()
                     .border_color(t.border_variant)
-                    .child(
+                    .child(crate::dev_id!(
                         div()
+                            .id(crate::ui::eid(format!("route-method-{}", r.id)))
                             .px(px(8.))
                             .py(px(2.))
                             .rounded(px(4.))
                             .bg(t.element_selected)
+                            .cursor_pointer()
                             .font_family(BUFFER_FONT)
                             .text_size(px(12.))
                             .text_color(t.method_color(&r.method))
+                            .on_click(cx.listener(|this, _, w, cx| this.run_action_id(
+                                "edit_route_method",
+                                w,
+                                cx
+                            )))
                             .child(r.method.clone()),
-                    )
-                    .child(
+                        format!("route-method-{}", r.id),
+                        Button,
+                        "Route method",
+                        Action("edit_route_method")
+                    ))
+                    .child(crate::dev_id!(
                         div()
+                            .id(crate::ui::eid(format!("route-path-{}", r.id)))
+                            .cursor_pointer()
                             .font_family(BUFFER_FONT)
                             .text_size(px(14.))
+                            .on_click(cx.listener(|this, _, w, cx| this.run_action_id(
+                                "edit_route_path",
+                                w,
+                                cx
+                            )))
                             .child(format!("{}{}", s.prefix, r.path)),
-                    )
+                        format!("route-path-{}", r.id),
+                        Button,
+                        "Route path",
+                        Action("edit_route_path")
+                    ))
                     .child(
                         div()
                             .text_size(px(12.))
@@ -329,7 +352,7 @@ impl Shell {
             )
             .child(
                 div().flex_1().min_h_0().child(match sub {
-                    0 => self.render_responses(t, r).into_any_element(),
+                    0 => self.render_responses(t, r, cx).into_any_element(),
                     n => div()
                         .p(px(16.))
                         .text_color(t.text_muted)
@@ -344,8 +367,14 @@ impl Shell {
             )
     }
 
-    fn render_responses(&self, t: &Theme, r: &Route) -> impl IntoElement {
-        let first = r.responses.first().cloned();
+    fn render_responses(&self, t: &Theme, r: &Route, cx: &mut Context<Self>) -> impl IntoElement {
+        let sel = self
+            .resp_sel
+            .get(&r.id)
+            .copied()
+            .unwrap_or(0)
+            .min(r.responses.len().saturating_sub(1));
+        let first = r.responses.get(sel).cloned();
         div()
             .size_full()
             .flex()
@@ -359,6 +388,7 @@ impl Shell {
                     .border_color(t.border_variant)
                     .bg(t.panel)
                     .children(r.responses.iter().enumerate().map(|(i, resp)| {
+                        let rid = r.id.clone();
                         crate::dev_id!(
                             div()
                                 .id(crate::ui::eid(format!("resp-{}-{i}", r.id)))
@@ -367,7 +397,12 @@ impl Shell {
                                 .flex()
                                 .items_center()
                                 .gap(px(6.))
-                                .when(i == 0, |d| d.bg(t.element_selected))
+                                .cursor_pointer()
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.resp_sel.insert(rid.clone(), i);
+                                    cx.notify();
+                                }))
+                                .when(i == sel, |d| d.bg(t.element_selected))
                                 .child(
                                     div()
                                         .text_size(px(11.))
@@ -379,7 +414,7 @@ impl Shell {
                             format!("resp-{}-{i}", r.id),
                             Row,
                             &resp.name,
-                            None
+                            Response(r.id.clone(), i)
                         )
                     })),
             )
@@ -404,9 +439,40 @@ impl Shell {
                                     .gap(px(16.))
                                     .text_size(px(12.))
                                     .text_color(t.text_muted)
-                                    .child(format!("Status {}", resp.status))
-                                    .child(format!("Delay {} ms", resp.delay_ms))
-                                    .child(resp.content_type.clone()),
+                                    .child(field_button(
+                                        "resp-status",
+                                        format!("Status {}", resp.status),
+                                        "edit_response_status",
+                                        cx,
+                                    ))
+                                    .child(field_button(
+                                        "resp-delay",
+                                        format!("Delay {} ms", resp.delay_ms),
+                                        "edit_response_delay",
+                                        cx,
+                                    ))
+                                    .child(field_button(
+                                        "resp-content-type",
+                                        if resp.content_type.is_empty() {
+                                            "(no content type)".to_string()
+                                        } else {
+                                            resp.content_type.clone()
+                                        },
+                                        "edit_response_content_type",
+                                        cx,
+                                    ))
+                                    .child(field_button(
+                                        "resp-header",
+                                        format!("Headers {}", resp.headers.len()),
+                                        "edit_response_header",
+                                        cx,
+                                    ))
+                                    .child(field_button(
+                                        "resp-body-edit",
+                                        "Edit body".to_string(),
+                                        "edit_response_body",
+                                        cx,
+                                    )),
                             )
                             .child(crate::dev_id!(
                                 div()
@@ -734,6 +800,178 @@ impl Shell {
                     .child("INSPECTOR"),
             )
             .child(body)
+    }
+}
+
+/// A muted, clickable field label that runs an edit action (opens its Prompt).
+fn field_button(
+    id: &'static str,
+    label: String,
+    action: &'static str,
+    cx: &mut Context<Shell>,
+) -> impl IntoElement {
+    crate::dev_id!(
+        div()
+            .id(id)
+            .h(px(22.))
+            .px(px(4.))
+            .flex()
+            .items_center()
+            .cursor_pointer()
+            .on_click(cx.listener(move |this, _, w, cx| this.run_action_id(action, w, cx)))
+            .child(label.clone()),
+        id,
+        Button,
+        label,
+        Action(action)
+    )
+}
+
+impl Shell {
+    /// Shown when an external edit collides with unsaved GUI edits (SPEC §4.7).
+    fn render_merge_banner(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        let files = self.conflicts.join(", ");
+        crate::dev_id!(
+            div()
+                .id("merge-banner")
+                .h(px(32.))
+                .flex_none()
+                .px(px(12.))
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(10.))
+                .bg(t.element_selected)
+                .border_b_1()
+                .border_color(t.border)
+                .text_size(px(12.))
+                .child(icon("triangle-alert", 13., t.modified))
+                .child(
+                    div()
+                        .flex_1()
+                        .truncate()
+                        .child(format!("{files} changed on disk while you were editing."))
+                )
+                .child(crate::dev_id!(
+                    toolbar_button(t, "merge-keep-mine")
+                        .child("Keep mine")
+                        .on_click(cx.listener(|this, _, w, cx| this.run_action_id(
+                            "merge_keep_mine",
+                            w,
+                            cx
+                        ))),
+                    "merge-keep-mine",
+                    Button,
+                    "Keep mine",
+                    Action("merge_keep_mine")
+                ))
+                .child(crate::dev_id!(
+                    toolbar_button(t, "merge-load-disk")
+                        .child("Load from disk")
+                        .on_click(cx.listener(|this, _, w, cx| this.run_action_id(
+                            "merge_load_disk",
+                            w,
+                            cx
+                        ))),
+                    "merge-load-disk",
+                    Button,
+                    "Load from disk",
+                    Action("merge_load_disk")
+                )),
+            "merge-banner",
+            Modal,
+            "Merge banner",
+            None
+        )
+    }
+
+    /// The Welcome view: shown when no workspace is open.
+    pub(crate) fn render_welcome(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        let recents: Vec<_> = self.recents.iter().take(8).cloned().collect();
+        crate::dev_id!(
+            div()
+                .id("welcome")
+                .flex_1()
+                .min_h_0()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .gap(px(14.))
+                .bg(t.editor)
+                .child(icon("server", 32., t.icon_muted))
+                .child(div().text_size(px(20.)).child("Fauxfield"))
+                .child(
+                    div()
+                        .text_color(t.text_muted)
+                        .child("Open a workspace folder or create a new one.")
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .gap(px(10.))
+                        .child(crate::dev_id!(
+                            toolbar_button(t, "welcome-open")
+                                .child("Open folder…")
+                                .on_click(cx.listener(|this, _, w, cx| this.run_action_id(
+                                    "open_folder",
+                                    w,
+                                    cx
+                                ))),
+                            "welcome-open-folder",
+                            Button,
+                            "Open folder",
+                            Action("open_folder")
+                        ))
+                        .child(crate::dev_id!(
+                            toolbar_button(t, "welcome-create")
+                                .child("Create workspace…")
+                                .on_click(cx.listener(|this, _, w, cx| this.run_action_id(
+                                    "create_workspace",
+                                    w,
+                                    cx
+                                ))),
+                            "welcome-create-workspace",
+                            Button,
+                            "Create workspace",
+                            Action("create_workspace")
+                        )),
+                )
+                .child(
+                    div()
+                        .mt(px(8.))
+                        .text_size(px(12.))
+                        .text_color(t.text_muted)
+                        .child("Recent workspaces")
+                )
+                .children(recents.iter().enumerate().map(|(i, p)| {
+                    let path = p.clone();
+                    let label = p.to_string_lossy().into_owned();
+                    div()
+                        .id(crate::ui::eid(format!("recent-{i}")))
+                        .cursor_pointer()
+                        .text_size(px(12.))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if let Err(e) = this.open_workspace(&path, cx) {
+                                this.notify(e, cx);
+                            }
+                        }))
+                        .child(label)
+                }))
+                .when(recents.is_empty(), |d| {
+                    d.child(
+                        div()
+                            .text_size(px(12.))
+                            .text_color(t.text_placeholder)
+                            .child("No recent workspaces yet."),
+                    )
+                }),
+            "welcome",
+            Panel,
+            "Welcome",
+            None
+        )
     }
 }
 

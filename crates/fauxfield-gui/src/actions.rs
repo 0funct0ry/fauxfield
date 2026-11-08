@@ -37,6 +37,25 @@ actions!(
         SendTest,
         Duplicate,
         ResetState,
+        NewFolder,
+        NewResponse,
+        Rename,
+        Delete,
+        Undo,
+        Redo,
+        OpenFolder,
+        CreateWorkspace,
+        MergeKeepMine,
+        MergeLoadDisk,
+        EditRouteMethod,
+        EditRoutePath,
+        EditResponseStatus,
+        EditResponseName,
+        EditResponseContentType,
+        EditResponseDelay,
+        EditResponseHeader,
+        EditResponseBody,
+        SetDefaultResponse,
         Quit,
     ]
 );
@@ -106,6 +125,53 @@ pub static ACTIONS: &[ActionInfo] = &[
     row!("send_test", "Route: Send Test Request", SendTest),
     row!("duplicate", "Edit: Duplicate Response or Route", Duplicate),
     row!("reset_state", "Dataset: Reset State", ResetState),
+    row!("new_folder", "Folder: New…", NewFolder),
+    row!("new_response", "Response: New", NewResponse),
+    row!("rename", "Edit: Rename…", Rename),
+    row!("delete", "Edit: Delete", Delete),
+    row!("undo", "Edit: Undo", Undo),
+    row!("redo", "Edit: Redo", Redo),
+    row!("open_folder", "Workspace: Open Folder…", OpenFolder),
+    row!("create_workspace", "Workspace: Create…", CreateWorkspace),
+    row!("merge_keep_mine", "Merge: Keep Mine", MergeKeepMine),
+    row!("merge_load_disk", "Merge: Load From Disk", MergeLoadDisk),
+    row!("edit_route_method", "Route: Edit Method…", EditRouteMethod),
+    row!("edit_route_path", "Route: Edit Path…", EditRoutePath),
+    row!(
+        "edit_response_status",
+        "Response: Edit Status…",
+        EditResponseStatus
+    ),
+    row!(
+        "edit_response_name",
+        "Response: Edit Name…",
+        EditResponseName
+    ),
+    row!(
+        "edit_response_content_type",
+        "Response: Edit Content Type…",
+        EditResponseContentType
+    ),
+    row!(
+        "edit_response_delay",
+        "Response: Edit Delay…",
+        EditResponseDelay
+    ),
+    row!(
+        "edit_response_header",
+        "Response: Set Header…",
+        EditResponseHeader
+    ),
+    row!(
+        "edit_response_body",
+        "Response: Edit Body…",
+        EditResponseBody
+    ),
+    row!(
+        "set_default_response",
+        "Response: Make Default",
+        SetDefaultResponse
+    ),
     row!("quit", "Application: Quit", Quit),
 ];
 

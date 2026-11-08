@@ -52,6 +52,8 @@ pub enum Click {
     Section(String, usize),
     Menu(MenuAct),
     TrafficRow(usize),
+    /// Select a response of a route in the Responses sub-tab.
+    Response(String, usize),
 }
 
 /// Extra facts the audit (`ui.audit`) needs. Everything defaults to "nothing declared".
@@ -505,7 +507,11 @@ pub fn click_element(
             shell.server_section.insert(server, i);
             cx.notify();
         }
-        Click::Menu(act) => shell.run_menu(act, cx),
+        Click::Menu(act) => shell.run_menu(act, window, cx),
+        Click::Response(route, i) => {
+            shell.resp_sel.insert(route, i);
+            cx.notify();
+        }
         Click::TrafficRow(i) => {
             shell.traffic_selected = Some(i);
             shell.layout.right_open = true;
@@ -529,6 +535,7 @@ mod tests {
                 ShellOptions {
                     layout_path: None,
                     config_dir: None,
+                    ..crate::view::test_options()
                 },
                 w,
                 cx,

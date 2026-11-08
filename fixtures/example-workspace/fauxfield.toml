@@ -1,0 +1,6 @@
+schema = 1
+name = "example-workspace"
+default_environment = "local"
+
+[variables]
+api_version = "v1"

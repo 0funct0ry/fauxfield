@@ -1,0 +1,17 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: redact(out)
+---
+{
+  "servers": [
+    {
+      "enabled": true,
+      "file": "servers/example-api.toml",
+      "host": "127.0.0.1",
+      "id": "<srv-id>",
+      "name": "Example API",
+      "port": 3001,
+      "routes": 1
+    }
+  ]
+}

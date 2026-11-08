@@ -9,7 +9,6 @@ use crate::assets::BUFFER_FONT;
 use crate::layout::BottomTab;
 use crate::mock::TrafficRow;
 use crate::shell::Shell;
-use crate::tabs::TabKind;
 use crate::theme::Theme;
 use crate::ui::{ROW_H, TAB_BAR_H, icon};
 
@@ -235,10 +234,18 @@ impl Shell {
             .min_h_0()
             .overflow_y_scroll()
             .children(self.problems.iter().enumerate().map(|(i, p)| {
-                let rid = p.route_id.clone();
+                let rid = p.target.clone().unwrap_or_default();
+                let key = format!(
+                    "problem-{}-{i}",
+                    if p.target.is_some() {
+                        rid.as_str()
+                    } else {
+                        p.file.as_str()
+                    }
+                );
                 crate::dev_id!(
                     div()
-                        .id(crate::ui::eid(format!("problem-{}-{i}", p.route_id)))
+                        .id(crate::ui::eid(key.clone()))
                         .h(px(ROW_H + 2.))
                         .px(px(10.))
                         .flex()
@@ -247,11 +254,10 @@ impl Shell {
                         .cursor_pointer()
                         .hover(move |s| s.bg(hover))
                         .on_click(cx.listener(move |this, _, _, cx| {
-                            this.reveal_row(&rid);
                             if let Some((kind, title)) = this.tab_for_row(&rid) {
+                                this.reveal_row(&rid);
                                 this.open_tab(&rid, kind, &title, false);
                             }
-                            let _ = TabKind::Route;
                             cx.notify();
                         }))
                         .child(icon(
@@ -270,7 +276,7 @@ impl Shell {
                                 .text_size(px(12.))
                                 .child(p.message.clone()),
                         ),
-                    format!("problem-{}-{i}", p.route_id),
+                    key,
                     Row,
                     &p.message,
                     None

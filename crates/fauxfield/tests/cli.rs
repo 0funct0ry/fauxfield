@@ -24,7 +24,7 @@ fn version_json_is_stable() {
     v["version"] = "<version>".into();
     assert!(v["gui"].is_boolean());
     v["gui"] = "<bool>".into();
-    insta::assert_json_snapshot!(v);
+    snap_json(Some("version_json_is_stable"), &v);
 }
 
 #[test]
@@ -85,4 +85,114 @@ fn dev_mcp_flags_are_absent_without_the_feature() {
 fn dev_mcp_flags_are_listed_with_the_feature() {
     let (_, help, _) = run(&["--help"]);
     assert!(help.contains("--mcp-socket") && help.contains("--mcp-stdio"));
+}
+
+/// JSON snapshot with sorted keys: key order is not part of the schema (serde_json's
+/// `preserve_order` is enabled by some feature sets).
+fn snap_json(name: Option<&str>, v: &serde_json::Value) {
+    insta::with_settings!({sort_maps => true}, {
+        match name {
+            Some(n) => insta::assert_json_snapshot!(n, v),
+            None => insta::assert_json_snapshot!(v),
+        }
+    });
+}
+
+fn workspace() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let (code, _, _) = run(&["init", dir.path().to_str().unwrap()]);
+    assert_eq!(code, 0);
+    dir
+}
+
+/// Replace the random IDs so snapshots are stable.
+fn redact(mut s: String) -> String {
+    for prefix in ["srv_", "rte_", "rsp_"] {
+        while let Some(i) = s.find(prefix) {
+            s.replace_range(i..i + prefix.len() + 8, &format!("<{}-id>", &prefix[..3]));
+        }
+    }
+    s
+}
+
+#[test]
+fn init_json_is_stable() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().to_str().unwrap();
+    let (code, out, _) = run(&["init", p, "--json"]);
+    assert_eq!(code, 0);
+    let mut v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    v["path"] = "<path>".into();
+    snap_json(Some("init_json_is_stable"), &v);
+    // Refuses to overwrite an existing workspace.
+    assert_eq!(run(&["init", p]).0, 1);
+}
+
+#[test]
+fn validate_json_is_stable_and_exit_code_3_on_errors() {
+    let dir = workspace();
+    let p = dir.path().to_str().unwrap();
+    let (code, out, _) = run(&["validate", "-w", p, "--json"]);
+    assert_eq!(code, 0);
+    snap_json(Some("validate_clean"), &serde_json::from_str(&out).unwrap());
+    // A second enabled server on the same port is a validation error.
+    let dup = std::fs::read_to_string(dir.path().join("servers/example-api.toml")).unwrap();
+    let dup = dup
+        .replace("srv_", "srv_x")
+        .replace("rte_", "rte_x")
+        .replace("rsp_", "rsp_x");
+    std::fs::write(dir.path().join("servers/dup.toml"), dup).unwrap();
+    let (code, out, _) = run(&["validate", "-w", p, "--json"]);
+    assert_eq!(code, 3);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["ok"], false);
+    assert!(
+        v["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["code"] == "E020")
+    );
+}
+
+#[test]
+fn server_and_route_list_json_are_stable() {
+    let dir = workspace();
+    let p = dir.path().to_str().unwrap();
+    let (code, out, _) = run(&["server", "list", "-w", p, "--json"]);
+    assert_eq!(code, 0);
+    snap_json(
+        Some("server_list"),
+        &serde_json::from_str(&redact(out)).unwrap(),
+    );
+    let (code, out, _) = run(&[
+        "route",
+        "list",
+        "-w",
+        p,
+        "--server",
+        "example-api",
+        "--json",
+    ]);
+    assert_eq!(code, 0);
+    snap_json(
+        Some("route_list"),
+        &serde_json::from_str(&redact(out)).unwrap(),
+    );
+    let (_, out, _) = run(&["route", "list", "-w", p, "--server", "nope", "--json"]);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&out).unwrap()["routes"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+}
+
+#[test]
+fn not_a_workspace_is_a_runtime_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let (code, _, err) = run(&["validate", "-w", dir.path().to_str().unwrap()]);
+    assert_eq!(code, 1);
+    assert!(err.contains("not a workspace"));
 }

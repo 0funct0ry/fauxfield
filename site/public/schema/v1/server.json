@@ -1,0 +1,226 @@
+{
+  "$defs": {
+    "Folder": {
+      "properties": {
+        "docs": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "Response": {
+      "properties": {
+        "body": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "body_file": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "content_type": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "default": {
+          "default": false,
+          "type": "boolean"
+        },
+        "delay_ms": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "default": 200,
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "Route": {
+      "properties": {
+        "docs": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "folder": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "default": "http",
+          "type": "string"
+        },
+        "match": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "method": {
+          "default": "GET",
+          "type": "string"
+        },
+        "name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "response_mode": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "responses": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Response"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "path"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "docs": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "enabled": {
+      "default": true,
+      "type": "boolean"
+    },
+    "folders": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Folder"
+      },
+      "type": "array"
+    },
+    "host": {
+      "default": "127.0.0.1",
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "port": {
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "prefix": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "routes": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Route"
+      },
+      "type": "array"
+    },
+    "schema": {
+      "default": 1,
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "variables": {
+      "additionalProperties": true,
+      "default": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "port"
+  ],
+  "title": "Server",
+  "type": "object"
+}

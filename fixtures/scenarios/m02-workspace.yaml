@@ -1,0 +1,39 @@
+# M2 scenario: real workspace files. Create a server and a route through prompts, edit and undo a
+# field, delete the route, then open a workspace with validation errors and come back.
+# Needs the example workspace as the launch workspace (scripts/smoke-ui.sh copies it).
+name: m02-workspace
+size: default
+steps:
+  - assert: {pointer: /view, equals: workspace}
+  - assert: {pointer: /servers/0/id, equals: srv_users}
+  - assert: {pointer: /problems, equals: 0}
+  # New server through the action and a prompt.
+  - invoke: new_server
+  - assert: {pointer: /prompt, equals: New server name}
+  - type_text: Scenario API
+  - key: enter
+  - assert: {pointer: /servers/2/name, equals: Scenario API}
+  # New route in the selected server; it opens as a pinned tab.
+  - invoke: new_route
+  - type_text: POST /orders
+  - key: enter
+  - assert: {pointer: /tabs/0/kind, equals: route}
+  - assert: {pointer: /tabs/0/preview, equals: false}
+  # Edit the status through its prompt (prefilled with 200), then undo.
+  - invoke: edit_response_status
+  - key: backspace
+  - key: backspace
+  - key: backspace
+  - type_text: "418"
+  - key: enter
+  - invoke: undo
+  # Delete the route: its tab closes.
+  - invoke: delete
+  - assert: {pointer: /tabs, equals: []}
+  # A workspace with validation errors fills the Problems list.
+  - open_workspace: fixtures/problems-workspace
+  - assert: {pointer: /problems, equals: 3}
+  - assert: {pointer: /problem_list/0/severity, equals: error}
+  - state: [reset]
+  - assert: {pointer: /servers/0/id, equals: srv_users}
+  - audit: {}

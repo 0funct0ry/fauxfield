@@ -14,9 +14,12 @@ mkdir -p "$out"
 cargo build -p fauxfield --features "$features"
 bin="${CARGO_TARGET_DIR:-target}/debug/fauxfield"
 
-"$bin" --mcp-socket "$sock" >"$out/app.log" 2>&1 &
+# A throwaway copy of the example workspace: scenarios edit it (autosave writes files).
+ws="$(mktemp -d "${TMPDIR:-/tmp}/ffws.XXXXXX")"
+cp -R fixtures/example-workspace "$ws/example-workspace"
+"$bin" "$ws/example-workspace" --mcp-socket "$sock" >"$out/app.log" 2>&1 &
 app=$!
-trap 'kill "$app" 2>/dev/null || true; rm -f "$sock"' EXIT
+trap 'kill "$app" 2>/dev/null || true; rm -rf "$sock" "$ws"' EXIT
 for _ in $(seq 1 100); do [[ -S "$sock" ]] && break; sleep 0.2; done
 [[ -S "$sock" ]] || { echo "app did not open $sock"; cat "$out/app.log"; exit 2; }
 sleep 1

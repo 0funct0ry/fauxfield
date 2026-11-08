@@ -12,6 +12,7 @@ pub mod scenario;
 pub mod server;
 pub mod tools;
 pub mod transport;
+pub mod workspace_tools;
 
 pub use bridge::{UiBridge, UiError, UiRequest};
 pub use class::{AllowedClasses, ToolClass};

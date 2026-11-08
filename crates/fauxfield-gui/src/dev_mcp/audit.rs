@@ -40,11 +40,10 @@ pub const VIEWS: &[(&str, &[(&str, &str)])] = &[
     ("Workspace pane", &[("empty", "no-tabs")]),
     ("Quick Search", &[("empty", "quick-search-empty")]),
     ("Command Palette", &[("empty", "palette-empty")]),
-    // Has "No problems." but the mock workspace always has problems; M2 adds the fixture.
     ("Problems", &[("empty", "problems-empty")]),
     ("Traffic", &[]),
     ("Logs", &[]),
-    ("Workspace tree", &[]),
+    ("Workspace tree", &[("empty", "empty-workspace")]),
 ];
 
 fn rgba(h: gpui::Hsla) -> [u8; 4] {
@@ -579,6 +578,7 @@ mod tests {
                 ShellOptions {
                     layout_path: None,
                     config_dir: None,
+                    ..crate::view::test_options()
                 },
                 w,
                 cx,
@@ -607,7 +607,7 @@ mod tests {
             .map(|f| f.message)
             .collect();
         names.sort();
-        assert_eq!(names.len(), 4, "{names:#?}"); // Problems fixture, Traffic, Logs, Tree
+        assert_eq!(names.len(), 2, "{names:#?}"); // Traffic, Logs (arrive with the engine, M3)
     }
 
     #[test]

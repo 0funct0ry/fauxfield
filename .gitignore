@@ -58,3 +58,4 @@ internal-docs/
 # Scratch files
 *.log
 /tmp/
+.cargo

@@ -9,6 +9,7 @@ use clap_complete::Shell;
 pub const EXIT_OK: i32 = 0;
 pub const EXIT_RUNTIME: i32 = 1;
 pub const EXIT_USAGE: i32 = 2;
+pub const EXIT_VALIDATION: i32 = 3;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -43,6 +44,26 @@ pub enum Command {
         /// Workspace folder to open.
         path: Option<PathBuf>,
     },
+    /// Create a workspace (SPEC §4.1) with one example server.
+    Init {
+        /// Folder to create the workspace in (default: the current directory).
+        path: Option<PathBuf>,
+        /// Machine-readable output with a stable schema.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Validate the workspace files; exit code 3 when there are errors.
+    Validate(crate::workspace_cmd::WsArgs),
+    /// List and inspect Servers.
+    Server {
+        #[command(subcommand)]
+        action: crate::workspace_cmd::ServerAction,
+    },
+    /// List and inspect Routes.
+    Route {
+        #[command(subcommand)]
+        action: crate::workspace_cmd::RouteAction,
+    },
     /// Run the MCP server for agents (SPEC §11.1). Logs go to stderr; stdout is protocol-only.
     Mcp(McpArgs),
     /// Print version information.
@@ -63,7 +84,7 @@ pub enum Command {
 pub struct McpArgs {
     #[command(subcommand)]
     pub action: Option<McpAction>,
-    /// Workspace folder (used from M2 on; validated now).
+    /// Workspace folder to serve tools over.
     pub path: Option<PathBuf>,
     /// Transport: stdio, unix, both, or http (http arrives in M16).
     #[arg(long, value_parser = parse_transport)]
@@ -120,6 +141,10 @@ pub fn run() -> i32 {
     match cli.command {
         None => open(cli.path),
         Some(Command::Open { path }) => open(path),
+        Some(Command::Init { path, json }) => crate::workspace_cmd::init(path, json),
+        Some(Command::Validate(a)) => crate::workspace_cmd::validate(&a),
+        Some(Command::Server { action }) => crate::workspace_cmd::server(action),
+        Some(Command::Route { action }) => crate::workspace_cmd::route(action),
         Some(Command::Mcp(args)) => mcp(args),
         Some(Command::Version { json }) => {
             if json {
@@ -177,11 +202,39 @@ fn mcp(args: McpArgs) -> i32 {
             return EXIT_RUNTIME;
         }
     };
-    match rt.block_on(fauxfield_mcp::serve(config)) {
+    let registry = workspace_registry(&config, &args.path);
+    match rt.block_on(fauxfield_mcp::serve_with(config, registry)) {
         Ok(()) => EXIT_OK,
         Err(e) => {
             eprintln!("error: {e}");
             EXIT_RUNTIME
+        }
+    }
+}
+
+/// Core tools plus the workspace tools when PATH (or the cwd's nearest ancestor) is a workspace.
+fn workspace_registry(
+    config: &fauxfield_mcp::McpConfig,
+    path: &Option<PathBuf>,
+) -> Option<fauxfield_mcp::Registry> {
+    let root = match path {
+        Some(p) => Some(p.clone()),
+        None => std::env::current_dir()
+            .ok()
+            .and_then(|c| fauxfield_store::discover(&c)),
+    }?;
+    match fauxfield_store::Store::open(&root) {
+        Ok(store) => {
+            let mut r = fauxfield_mcp::build_registry(config);
+            fauxfield_mcp::workspace_tools::register_workspace_tools(
+                &mut r,
+                fauxfield_mcp::workspace_tools::fixed_store(store),
+            );
+            Some(r)
+        }
+        Err(e) => {
+            eprintln!("warning: workspace tools disabled: {e}");
+            None
         }
     }
 }

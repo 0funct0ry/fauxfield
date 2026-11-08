@@ -8,7 +8,7 @@ use nucleo_matcher::{
     pattern::{CaseMatching, Normalization, Pattern},
 };
 
-use crate::mock::Workspace;
+use crate::view::Workspace;
 
 pub const MAX_HITS: usize = 60;
 
@@ -29,10 +29,15 @@ pub enum Target {
     Folder(String),
     Environment(String),
     Dataset(String),
-    Variable { environment: String, key: String },
+    Variable {
+        environment: String,
+        key: String,
+    },
     Action(String),
     Theme(String),
     SwitchEnvironment(String),
+    /// Confirm the open Prompt with the typed value.
+    Prompt,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -261,7 +266,7 @@ pub fn command_hits(needle: &str, commands: &[CommandEntry]) -> Vec<Hit> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mock::workspace;
+    use crate::view::workspace;
 
     fn cmds() -> Vec<CommandEntry> {
         [
@@ -321,7 +326,7 @@ mod tests {
         assert_eq!(f[0].target, Target::Folder("fld_charges".into()));
         let v = quick_search("$secret", &ws, &[]);
         assert_eq!(v.len(), 1);
-        assert_eq!(v[0].detail, "staging · dotenv");
+        assert_eq!(v[0].detail, "staging · file");
     }
 
     #[test]

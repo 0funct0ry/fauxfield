@@ -1,0 +1,5 @@
+name = "staging"
+
+[variables]
+base_url = "https://staging.example.com"
+api_secret = "sec_staging_abcdef"

@@ -29,11 +29,30 @@ pub struct UiState {
     pub toasts: Vec<String>,
     pub traffic: TrafficState,
     pub problems: usize,
+    /// The Problems list itself (validation diagnostics).
+    pub problem_list: Vec<ProblemState>,
     pub logs: usize,
+    /// `welcome` when no workspace is open, else `workspace`.
+    pub view: &'static str,
+    /// Files whose external edit collides with unsaved edits (merge banner shown when non-empty).
+    pub merge_conflicts: Vec<String>,
+    pub recent_workspaces: Vec<String>,
+    /// Open one-line prompt (rename, new item, field edit), if any.
+    pub prompt: Option<String>,
     pub servers: Vec<ServerState>,
     pub active_environment: String,
     pub window: WindowState,
     pub theme: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ProblemState {
+    pub severity: &'static str,
+    pub code: String,
+    pub message: String,
+    pub file: String,
+    pub path: String,
+    pub target: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -114,6 +133,19 @@ fn picker(shell: &Shell, kind: PickerKind) -> PickerState {
     }
 }
 
+/// Whether the file behind a tab holds unsaved (not yet autosaved) edits.
+fn tab_dirty(shell: &Shell, kind: TabKind, id: &str) -> bool {
+    let Some(store) = &shell.store else {
+        return false;
+    };
+    let file = match kind {
+        TabKind::Environment => return false,
+        TabKind::Server => shell.ws.find_server(id).map(|s| s.file.clone()),
+        TabKind::Route => shell.ws.find_route(id).map(|(s, _)| s.file.clone()),
+    };
+    file.is_some_and(|f| store.is_dirty(&f))
+}
+
 /// Builds the snapshot with `generation` 0; [`Tracker::observe`] assigns the real one.
 pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option<&str>) -> UiState {
     let rows = tree::flatten(&shell.ws, &shell.collapsed, &shell.active_env);
@@ -122,7 +154,11 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
         generation: 0,
         workspace: WorkspaceState {
             name: shell.ws.name.clone(),
-            path: workspace_path.map(str::to_string),
+            path: shell
+                .store
+                .as_ref()
+                .map(|_| shell.ws.root.display().to_string())
+                .or_else(|| workspace_path.map(str::to_string)),
         },
         tabs: shell
             .tabs
@@ -134,7 +170,7 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
                 title: t.title.clone(),
                 preview: t.preview,
                 pinned: !t.preview,
-                dirty: false,
+                dirty: tab_dirty(shell, t.kind, &t.id),
             })
             .collect(),
         active_tab: shell.tabs.active().map(|t| t.id.clone()),
@@ -173,7 +209,35 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
             selected: shell.traffic_selected,
         },
         problems: shell.problems.len(),
+        problem_list: shell
+            .problems
+            .iter()
+            .map(|p| ProblemState {
+                severity: if p.warning { "warning" } else { "error" },
+                code: p.code.clone(),
+                message: p.message.clone(),
+                file: p.file.clone(),
+                path: p.path.clone(),
+                target: p.target.clone(),
+            })
+            .collect(),
         logs: shell.logs.len(),
+        view: if shell.store.is_some() {
+            "workspace"
+        } else {
+            "welcome"
+        },
+        merge_conflicts: shell.conflicts.clone(),
+        recent_workspaces: shell
+            .recents
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect(),
+        prompt: shell
+            .picker
+            .as_ref()
+            .filter(|p| p.kind == PickerKind::Prompt)
+            .and_then(|_| shell.prompt.as_ref().map(|a| a.title().to_string())),
         servers: shell
             .ws
             .servers

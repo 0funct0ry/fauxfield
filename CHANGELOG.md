@@ -3,6 +3,20 @@
 ## Unreleased
 
 ### Added
+- M2 Workspace files and persistence: `fauxfield-model` (file types, prefixed IDs, validation
+  diagnostics, server JSON Schema via `cargo xtask schema`), `fauxfield-store` (toml_edit
+  round-tripping that keeps comments and order, atomic debounced autosave, file watcher with
+  merge-conflict detection, per-file undo/redo, recent workspaces, `.fauxfield/ui.json`).
+  `fauxfield init`, `validate` (exit 3 on errors), `server list`, `route list` (all with `--json`).
+  The app opens real workspaces: Welcome view, create/rename/duplicate/delete of Servers, Folders,
+  Routes and Responses, route and response field editing, merge banner, Problems from
+  diagnostics. MCP tools `workspace_info`, `list_servers`, `get_server`, `create_server`,
+  `update_server`, `delete_server`, `list_routes`, `get_route`, `upsert_route`, `delete_route`,
+  `validate`; `ui.open_workspace` opens a real workspace; `ui.state` gains `view`, `problem_list`,
+  `merge_conflicts`, `recent_workspaces`, `prompt`. `fixtures/example-workspace`, scenario
+  `m02-workspace`, state fixtures `empty-workspace`, `problems-empty`, `problems-open`.
+  Known gaps: multi-line body editing and the Raw file tab need an editor widget (M6); fields
+  are edited through one-line prompts.
 - M1.7 Scenarios and the agent playbook (dev builds): YAML scenarios in `fixtures/scenarios/` with
   `ui.run_scenario` (by name or inline; first failure reports expected, actual, `ui.state` and a
   screenshot), `ui.record`, and `ui.events` (1024-entry replay buffer, `seq`, `gap`, `wait_ms`).

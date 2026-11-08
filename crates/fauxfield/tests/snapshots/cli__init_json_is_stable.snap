@@ -1,0 +1,13 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "created": [
+    "fauxfield.toml",
+    "environments/local.toml",
+    "servers/example-api.toml",
+    ".gitignore"
+  ],
+  "path": "<path>"
+}

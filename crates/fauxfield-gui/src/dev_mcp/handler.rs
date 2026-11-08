@@ -17,11 +17,13 @@ use crate::shell::Shell;
 pub struct HostState {
     pub tracker: Tracker,
     pub workspace_path: Option<String>,
+    /// The workspace the app launched with; `ui.reset_view` returns to it.
+    pub baseline: Option<std::path::PathBuf>,
 }
 
 #[derive(Deserialize, JsonSchema)]
 pub struct OpenWorkspaceInput {
-    /// Workspace folder. Before M2 this selects the mock workspace and only checks the folder exists.
+    /// Workspace folder containing fauxfield.toml (see `fauxfield init`).
     pub path: String,
 }
 
@@ -145,6 +147,9 @@ pub fn dispatch(
     window: &mut Window,
     cx: &mut Context<Shell>,
 ) -> Result<Value, UiError> {
+    if host.baseline.is_none() && shell.store.is_some() {
+        host.baseline = Some(shell.ws.root.clone());
+    }
     match req.method.as_str() {
         "ui.state" => {
             let s = snapshot(shell, window, cx, host.workspace_path.as_deref());
@@ -155,9 +160,11 @@ pub fn dispatch(
             if !std::path::Path::new(&input.path).is_dir() {
                 return Err(UiError::Failed(format!("{} is not a folder", input.path)));
             }
-            host.workspace_path = Some(input.path.clone());
-            cx.notify();
-            Ok(json!({ "workspace": shell.ws.name, "path": input.path, "mock": true }))
+            shell
+                .open_workspace(std::path::Path::new(&input.path), cx)
+                .map_err(UiError::Failed)?;
+            host.workspace_path = Some(shell.ws.root.display().to_string());
+            Ok(json!({ "workspace": shell.ws.name, "path": shell.ws.root.display().to_string() }))
         }
         "ui.open_tab" => {
             let input: OpenTabInput = args(&req.params)?;
@@ -228,6 +235,12 @@ pub fn dispatch(
         }
         "ui.reset_view" => {
             reset_view(shell, window, cx);
+            match &host.baseline {
+                Some(b) if shell.store.is_some() && shell.ws.root != *b => {
+                    shell.open_workspace(b, cx).map_err(UiError::Failed)?;
+                }
+                _ => {}
+            }
             Ok(json!({ "reset": true }))
         }
         other => Err(UiError::Failed(format!("unknown ui method {other:?}"))),
@@ -246,6 +259,7 @@ mod tests {
                 ShellOptions {
                     layout_path: None,
                     config_dir: None,
+                    ..crate::view::test_options()
                 },
                 w,
                 cx,
@@ -406,18 +420,33 @@ mod tests {
         .unwrap_err();
         assert!(e.to_string().contains("not a folder"), "{e}");
 
-        let dir = std::env::temp_dir();
+        // A folder that is not a workspace is refused.
+        let plain = tempfile::tempdir().unwrap();
+        let e = call(
+            &view,
+            cx,
+            &mut h,
+            "ui.open_workspace",
+            json!({ "path": plain.path().display().to_string() }),
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("not a workspace"), "{e}");
+
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("demo");
+        fauxfield_store::init_workspace(&ws).unwrap();
         let r = call(
             &view,
             cx,
             &mut h,
             "ui.open_workspace",
-            json!({ "path": dir.display().to_string() }),
+            json!({ "path": ws.display().to_string() }),
         )
         .unwrap();
-        assert_eq!(r["mock"], true);
+        assert_eq!(r["workspace"], "demo");
         let s = state(&view, cx, &mut h);
-        assert_eq!(s["workspace"]["path"], dir.display().to_string());
+        assert_eq!(s["view"], "workspace");
+        assert_eq!(s["servers"][0]["name"], "Example API");
         assert!(call(&view, cx, &mut h, "ui.nope", json!({})).is_err());
     }
 
@@ -699,6 +728,7 @@ mod tests {
                 ShellOptions {
                     layout_path: Some(layout.clone()),
                     config_dir: None,
+                    ..crate::view::test_options()
                 },
                 w,
                 cx,

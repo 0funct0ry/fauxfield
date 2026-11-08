@@ -20,6 +20,7 @@ fn setup(
             ShellOptions {
                 layout_path,
                 config_dir: None,
+                ..crate::view::test_options()
             },
             w,
             cx,
@@ -228,7 +229,7 @@ fn tabs_and_theme_survive_a_restart(cx: &mut TestAppContext) {
 #[gpui::test]
 fn run_all_toggles_and_environment_switch(cx: &mut TestAppContext) {
     let (view, cx) = setup(cx, None);
-    assert_eq!(read(&view, cx, |s| s.ws.running_count()), 1);
+    assert_eq!(read(&view, cx, |s| s.ws.running_count()), 0);
     cx.simulate_keystrokes("secondary-shift-r");
     assert_eq!(read(&view, cx, |s| s.ws.running_count()), 2);
     cx.simulate_keystrokes("secondary-shift-r");
@@ -241,11 +242,17 @@ fn run_all_toggles_and_environment_switch(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn stub_actions_tell_the_user_which_milestone(cx: &mut TestAppContext) {
+fn new_route_needs_a_server_then_prompts(cx: &mut TestAppContext) {
     let (view, cx) = setup(cx, None);
     cx.simulate_keystrokes("secondary-n");
     let msg = read(&view, cx, |s| s.notice.as_ref().map(|(_, m)| m.clone()));
-    assert!(msg.unwrap().contains("M2"));
+    assert!(msg.unwrap().contains("Select a server"));
+    view.update(cx, |s, _| s.selected = Some("srv_payments".into()));
+    cx.simulate_keystrokes("secondary-n");
+    assert_eq!(
+        read(&view, cx, |s| s.picker.as_ref().map(|p| p.kind)),
+        Some(PickerKind::Prompt)
+    );
 }
 
 #[gpui::test]
@@ -270,25 +277,155 @@ fn row_context_menu_opens_and_runs_items(cx: &mut TestAppContext) {
     assert!(read(&view, cx, |s| s.menu.is_some()));
     cx.run_until_parked(); // renders the menu
 
-    view.update(cx, |s, cx| s.run_menu(MenuAct::StartStop, cx));
+    view.update_in(cx, |s, w, cx| s.run_menu(MenuAct::StartStop, w, cx));
     assert!(read(&view, cx, |s| s.menu.is_none()));
-    assert_eq!(read(&view, cx, |s| s.ws.running_count()), 2);
+    assert_eq!(read(&view, cx, |s| s.ws.running_count()), 1);
 
-    // Sections have no menu; mutating items name their milestone.
+    // Sections have no menu.
     view.update(cx, |s, cx| {
         s.open_menu(crate::tree::SEC_DATASETS, 0.0, 0.0, cx)
     });
     assert!(read(&view, cx, |s| s.menu.is_none()));
-    view.update(cx, |s, cx| {
+    // Delete removes the route from the workspace files.
+    view.update_in(cx, |s, w, cx| {
         s.open_menu("rt_health", 0.0, 0.0, cx);
-        s.run_menu(MenuAct::Delete, cx);
+        s.run_menu(MenuAct::Delete, w, cx);
     });
-    let msg = read(&view, cx, |s| s.notice.as_ref().map(|(_, m)| m.clone()));
-    assert!(msg.unwrap().contains("M2"));
+    assert!(read(&view, cx, |s| s.ws.find_route("rt_health").is_none()));
 
-    view.update(cx, |s, cx| {
+    view.update_in(cx, |s, w, cx| {
         s.open_menu("env:staging", 0.0, 0.0, cx);
-        s.run_menu(MenuAct::SetActive, cx);
+        s.run_menu(MenuAct::SetActive, w, cx);
     });
     assert_eq!(read(&view, cx, |s| s.active_env.clone()), "staging");
+}
+
+fn type_prompt(view: &Entity<Shell>, cx: &mut VisualTestContext, text: &str) {
+    for ch in text.chars() {
+        view.update(cx, |s, cx| s.picker_type(&ch.to_string(), cx));
+    }
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+}
+
+#[gpui::test]
+fn creating_renaming_and_deleting_edits_the_files(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    let root = read(&view, cx, |s| s.ws.root.clone());
+
+    // New server through the palette action and a prompt.
+    view.update_in(cx, |s, w, cx| s.run_action_id("new_server", w, cx));
+    cx.run_until_parked();
+    assert_eq!(
+        read(&view, cx, |s| s.picker.as_ref().map(|p| p.kind)),
+        Some(PickerKind::Prompt)
+    );
+    type_prompt(&view, cx, "Billing API");
+    let (id, port) = read(&view, cx, |s| {
+        let b =
+            s.ws.servers
+                .iter()
+                .find(|x| x.name == "Billing API")
+                .unwrap();
+        (b.id.clone(), b.port)
+    });
+    assert_eq!(port, 4021);
+
+    // New route in it.
+    view.update_in(cx, |s, w, cx| {
+        s.begin_prompt(
+            crate::shell::PromptAction::NewRoute {
+                server: id.clone(),
+                folder: None,
+            },
+            "",
+            w,
+            cx,
+        )
+    });
+    type_prompt(&view, cx, "POST /invoices");
+    let rid = read(&view, cx, |s| {
+        s.ws.find_server(&id).unwrap().routes[0].id.clone()
+    });
+    assert_eq!(
+        read(&view, cx, |s| s.tabs.active().map(|t| t.id.clone())),
+        Some(rid.clone())
+    );
+
+    // Edit a field, then undo it.
+    view.update_in(cx, |s, w, cx| {
+        s.run_action_id("edit_response_status", w, cx)
+    });
+    cx.run_until_parked();
+    for _ in 0..3 {
+        view.update(cx, |s, cx| s.picker_backspace(cx));
+    }
+    type_prompt(&view, cx, "418");
+    assert_eq!(
+        read(&view, cx, |s| s.ws.find_route(&rid).unwrap().1.responses[0]
+            .status),
+        418
+    );
+    view.update_in(cx, |s, w, cx| s.run_action_id("undo", w, cx));
+    assert_eq!(
+        read(&view, cx, |s| s.ws.find_route(&rid).unwrap().1.responses[0]
+            .status),
+        200
+    );
+
+    // Rename moves the file; files are authoritative after a flush.
+    view.update_in(cx, |s, w, cx| {
+        s.begin_prompt(
+            crate::shell::PromptAction::Rename { id: id.clone() },
+            "",
+            w,
+            cx,
+        )
+    });
+    type_prompt(&view, cx, "Billing");
+    let store = read(&view, cx, |s| s.store.clone().unwrap());
+    store.flush().unwrap();
+    assert!(root.join("servers/billing.toml").is_file());
+    let text = std::fs::read_to_string(root.join("servers/billing.toml")).unwrap();
+    assert!(text.contains("/invoices"));
+}
+
+#[gpui::test]
+fn welcome_view_without_a_workspace(cx: &mut TestAppContext) {
+    let (view, cx) = cx.add_window_view(|w, cx| Shell::new(ShellOptions::default(), w, cx));
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s.store.is_none() && s.ws.servers.is_empty()));
+    // Creating a workspace from the Welcome view opens it.
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("fresh");
+    view.update_in(cx, |s, w, cx| s.run_action_id("create_workspace", w, cx));
+    cx.run_until_parked();
+    type_prompt(&view, cx, target.to_str().unwrap());
+    assert!(target.join("fauxfield.toml").is_file());
+    assert_eq!(read(&view, cx, |s| s.ws.servers.len()), 1);
+}
+
+#[gpui::test]
+fn external_edits_reload_the_view(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    let root = read(&view, cx, |s| s.ws.root.clone());
+    let p = root.join("servers/02-payments.toml");
+    let text = std::fs::read_to_string(&p)
+        .unwrap()
+        .replace("port = 4020", "port = 4999");
+    std::fs::write(&p, text).unwrap();
+    let store = read(&view, cx, |s| s.store.clone().unwrap());
+    store.reconcile();
+    cx.run_until_parked();
+    cx.executor()
+        .advance_clock(std::time::Duration::from_millis(200));
+    cx.run_until_parked();
+    assert_eq!(
+        read(&view, cx, |s| s
+            .ws
+            .find_server("srv_payments")
+            .unwrap()
+            .port),
+        4999
+    );
 }

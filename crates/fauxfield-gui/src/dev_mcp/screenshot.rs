@@ -24,6 +24,8 @@ const SETTLE: Duration = Duration::from_millis(300);
 pub enum Step {
     /// Baseline: no picker, no tabs, default docks, Traffic tab, no selection.
     Reset,
+    /// Open a workspace folder (`ui.open_workspace`); `reset` returns to the launch workspace.
+    OpenWorkspace(String),
     /// Open a tab as a preview (`ui.open_tab`).
     Open {
         kind: String,
@@ -84,6 +86,8 @@ fixtures!(
     "theme-selector-open",
     "docks-collapsed",
     "problems-open",
+    "problems-empty",
+    "empty-workspace",
     "no-tabs",
     "quick-search-empty",
     "palette-empty",
@@ -147,6 +151,9 @@ pub async fn resize(bridge: &Arc<dyn UiBridge>, size: &str) -> Result<Value, Str
 pub(super) async fn run_step(bridge: &Arc<dyn UiBridge>, step: &Step) -> Result<(), String> {
     match step {
         Step::Reset => call(bridge, "ui.reset_view", json!({})).await.map(drop),
+        Step::OpenWorkspace(path) => call(bridge, "ui.open_workspace", json!({ "path": path }))
+            .await
+            .map(drop),
         Step::Open { kind, id } => call(bridge, "ui.open_tab", json!({ "kind": kind, "id": id }))
             .await
             .map(drop),

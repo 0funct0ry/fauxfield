@@ -245,7 +245,9 @@ impl Shell {
                                 .cursor_pointer()
                                 .text_size(px(12.))
                                 .hover(move |s| s.bg(hover))
-                                .on_click(cx.listener(move |this, _, _, cx| this.run_menu(act, cx)))
+                                .on_click(
+                                    cx.listener(move |this, _, w, cx| this.run_menu(act, w, cx))
+                                )
                                 .child(label),
                             1,
                             format!("menu-{label}"),

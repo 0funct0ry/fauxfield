@@ -1,0 +1,6 @@
+name = "local"
+
+[variables]
+base_url = "http://127.0.0.1:4010"
+api_token = "tok_local_123456"
+region = "eu-west-1"

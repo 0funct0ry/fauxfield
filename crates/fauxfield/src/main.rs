@@ -2,6 +2,7 @@
 
 mod cli;
 mod scenario_cmd;
+mod workspace_cmd;
 
 fn main() {
     std::process::exit(cli::run());

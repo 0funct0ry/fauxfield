@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use crate::mock::Workspace;
+use crate::view::Workspace;
 
 pub const SEC_ENVIRONMENTS: &str = "sec_environments";
 pub const SEC_DATASETS: &str = "sec_datasets";
@@ -138,6 +138,8 @@ pub enum MenuAct {
     StartStop,
     SetActive,
     NewRoute,
+    NewFolder,
+    NewResponse,
     Rename,
     Duplicate,
     Delete,
@@ -152,6 +154,7 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
             ("Open", Open),
             (if server_running { "Stop" } else { "Start" }, StartStop),
             ("New route…", NewRoute),
+            ("New folder…", NewFolder),
             ("Rename…", Rename),
             ("Duplicate", Duplicate),
             ("Delete", Delete),
@@ -165,6 +168,7 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
         RowKind::Route { .. } => vec![
             ("Open", Open),
             ("Open pinned", OpenPinned),
+            ("New response", NewResponse),
             ("Rename…", Rename),
             ("Duplicate", Duplicate),
             ("Delete", Delete),
@@ -189,7 +193,7 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mock::workspace;
+    use crate::view::workspace;
 
     fn ids(rows: &[TreeRow]) -> Vec<&str> {
         rows.iter().map(|r| r.id.as_str()).collect()

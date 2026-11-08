@@ -16,12 +16,14 @@ use crate::assets::UI_FONT;
 use crate::chord::{CHORD_TIMEOUT, ChordState, Outcome};
 use crate::keymap::Keymap;
 use crate::layout::{BottomTab, Layout};
-use crate::mock::{self, TrafficRow, Workspace};
+use crate::mock::{self, TrafficRow};
 use crate::search::{self, CommandEntry, Hit, Kind, Target};
 use crate::tabs::{TabKind, TabSet};
 use crate::theme::{self, Theme};
 use crate::tree::{self, MenuAct, RowKind};
 use crate::ui::STATUS_BAR_H;
+use crate::view::{Problem, Workspace};
+use fauxfield_store::{Background, Event as StoreEvent, Store};
 
 pub const TRAFFIC_ROWS: usize = 10_000;
 pub const ROUTE_SUBTABS: [&str; 6] = [
@@ -50,6 +52,85 @@ pub enum PickerKind {
     Palette,
     Theme,
     Environment,
+    /// A one-line text prompt (rename, new item, field edit).
+    Prompt,
+}
+
+/// What a confirmed Prompt does (M2). The value is the picker query.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PromptAction {
+    NewServer,
+    OpenFolder,
+    CreateWorkspace,
+    ResponseBody {
+        response: String,
+    },
+    NewFolder {
+        server: String,
+    },
+    /// Value is `METHOD /path`.
+    NewRoute {
+        server: String,
+        folder: Option<String>,
+    },
+    Rename {
+        id: String,
+    },
+    RouteMethod {
+        route: String,
+    },
+    RoutePath {
+        route: String,
+    },
+    ResponseStatus {
+        response: String,
+    },
+    ResponseName {
+        response: String,
+    },
+    ResponseContentType {
+        response: String,
+    },
+    ResponseDelay {
+        response: String,
+    },
+    ResponseHeader {
+        response: String,
+    },
+}
+
+/// Which field of the current route or response a field-edit action changes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FieldEdit {
+    RouteMethod,
+    RoutePath,
+    ResponseStatus,
+    ResponseName,
+    ResponseContentType,
+    ResponseDelay,
+    ResponseHeader,
+    ResponseBody,
+}
+
+impl PromptAction {
+    pub fn title(&self) -> &'static str {
+        match self {
+            PromptAction::NewServer => "New server name",
+            PromptAction::OpenFolder => "Open workspace folder",
+            PromptAction::CreateWorkspace => "Create workspace in folder",
+            PromptAction::NewFolder { .. } => "New folder name",
+            PromptAction::NewRoute { .. } => "New route (METHOD /path)",
+            PromptAction::Rename { .. } => "New name",
+            PromptAction::RouteMethod { .. } => "Method",
+            PromptAction::RoutePath { .. } => "Path",
+            PromptAction::ResponseStatus { .. } => "Status",
+            PromptAction::ResponseName { .. } => "Response name",
+            PromptAction::ResponseContentType { .. } => "Content type",
+            PromptAction::ResponseDelay { .. } => "Delay (ms)",
+            PromptAction::ResponseHeader { .. } => "Header (name: value, empty value removes)",
+            PromptAction::ResponseBody { .. } => "Body",
+        }
+    }
 }
 
 pub struct Picker {
@@ -88,10 +169,26 @@ pub struct ShellOptions {
     pub layout_path: Option<PathBuf>,
     /// Directory holding an optional user `keymap.toml`.
     pub config_dir: Option<PathBuf>,
+    /// Workspace folder to open; `None` shows the Welcome view.
+    pub workspace: Option<PathBuf>,
+    /// File holding the recent-workspaces list; `None` disables it (tests).
+    pub recent_path: Option<PathBuf>,
 }
 
 pub struct Shell {
     pub(crate) ws: Workspace,
+    /// The open workspace; `None` shows the Welcome view.
+    pub(crate) store: Option<Store>,
+    store_events: Option<std::sync::mpsc::Receiver<StoreEvent>>,
+    _background: Option<Background>,
+    pub(crate) recent_path: Option<PathBuf>,
+    pub(crate) recents: Vec<PathBuf>,
+    /// Files whose external edit collides with unsaved GUI edits (merge banner).
+    pub(crate) conflicts: Vec<String>,
+    /// What the open Prompt will do with the typed value.
+    pub(crate) prompt: Option<PromptAction>,
+    /// Selected response index per route id (Responses sub-tab).
+    pub(crate) resp_sel: HashMap<String, usize>,
     pub(crate) tabs: TabSet,
     pub(crate) layout: Layout,
     layout_path: Option<PathBuf>,
@@ -119,7 +216,7 @@ pub struct Shell {
     notice_gen: u64,
     pub(crate) resize: Option<Resize>,
     pub(crate) menu: Option<RowMenu>,
-    pub(crate) problems: Vec<mock::Problem>,
+    pub(crate) problems: Vec<Problem>,
     pub(crate) logs: Vec<String>,
     pub(crate) focus: FocusHandle,
     pub(crate) picker_focus: FocusHandle,
@@ -133,7 +230,28 @@ impl Focusable for Shell {
 
 impl Shell {
     pub fn new(opts: ShellOptions, window: &mut Window, cx: &mut Context<Self>) -> Shell {
-        let ws = mock::workspace();
+        let recents = opts
+            .recent_path
+            .as_deref()
+            .map(fauxfield_store::load_recent)
+            .unwrap_or_default();
+        let mut open_error = None;
+        let (store, ws, store_problems) = match opts.workspace.as_deref().map(Store::open) {
+            Some(Ok(store)) => {
+                let snap = store.snapshot();
+                if let Some(p) = &opts.recent_path {
+                    let _ = fauxfield_store::push_recent(p, &snap.root);
+                }
+                let ws = Workspace::from_snapshot(&snap);
+                let problems = Workspace::problems(&snap);
+                (Some(store), ws, problems)
+            }
+            Some(Err(e)) => {
+                open_error = Some(e.to_string());
+                (None, Workspace::empty(), vec![])
+            }
+            None => (None, Workspace::empty(), vec![]),
+        };
         let layout = opts
             .layout_path
             .as_deref()
@@ -205,6 +323,14 @@ impl Shell {
                 .map(|e| e.name.clone())
                 .unwrap_or_default(),
             ws,
+            store,
+            store_events: None,
+            _background: None,
+            recent_path: opts.recent_path,
+            recents,
+            conflicts: Vec::new(),
+            prompt: None,
+            resp_sel: HashMap::new(),
             picker: None,
             theme_before_preview: None,
             recent: Vec::new(),
@@ -221,7 +347,7 @@ impl Shell {
             notice_gen: 0,
             resize: None,
             menu: None,
-            problems: mock::problems(),
+            problems: store_problems,
             logs: mock::logs(),
             focus,
             picker_focus: cx.focus_handle(),
@@ -229,7 +355,126 @@ impl Shell {
         if let Some(p) = problems.first() {
             shell.notify(p.clone(), cx);
         }
+        if let Some(e) = open_error {
+            shell.notify(format!("Could not open workspace: {e}"), cx);
+        }
+        shell.attach_store(cx);
         shell
+    }
+
+    // ---- workspace store ---------------------------------------------------------------
+
+    /// Start autosave and the watcher, and poll store events into the view.
+    fn attach_store(&mut self, cx: &mut Context<Self>) {
+        let Some(store) = self.store.clone() else {
+            return;
+        };
+        #[cfg(feature = "dev-mcp")]
+        crate::dev_mcp::host::publish_store(Some(store.clone()));
+        self.store_events = Some(store.subscribe());
+        self._background = store
+            .start_background(std::time::Duration::from_millis(300))
+            .map_err(|e| eprintln!("fauxfield: watcher unavailable: {e}"))
+            .ok();
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(60))
+                    .await;
+                let alive = this.update(cx, |this, cx| this.poll_store(cx)).is_ok();
+                if !alive {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn poll_store(&mut self, cx: &mut Context<Self>) {
+        let Some(rx) = &self.store_events else { return };
+        let mut changed = false;
+        while let Ok(ev) = rx.try_recv() {
+            let _ = ev;
+            changed = true;
+        }
+        if changed {
+            self.reload(cx);
+        }
+    }
+
+    /// Rebuild the view from the store (after an edit, undo, or external reload).
+    pub fn reload(&mut self, cx: &mut Context<Self>) {
+        let Some(store) = &self.store else { return };
+        let snap = store.snapshot();
+        let running: HashSet<String> = self
+            .ws
+            .servers
+            .iter()
+            .filter(|s| s.running)
+            .map(|s| s.id.clone())
+            .collect();
+        self.ws = Workspace::from_snapshot(&snap);
+        for s in &mut self.ws.servers {
+            s.running = running.contains(&s.id);
+        }
+        self.problems = Workspace::problems(&snap);
+        self.conflicts = store.conflicts();
+        let ws = &self.ws;
+        let before = self.tabs.tabs().len();
+        let gone: Vec<usize> = self
+            .tabs
+            .tabs()
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| !tab_exists(ws, t.kind, &t.id))
+            .map(|(i, _)| i)
+            .collect();
+        for i in gone.into_iter().rev() {
+            self.tabs.close(i);
+        }
+        if self.tabs.tabs().len() != before {
+            self.sync_selection_to_tab();
+            self.save_layout();
+        }
+        cx.notify();
+    }
+
+    /// Open a workspace folder (Welcome, `ui.open_workspace`, palette).
+    pub fn open_workspace(
+        &mut self,
+        path: &std::path::Path,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        let store = Store::open(path).map_err(|e| e.to_string())?;
+        let snap = store.snapshot();
+        if let Some(p) = &self.recent_path {
+            let _ = fauxfield_store::push_recent(p, &snap.root);
+            self.recents = fauxfield_store::load_recent(p);
+        }
+        self.ws = Workspace::from_snapshot(&snap);
+        self.problems = Workspace::problems(&snap);
+        self.store = Some(store);
+        self.tabs = TabSet::from_saved(vec![], None);
+        self.selected = None;
+        self.active_env = self
+            .ws
+            .environments
+            .first()
+            .map(|e| e.name.clone())
+            .unwrap_or_default();
+        self.attach_store(cx);
+        cx.notify();
+        Ok(())
+    }
+
+    /// Create a workspace (SPEC §4.1) in `path` and open it.
+    pub fn create_workspace(
+        &mut self,
+        path: &std::path::Path,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        fauxfield_store::init_workspace(path).map_err(|e| e.to_string())?;
+        self.open_workspace(path, cx)
     }
 
     // ---- persistence -------------------------------------------------------------------
@@ -457,7 +702,7 @@ impl Shell {
         }
     }
 
-    pub fn run_menu(&mut self, act: MenuAct, cx: &mut Context<Self>) {
+    pub fn run_menu(&mut self, act: MenuAct, window: &mut Window, cx: &mut Context<Self>) {
         let Some(m) = self.menu.take() else { return };
         match act {
             MenuAct::Open => self.click_row(&m.row_id, 1, cx),
@@ -472,10 +717,12 @@ impl Shell {
                     self.set_environment(name, cx);
                 }
             }
-            MenuAct::NewRoute => self.stub("Creating routes", "M2", cx),
-            MenuAct::Rename => self.stub("Renaming", "M2", cx),
-            MenuAct::Duplicate => self.stub("Duplicating", "M2", cx),
-            MenuAct::Delete => self.stub("Deleting", "M2", cx),
+            MenuAct::NewRoute => self.new_route_at(&m.row_id, window, cx),
+            MenuAct::NewFolder => self.new_folder_at(&m.row_id, window, cx),
+            MenuAct::NewResponse => self.new_response_for(&m.row_id, cx),
+            MenuAct::Rename => self.rename_row(&m.row_id, window, cx),
+            MenuAct::Duplicate => self.duplicate_row(&m.row_id, cx),
+            MenuAct::Delete => self.delete_row(&m.row_id, cx),
             MenuAct::ResetDataset => self.stub("Resetting dataset state", "M8", cx),
         }
         cx.notify();
@@ -555,6 +802,19 @@ impl Shell {
                     })
                     .collect()
             }
+            PickerKind::Prompt => {
+                let title = self
+                    .prompt
+                    .as_ref()
+                    .map(PromptAction::title)
+                    .unwrap_or("Value");
+                vec![simple_hit(
+                    Kind::Command,
+                    &format!("{title}: {query}"),
+                    "Enter to confirm",
+                    Target::Prompt,
+                )]
+            }
             PickerKind::Environment => {
                 let names: Vec<String> = self
                     .ws
@@ -620,6 +880,7 @@ impl Shell {
             self.apply_theme(&name, cx);
         }
         if self.picker.take().is_some() {
+            self.prompt = None;
             window.focus(&self.focus);
             cx.notify();
         }
@@ -714,6 +975,18 @@ impl Shell {
             Target::SwitchEnvironment(name) => {
                 self.close_picker(true, window, cx);
                 self.set_environment(name, cx);
+            }
+            Target::Prompt => {
+                let value = self
+                    .picker
+                    .as_ref()
+                    .map(|p| p.query.clone())
+                    .unwrap_or_default();
+                let action = self.prompt.take();
+                self.close_picker(true, window, cx);
+                if let Some(action) = action {
+                    self.apply_prompt(action, value.trim(), cx);
+                }
             }
             Target::Action(id) => {
                 self.close_picker(true, window, cx);
@@ -841,6 +1114,437 @@ impl Shell {
                 self.run_action_id(&id, window, cx);
             }
             Outcome::Cancelled => cx.stop_propagation(),
+        }
+    }
+
+    // ---- workspace editing (M2) ----------------------------------------------------------
+
+    /// Open a one-line prompt; confirming applies `action` with the typed value.
+    pub fn begin_prompt(
+        &mut self,
+        action: PromptAction,
+        initial: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.store.is_none()
+            && !matches!(
+                action,
+                PromptAction::OpenFolder | PromptAction::CreateWorkspace
+            )
+        {
+            self.notify("Open a workspace first.".into(), cx);
+            return;
+        }
+        if self.picker.is_some() {
+            self.close_picker(true, window, cx);
+        }
+        self.prompt = Some(action);
+        self.open_picker(PickerKind::Prompt, window, cx);
+        if let Some(p) = &mut self.picker {
+            p.query = initial.to_string();
+        }
+        self.refresh_picker(cx);
+    }
+
+    /// Run a store mutation, then rebuild the view; errors become notices.
+    pub(crate) fn store_op<R>(
+        &mut self,
+        cx: &mut Context<Self>,
+        f: impl FnOnce(&Store) -> Result<R, fauxfield_store::StoreError>,
+    ) -> Option<R> {
+        let Some(store) = self.store.clone() else {
+            self.notify("Open a workspace first.".into(), cx);
+            return None;
+        };
+        match f(&store) {
+            Ok(r) => {
+                self.reload(cx);
+                Some(r)
+            }
+            Err(e) => {
+                self.notify(e.to_string(), cx);
+                None
+            }
+        }
+    }
+
+    pub(crate) fn current_route_id(&self) -> Option<String> {
+        let id = self
+            .tabs
+            .active()
+            .filter(|t| t.kind == TabKind::Route)
+            .map(|t| t.id.clone())
+            .or_else(|| self.selected.clone())?;
+        self.ws.find_route(&id).map(|_| id)
+    }
+
+    pub(crate) fn current_server_id(&self) -> Option<String> {
+        self.current_server().map(|i| self.ws.servers[i].id.clone())
+    }
+
+    pub(crate) fn current_response_id(&self) -> Option<String> {
+        let rid = self.current_route_id()?;
+        let (_, r) = self.ws.find_route(&rid)?;
+        let i = self
+            .resp_sel
+            .get(&rid)
+            .copied()
+            .unwrap_or(0)
+            .min(r.responses.len().saturating_sub(1));
+        r.responses.get(i).map(|x| x.id.clone())
+    }
+
+    fn selected_is_route(&self) -> bool {
+        self.selected
+            .as_deref()
+            .is_some_and(|id| self.ws.find_route(id).is_some())
+    }
+
+    fn folder_server(&self, folder: &str) -> Option<String> {
+        self.ws
+            .servers
+            .iter()
+            .find(|s| s.folders.iter().any(|f| f.id == folder))
+            .map(|s| s.id.clone())
+    }
+
+    fn new_route_at(&mut self, row: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let (server, folder) = if self.ws.find_server(row).is_some() {
+            (Some(row.to_string()), None)
+        } else {
+            (self.folder_server(row), Some(row.to_string()))
+        };
+        match server {
+            Some(server) => self.begin_prompt(
+                PromptAction::NewRoute { server, folder },
+                "GET /",
+                window,
+                cx,
+            ),
+            None => self.notify("Select a server or folder first.".into(), cx),
+        }
+    }
+
+    fn new_folder_at(&mut self, row: &str, window: &mut Window, cx: &mut Context<Self>) {
+        match self.ws.find_server(row) {
+            Some(s) => {
+                let server = s.id.clone();
+                self.begin_prompt(PromptAction::NewFolder { server }, "", window, cx)
+            }
+            None => self.notify("Select a server first.".into(), cx),
+        }
+    }
+
+    fn new_response_for(&mut self, route: &str, cx: &mut Context<Self>) {
+        if self.ws.find_route(route).is_none() {
+            return self.notify("Select a route first.".into(), cx);
+        }
+        let route = route.to_string();
+        if let Some(id) = self.store_op(cx, |s| s.create_response(&route)) {
+            let n = self
+                .ws
+                .find_route(&route)
+                .map(|(_, r)| r.responses.len())
+                .unwrap_or(1);
+            self.resp_sel.insert(route, n.saturating_sub(1));
+            self.notify(format!("Created response {id}"), cx);
+        }
+    }
+
+    fn row_target(&self, id: &str) -> Option<fauxfield_store::Target> {
+        use fauxfield_store::Target as T;
+        if self.ws.find_server(id).is_some() {
+            Some(T::Server(id.into()))
+        } else if self.ws.find_route(id).is_some() {
+            Some(T::Route(id.into()))
+        } else if self.folder_server(id).is_some() {
+            Some(T::Folder(id.into()))
+        } else {
+            None
+        }
+    }
+
+    fn rename_row(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if id.starts_with("env:") {
+            return self.stub("Renaming environments", "M7", cx);
+        }
+        let current = if let Some(s) = self.ws.find_server(id) {
+            s.name.clone()
+        } else if let Some((_, r)) = self.ws.find_route(id) {
+            r.name.clone()
+        } else if let Some(f) = self
+            .ws
+            .servers
+            .iter()
+            .flat_map(|s| &s.folders)
+            .find(|f| f.id == id)
+        {
+            f.name.clone()
+        } else {
+            return self.notify("Nothing to rename here.".into(), cx);
+        };
+        self.begin_prompt(PromptAction::Rename { id: id.into() }, &current, window, cx);
+    }
+
+    fn duplicate_row(&mut self, id: &str, cx: &mut Context<Self>) {
+        if id.starts_with("env:") {
+            return self.stub("Duplicating environments", "M7", cx);
+        }
+        let target = self.row_target(id).or_else(|| {
+            self.ws
+                .servers
+                .iter()
+                .flat_map(|s| s.all_routes())
+                .flat_map(|r| &r.responses)
+                .find(|x| x.id == id)
+                .map(|_| fauxfield_store::Target::Response(id.into()))
+        });
+        match target {
+            Some(t) => {
+                if let Some(new) = self.store_op(cx, |s| s.duplicate(&t)) {
+                    self.reveal_row(&new);
+                    self.notify(format!("Duplicated as {new}"), cx);
+                }
+            }
+            None => self.notify("Nothing to duplicate here.".into(), cx),
+        }
+    }
+
+    fn delete_row(&mut self, id: &str, cx: &mut Context<Self>) {
+        if id.starts_with("env:") {
+            return self.stub("Deleting environments", "M7", cx);
+        }
+        match self.row_target(id) {
+            Some(t) => {
+                if self.store_op(cx, |s| s.delete(&t)).is_some() {
+                    self.selected = None;
+                    self.notify("Deleted (undo with Edit: Undo)".into(), cx);
+                }
+            }
+            None => self.notify("Nothing to delete here.".into(), cx),
+        }
+    }
+
+    fn file_for_edit(&self) -> Option<String> {
+        let store = self.store.as_ref()?;
+        let id = self
+            .tabs
+            .active()
+            .map(|t| t.id.clone())
+            .or_else(|| self.selected.clone())?;
+        let s = self.ws.servers.iter().find(|s| {
+            s.id == id || s.all_routes().any(|r| r.id == id) || s.folders.iter().any(|f| f.id == id)
+        })?;
+        let _ = store;
+        Some(s.file.clone())
+    }
+
+    fn undo_redo(&mut self, undo: bool, cx: &mut Context<Self>) {
+        let Some(file) = self.file_for_edit() else {
+            return self.notify("Nothing to undo here.".into(), cx);
+        };
+        let Some(store) = self.store.clone() else {
+            return;
+        };
+        let done = if undo {
+            store.undo(&file)
+        } else {
+            store.redo(&file)
+        };
+        if done {
+            self.reload(cx);
+        } else {
+            self.notify(
+                format!("Nothing to {}.", if undo { "undo" } else { "redo" }),
+                cx,
+            );
+        }
+    }
+
+    fn resolve_merge(&mut self, keep_mine: bool, cx: &mut Context<Self>) {
+        let Some(store) = self.store.clone() else {
+            return;
+        };
+        for f in store.conflicts() {
+            let _ = store.resolve_conflict(&f, keep_mine);
+        }
+        self.reload(cx);
+    }
+
+    fn edit_field(&mut self, field: FieldEdit, window: &mut Window, cx: &mut Context<Self>) {
+        let (Some(route), resp) = (self.current_route_id(), self.current_response_id()) else {
+            return self.notify("Open a route first.".into(), cx);
+        };
+        let Some((_, r)) = self.ws.find_route(&route) else {
+            return;
+        };
+        let cur_resp = resp
+            .as_ref()
+            .and_then(|id| r.responses.iter().find(|x| &x.id == id));
+        let (action, initial) = match field {
+            FieldEdit::RouteMethod => (PromptAction::RouteMethod { route }, r.method.clone()),
+            FieldEdit::RoutePath => (PromptAction::RoutePath { route }, r.path.clone()),
+            f => {
+                let (Some(response), Some(x)) = (resp, cur_resp) else {
+                    return self.notify("This route has no response yet.".into(), cx);
+                };
+                match f {
+                    FieldEdit::ResponseStatus => (
+                        PromptAction::ResponseStatus { response },
+                        x.status.to_string(),
+                    ),
+                    FieldEdit::ResponseName => {
+                        (PromptAction::ResponseName { response }, x.name.clone())
+                    }
+                    FieldEdit::ResponseContentType => (
+                        PromptAction::ResponseContentType { response },
+                        x.content_type.clone(),
+                    ),
+                    FieldEdit::ResponseDelay => (
+                        PromptAction::ResponseDelay { response },
+                        x.delay_ms.to_string(),
+                    ),
+                    FieldEdit::ResponseHeader => {
+                        (PromptAction::ResponseHeader { response }, String::new())
+                    }
+                    _ => (
+                        PromptAction::ResponseBody { response },
+                        x.body.replace('\n', " "),
+                    ),
+                }
+            }
+        };
+        self.begin_prompt(action, &initial, window, cx);
+    }
+
+    /// Apply a confirmed Prompt.
+    fn apply_prompt(&mut self, action: PromptAction, value: &str, cx: &mut Context<Self>) {
+        use fauxfield_store::Target as T;
+        let v = value.to_string();
+        match action {
+            PromptAction::OpenFolder => {
+                if let Err(e) = self.open_workspace(std::path::Path::new(&v), cx) {
+                    self.notify(e, cx);
+                }
+            }
+            PromptAction::CreateWorkspace => {
+                if let Err(e) = self.create_workspace(std::path::Path::new(&v), cx) {
+                    self.notify(e, cx);
+                }
+            }
+            PromptAction::NewServer => {
+                if v.is_empty() {
+                    return self.notify("A server needs a name.".into(), cx);
+                }
+                let port = self
+                    .ws
+                    .servers
+                    .iter()
+                    .map(|s| s.port)
+                    .max()
+                    .map(|p| p + 1)
+                    .unwrap_or(3001);
+                if let Some(id) = self.store_op(cx, |s| s.create_server(&v, port)) {
+                    self.reveal_row(&id);
+                }
+            }
+            PromptAction::NewFolder { server } => {
+                if v.is_empty() {
+                    return self.notify("A folder needs a name.".into(), cx);
+                }
+                if let Some(id) = self.store_op(cx, |s| s.create_folder(&server, &v)) {
+                    self.reveal_row(&id);
+                }
+            }
+            PromptAction::NewRoute { server, folder } => {
+                let (method, path) = v
+                    .split_once(char::is_whitespace)
+                    .map(|(m, p)| (m.trim(), p.trim()))
+                    .unwrap_or(("GET", v.as_str()));
+                if !path.starts_with('/') {
+                    return self.notify("A route path starts with `/`.".into(), cx);
+                }
+                let (method, path) = (method.to_string(), path.to_string());
+                if let Some(id) = self.store_op(cx, |s| {
+                    s.create_route(&server, folder.as_deref(), &method, &path)
+                }) {
+                    self.reveal_row(&id);
+                    if let Some((kind, title)) = self.tab_for_row(&id) {
+                        self.open_tab(&id, kind, &title, true);
+                    }
+                }
+            }
+            PromptAction::Rename { id } => {
+                if v.is_empty() {
+                    return self.notify("Names cannot be empty.".into(), cx);
+                }
+                match self.row_target(&id) {
+                    Some(T::Server(sid)) => {
+                        self.store_op(cx, |s| s.rename_server(&sid, &v));
+                    }
+                    Some(t) => {
+                        self.store_op(cx, |s| s.set_str(&t, "name", Some(&v)));
+                    }
+                    None => {}
+                }
+            }
+            PromptAction::RouteMethod { route } => {
+                self.store_op(cx, |s| {
+                    s.set_str(&T::Route(route), "method", Some(&v.to_ascii_uppercase()))
+                });
+            }
+            PromptAction::RoutePath { route } => {
+                self.store_op(cx, |s| s.set_str(&T::Route(route), "path", Some(&v)));
+            }
+            PromptAction::ResponseStatus { response } => match v.parse::<i64>() {
+                Ok(n) => {
+                    self.store_op(cx, |s| s.set_int(&T::Response(response), "status", Some(n)));
+                }
+                Err(_) => self.notify("Status is a number such as 200.".into(), cx),
+            },
+            PromptAction::ResponseDelay { response } => match v.parse::<i64>() {
+                Ok(n) if n >= 0 => {
+                    self.store_op(cx, |s| {
+                        s.set_int(&T::Response(response), "delay_ms", (n > 0).then_some(n))
+                    });
+                }
+                _ => self.notify("Delay is a number of milliseconds.".into(), cx),
+            },
+            PromptAction::ResponseName { response } => {
+                self.store_op(cx, |s| s.set_str(&T::Response(response), "name", Some(&v)));
+            }
+            PromptAction::ResponseContentType { response } => {
+                self.store_op(cx, |s| {
+                    s.set_str(
+                        &T::Response(response),
+                        "content_type",
+                        (!v.is_empty()).then_some(v.as_str()),
+                    )
+                });
+            }
+            PromptAction::ResponseBody { response } => {
+                self.store_op(cx, |s| {
+                    s.set_str(
+                        &T::Response(response),
+                        "body",
+                        (!v.is_empty()).then_some(v.as_str()),
+                    )
+                });
+            }
+            PromptAction::ResponseHeader { response } => {
+                let (name, val) = v
+                    .split_once(':')
+                    .map(|(n, x)| (n.trim(), x.trim()))
+                    .unwrap_or((v.as_str(), ""));
+                if name.is_empty() {
+                    return self.notify("Header format is `name: value`.".into(), cx);
+                }
+                let (name, val) = (name.to_string(), val.to_string());
+                self.store_op(cx, |s| {
+                    s.set_header(&response, &name, (!val.is_empty()).then_some(val.as_str()))
+                });
+            }
         }
     }
 
@@ -982,8 +1686,47 @@ impl Render for Shell {
                     None => this.notify("Select a server or route first.".into(), cx),
                 }
             },
-            NewServer => |this, _w, cx| this.stub("Creating servers", "M2", cx),
-            NewRoute => |this, _w, cx| this.stub("Creating routes", "M2", cx),
+            NewServer => |this, w, cx| this.begin_prompt(PromptAction::NewServer, "", w, cx),
+            NewRoute => |this, w, cx| match this.current_server_id() {
+                Some(server) => this.begin_prompt(PromptAction::NewRoute { server, folder: None }, "GET /", w, cx),
+                None => this.notify("Select a server first.".into(), cx),
+            },
+            NewFolder => |this, w, cx| match this.current_server_id() {
+                Some(server) => this.begin_prompt(PromptAction::NewFolder { server }, "", w, cx),
+                None => this.notify("Select a server first.".into(), cx),
+            },
+            NewResponse => |this, _w, cx| match this.current_route_id() {
+                Some(r) => this.new_response_for(&r, cx),
+                None => this.notify("Open a route first.".into(), cx),
+            },
+            Rename => |this, w, cx| match this.selected.clone() {
+                Some(id) => this.rename_row(&id, w, cx),
+                None => this.notify("Select something to rename.".into(), cx),
+            },
+            Delete => |this, _w, cx| match this.selected.clone() {
+                Some(id) => this.delete_row(&id, cx),
+                None => this.notify("Select something to delete.".into(), cx),
+            },
+            Undo => |this, _w, cx| this.undo_redo(true, cx),
+            Redo => |this, _w, cx| this.undo_redo(false, cx),
+            OpenFolder => |this, w, cx| this.begin_prompt(PromptAction::OpenFolder, "", w, cx),
+            CreateWorkspace => |this, w, cx| this.begin_prompt(PromptAction::CreateWorkspace, "", w, cx),
+            MergeKeepMine => |this, _w, cx| this.resolve_merge(true, cx),
+            MergeLoadDisk => |this, _w, cx| this.resolve_merge(false, cx),
+            EditRouteMethod => |this, w, cx| this.edit_field(FieldEdit::RouteMethod, w, cx),
+            EditRoutePath => |this, w, cx| this.edit_field(FieldEdit::RoutePath, w, cx),
+            EditResponseStatus => |this, w, cx| this.edit_field(FieldEdit::ResponseStatus, w, cx),
+            EditResponseName => |this, w, cx| this.edit_field(FieldEdit::ResponseName, w, cx),
+            EditResponseContentType => |this, w, cx| this.edit_field(FieldEdit::ResponseContentType, w, cx),
+            EditResponseDelay => |this, w, cx| this.edit_field(FieldEdit::ResponseDelay, w, cx),
+            EditResponseHeader => |this, w, cx| this.edit_field(FieldEdit::ResponseHeader, w, cx),
+            EditResponseBody => |this, w, cx| this.edit_field(FieldEdit::ResponseBody, w, cx),
+            SetDefaultResponse => |this, _w, cx| match this.current_response_id() {
+                Some(r) => {
+                    this.store_op(cx, |s| s.set_default_response(&r));
+                }
+                None => this.notify("Open a route first.".into(), cx),
+            },
             SendTest => |this, w, cx| {
                 // Cmd+Enter is also "open pinned" inside Quick Search.
                 if this.picker.is_some() {
@@ -992,7 +1735,10 @@ impl Render for Shell {
                     this.stub("Send test", "M3", cx);
                 }
             },
-            Duplicate => |this, _w, cx| this.stub("Duplicating", "M2", cx),
+            Duplicate => |this, _w, cx| match this.current_response_id().filter(|_| this.selected_is_route()).or(this.selected.clone()) {
+                Some(id) => this.duplicate_row(&id, cx),
+                None => this.notify("Select something to duplicate.".into(), cx),
+            },
             ResetState => |this, _w, cx| this.stub("Resetting dataset state", "M8", cx),
             Quit => |_this, _w, cx| cx.quit(),
         });
@@ -1004,7 +1750,11 @@ impl Render for Shell {
             "Title bar",
             None
         ))
-        .child(body_h_with_bottom(self, body_h, &t, cx))
+        .child(if self.store.is_none() {
+            self.render_welcome(&t, cx).into_any_element()
+        } else {
+            body_h_with_bottom(self, body_h, &t, cx).into_any_element()
+        })
         .child(crate::dev_id!(
             self.render_status_bar(&t, cx),
             "status-bar",

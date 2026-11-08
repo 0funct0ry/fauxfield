@@ -1,0 +1,57 @@
+schema = 1
+id = "srv_payments"
+name = "Payments"
+enabled = true
+host = "127.0.0.1"
+port = 4020
+
+[[datasets]]
+name = "charges"
+
+[[folders]]
+id = "fld_charges"
+name = "Charges"
+
+[[routes]]
+id = "rt_charges_create"
+folder = "fld_charges"
+name = "Create charge"
+method = "POST"
+path = "/charges"
+
+  [[routes.responses]]
+  id = "rsp_charges_create_1"
+  name = "202 Accepted"
+  default = true
+  status = 202
+  content_type = "application/json"
+  body = '''{ "status": "pending" }'''
+
+[[routes]]
+id = "rt_charges_get"
+folder = "fld_charges"
+name = "Get charge"
+method = "GET"
+path = "/charges/:id"
+
+  [[routes.responses]]
+  id = "rsp_charges_get_1"
+  name = "200 OK"
+  default = true
+  status = 200
+  content_type = "application/json"
+  body = '''{ "status": "succeeded" }'''
+
+[[routes]]
+id = "rt_refunds"
+name = "Update refund"
+method = "PUT"
+path = "/refunds/:id"
+
+  [[routes.responses]]
+  id = "rsp_refunds_1"
+  name = "200 OK"
+  default = true
+  status = 200
+  content_type = "application/json"
+  body = '''{}'''

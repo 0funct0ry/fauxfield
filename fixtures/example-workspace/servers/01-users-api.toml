@@ -1,0 +1,114 @@
+# Users API: the committed example workspace used by tests and agent scenarios.
+schema = 1
+id = "srv_users"
+name = "Users API"
+enabled = true
+host = "127.0.0.1"
+port = 4010
+prefix = "/api"
+
+[[datasets]]
+name = "users"
+
+[[folders]]
+id = "fld_users"
+name = "Users"
+
+[[routes]]
+id = "rt_users_list"
+folder = "fld_users"
+name = "List users"
+method = "GET"
+path = "/users"
+
+  [[routes.responses]]
+  id = "rsp_users_list_1"
+  name = "200 OK"
+  default = true
+  status = 200
+  content_type = "application/json"
+  body = '''[]'''
+
+[[routes]]
+id = "rt_users_get"
+folder = "fld_users"
+name = "Get user"
+method = "GET"
+path = "/users/:id"
+
+  [[routes.responses]]
+  id = "rsp_users_get_1"
+  name = "200 OK"
+  default = true
+  status = 200
+  content_type = "application/json"
+  body = '''{
+  "id": "{{ request.params.id }}",
+  "name": "{{ fake(kind='name.full') }}",
+  "email": "{{ fake(kind='internet.email') }}"
+}'''
+
+  [[routes.responses]]
+  id = "rsp_users_get_2"
+  name = "404 Not found"
+  status = 404
+  content_type = "application/json"
+  body = '''{ "title": "Not found", "status": 404 }'''
+
+[[routes]]
+id = "rt_users_create"
+folder = "fld_users"
+name = "Create user"
+method = "POST"
+path = "/users"
+
+  [[routes.responses]]
+  id = "rsp_users_create_1"
+  name = "201 Created"
+  default = true
+  status = 201
+  content_type = "application/json"
+  body = '''{ "id": "usr_1" }'''
+
+[[routes]]
+id = "rt_users_update"
+folder = "fld_users"
+name = "Update user"
+method = "PATCH"
+path = "/users/:id"
+
+  [[routes.responses]]
+  id = "rsp_users_update_1"
+  name = "200 OK"
+  default = true
+  status = 200
+  content_type = "application/json"
+  body = '''{}'''
+
+[[routes]]
+id = "rt_users_delete"
+folder = "fld_users"
+name = "Delete user"
+method = "DELETE"
+path = "/users/:id"
+
+  [[routes.responses]]
+  id = "rsp_users_delete_1"
+  name = "204 No content"
+  default = true
+  status = 204
+  content_type = "application/json"
+
+[[routes]]
+id = "rt_health"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_health_1"
+  name = "200 OK"
+  default = true
+  status = 200
+  content_type = "application/json"
+  body = '''{ "ok": true }'''

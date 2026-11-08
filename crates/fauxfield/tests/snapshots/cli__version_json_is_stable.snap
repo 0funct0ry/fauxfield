@@ -3,7 +3,7 @@ source: crates/fauxfield/tests/cli.rs
 expression: v
 ---
 {
+  "gui": "<bool>",
   "name": "fauxfield",
-  "version": "<version>",
-  "gui": "<bool>"
+  "version": "<version>"
 }

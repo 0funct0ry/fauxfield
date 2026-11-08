@@ -1,0 +1,10 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: out
+---
+{
+  "diagnostics": [],
+  "errors": 0,
+  "ok": true,
+  "warnings": 0
+}

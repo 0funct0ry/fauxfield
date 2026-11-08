@@ -22,6 +22,7 @@ pub mod theme_model;
 pub mod title_bar;
 pub mod tree;
 pub mod ui;
+pub mod view;
 
 #[cfg(test)]
 mod tests;
@@ -35,8 +36,13 @@ use gpui::{
 
 pub use shell::{Shell, ShellOptions};
 
-/// Starts the application and blocks until the last window closes. `workspace` is accepted for
-/// `fauxfield [PATH]` and ignored until M2 loads real workspaces.
+/// Which workspace `fauxfield [PATH]` opens: the explicit path, else the nearest ancestor of
+/// `cwd` containing `fauxfield.toml`, else `None` (the Welcome view).
+pub fn resolve_workspace(explicit: Option<PathBuf>, cwd: &std::path::Path) -> Option<PathBuf> {
+    explicit.or_else(|| fauxfield_store::discover(cwd))
+}
+
+/// Starts the application and blocks until the last window closes.
 pub fn run(workspace: Option<PathBuf>) {
     launch(workspace, |_, _| {});
 }
@@ -53,7 +59,7 @@ fn launch(
     workspace: Option<PathBuf>,
     after_open: impl FnOnce(gpui::WindowHandle<Shell>, &mut App) + 'static,
 ) {
-    let _ = workspace;
+    let workspace = resolve_workspace(workspace, &std::env::current_dir().unwrap_or_default());
     Application::new()
         .with_assets(assets::Assets)
         .run(move |cx: &mut App| {
@@ -62,6 +68,8 @@ fn launch(
             let opts = ShellOptions {
                 layout_path: dirs.as_ref().map(|d| d.data_dir().join("layout.json")),
                 config_dir: dirs.as_ref().map(|d| d.config_dir().to_path_buf()),
+                workspace: workspace.clone(),
+                recent_path: dirs.as_ref().map(|d| d.data_dir().join("recent.json")),
             };
             cx.on_window_closed(|cx| {
                 if cx.windows().is_empty() {

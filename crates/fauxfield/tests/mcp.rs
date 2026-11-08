@@ -259,3 +259,70 @@ fn bad_flags_are_usage_errors() {
         assert_eq!(out.status.code(), Some(2), "{args:?}");
     }
 }
+
+/// M2: workspace tools over stdio edit the files through the store.
+#[tokio::test]
+async fn workspace_tools_edit_files_and_respect_read_only() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(
+        std::process::Command::new(BIN)
+            .args(["init", dir.path().to_str().unwrap()])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let p = dir.path().to_str().unwrap();
+    let mut child = spawn(&[p]);
+    let c = ().serve((child.stdout.take().unwrap(), child.stdin.take().unwrap())).await.unwrap();
+    let call = |name: &'static str, args: serde_json::Value| {
+        let c = &c;
+        async move {
+            c.call_tool(
+                CallToolRequestParams::new(name).with_arguments(args.as_object().unwrap().clone()),
+            )
+            .await
+        }
+    };
+    let info = call("workspace_info", json!({})).await.unwrap();
+    assert_eq!(
+        info.structured_content.unwrap()["servers"][0]["name"],
+        "Example API"
+    );
+    let r = call(
+        "upsert_route",
+        json!({"server": "example-api", "method": "post", "path": "/users", "name": "Create",
+               "responses": [{"name": "Created", "status": 201, "body": "{}", "headers": {"x-a": "1"}}]}),
+    )
+    .await
+    .unwrap();
+    let route = r.structured_content.unwrap();
+    assert_eq!(route["method"], "POST");
+    assert_eq!(route["responses"][0]["status"], 201);
+    assert_eq!(route["responses"].as_array().unwrap().len(), 1);
+    let text = std::fs::read_to_string(dir.path().join("servers/example-api.toml")).unwrap();
+    assert!(text.contains("/users") && text.contains("x-a"));
+    let v = call("validate", json!({}))
+        .await
+        .unwrap()
+        .structured_content
+        .unwrap();
+    assert_eq!(v["ok"], true);
+    call("delete_route", json!({"route": route["id"]}))
+        .await
+        .unwrap();
+    c.cancel().await.unwrap();
+
+    let mut child = spawn(&[p, "--read-only"]);
+    let c = ().serve((child.stdout.take().unwrap(), child.stdin.take().unwrap())).await.unwrap();
+    let names: Vec<_> = c
+        .list_all_tools()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|t| t.name.to_string())
+        .collect();
+    assert!(
+        names.contains(&"list_routes".to_string()) && !names.contains(&"upsert_route".to_string())
+    );
+    c.cancel().await.unwrap();
+}

@@ -1,5 +1,7 @@
-# UI state fixture (M1.5): captured by `ui.screenshot {state: "problems-open"}`. Bottom dock on the Problems tab.
+# UI state fixture (M1.5, M2): captured by `ui.screenshot {state: "problems-open"}`. A workspace with
+# validation errors (duplicate port, bad path, bad status), Problems tab open.
 steps:
   - reset
+  - open_workspace: fixtures/problems-workspace
   - invoke: show_problems
   - wait_idle
