@@ -21,6 +21,14 @@ gpui = "=0.2.2"
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "io-std", "net", "signal", "sync", "time", "fs"] }
+rmcp = { version = "3.8", default-features = false, features = ["server", "client", "transport-io"] }
+schemars = "1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+toml = "0.8"
+thiserror = "2"
+tempfile = "3"
 fauxfield-model = { path = "crates/fauxfield-model" }
 fauxfield-store = { path = "crates/fauxfield-store" }
 fauxfield-engine = { path = "crates/fauxfield-engine" }

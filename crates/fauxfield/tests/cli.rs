@@ -60,3 +60,11 @@ fn bad_flag_is_a_usage_error() {
     assert_eq!(code, 2);
     assert!(err.contains("--nope"));
 }
+
+#[test]
+fn mcp_help_is_stable() {
+    // `fauxfield mcp` speaks MCP on stdout, so it has no `--json`; its help is the CLI contract.
+    let (code, out, _) = run(&["mcp", "--help"]);
+    assert_eq!(code, 0);
+    insta::assert_snapshot!(out);
+}

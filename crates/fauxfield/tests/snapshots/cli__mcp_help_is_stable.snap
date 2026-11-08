@@ -1,0 +1,17 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: out
+---
+Run the MCP server for agents (SPEC §11.1). Logs go to stderr; stdout is protocol-only
+
+Usage: fauxfield mcp [OPTIONS] [PATH]
+
+Arguments:
+  [PATH]  Workspace folder (used from M2 on; validated now)
+
+Options:
+      --transport <TRANSPORT>  Transport: stdio, unix, both, or http (http arrives in M16)
+      --socket <PATH>          Unix socket path (default: per-user runtime dir, mcp-<pid>.sock)
+      --allow <CLASSES>        Tool classes to expose: read, write, execute (default: all)
+      --read-only              Shorthand for --allow read
+  -h, --help                   Print help

@@ -1,6 +1,6 @@
 [package]
 name = "fauxfield-mcp"
-description = "Fauxfield mcp crate (stub until its milestone)."
+description = "Fauxfield MCP server: tool registry, class filtering, stdio and unix-socket transports. No GPUI."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,3 +9,16 @@ rust-version.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+rmcp.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+toml.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

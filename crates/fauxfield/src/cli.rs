@@ -32,6 +32,8 @@ pub enum Command {
         /// Workspace folder to open.
         path: Option<PathBuf>,
     },
+    /// Run the MCP server for agents (SPEC §11.1). Logs go to stderr; stdout is protocol-only.
+    Mcp(McpArgs),
     /// Print version information.
     Version {
         /// Machine-readable output with a stable schema.
@@ -43,6 +45,33 @@ pub enum Command {
         /// Target shell.
         shell: Shell,
     },
+}
+
+#[derive(clap::Args, Debug)]
+pub struct McpArgs {
+    /// Workspace folder (used from M2 on; validated now).
+    pub path: Option<PathBuf>,
+    /// Transport: stdio, unix, both, or http (http arrives in M16).
+    #[arg(long, value_parser = parse_transport)]
+    pub transport: Option<fauxfield_mcp::TransportKind>,
+    /// Unix socket path (default: per-user runtime dir, mcp-<pid>.sock).
+    #[arg(long, value_name = "PATH")]
+    pub socket: Option<PathBuf>,
+    /// Tool classes to expose: read, write, execute (default: all).
+    #[arg(
+        long,
+        value_delimiter = ',',
+        value_name = "CLASSES",
+        conflicts_with = "read_only"
+    )]
+    pub allow: Option<Vec<String>>,
+    /// Shorthand for --allow read.
+    #[arg(long)]
+    pub read_only: bool,
+}
+
+fn parse_transport(s: &str) -> Result<fauxfield_mcp::TransportKind, String> {
+    s.parse()
 }
 
 /// Stable `version --json` schema.
@@ -66,6 +95,7 @@ pub fn run() -> i32 {
     match cli.command {
         None => open(cli.path),
         Some(Command::Open { path }) => open(path),
+        Some(Command::Mcp(args)) => mcp(args),
         Some(Command::Version { json }) => {
             if json {
                 println!("{}", serde_json::to_string_pretty(&version_json()).unwrap());
@@ -78,6 +108,52 @@ pub fn run() -> i32 {
             let mut cmd = Cli::command();
             clap_complete::generate(shell, &mut cmd, "fauxfield", &mut std::io::stdout());
             EXIT_OK
+        }
+    }
+}
+
+fn mcp(args: McpArgs) -> i32 {
+    use fauxfield_mcp::{AllowedClasses, McpSettings};
+    if let Err(code) = check_path(&args.path) {
+        return code;
+    }
+    let allow = if args.read_only {
+        Ok(Some(AllowedClasses::read_only()))
+    } else {
+        args.allow
+            .as_ref()
+            .map(|l| AllowedClasses::parse_list(&l.join(",")).map(Some))
+            .unwrap_or(Ok(None))
+    };
+    let config = allow
+        .and_then(|allow| McpSettings::load_default()?.resolve(args.transport, args.socket, allow));
+    let config = match config {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return EXIT_USAGE;
+        }
+    };
+    // stdout carries only the protocol: all logs to stderr.
+    let _ = tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_ansi(false)
+        .try_init();
+    let rt = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("error: cannot start runtime: {e}");
+            return EXIT_RUNTIME;
+        }
+    };
+    match rt.block_on(fauxfield_mcp::serve(config)) {
+        Ok(()) => EXIT_OK,
+        Err(e) => {
+            eprintln!("error: {e}");
+            EXIT_RUNTIME
         }
     }
 }

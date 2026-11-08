@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Added
+- M1.1 MCP core: `fauxfield-mcp` (rmcp, no GPUI) with a class-filtered tool registry
+  (read/write/execute/ui), `ping` and `server_info` tools, the `UiBridge` trait, stdio and unix
+  socket transports (0600, stale-socket replacement, removed on exit), and `fauxfield mcp
+  [PATH] [--transport] [--socket] [--allow] [--read-only]`. `[mcp]` keys in settings.toml are
+  read; flags win.
 - M1 UI shell: Cargo workspace, GPUI window with title bar, left/right/bottom docks, tab bar
   with preview and pinned tabs, status bar, Route / Server / Environment tabs and a virtualised
   Traffic panel (10,000 mock rows), all on mock data.
