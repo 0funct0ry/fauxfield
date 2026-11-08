@@ -196,6 +196,29 @@ pub fn register_ui_tools(registry: &mut Registry, bridge: Arc<dyn UiBridge>) {
          environment; id: route id, server id or environment name.",
     );
 
+    tool::<super::tree::TreeInput>(
+        registry,
+        &bridge,
+        "ui.tree",
+        "Semantic UI tree of the last painted frame: every tagged element with id, role, label, \
+         enabled, visible, clipped (by an ancestor), focused, z, bounds (window points) and \
+         parent. Filter by `root` (subtree), `role`, `visible_only`. Virtualised lists report \
+         `total`.",
+    );
+    tool::<super::tree::FindInput>(
+        registry,
+        &bridge,
+        "ui.find",
+        "Find elements by label, role or text (case-insensitive substrings of label or id).",
+    );
+    input_tool::<super::tree::ClickElementInput>(
+        registry,
+        &bridge,
+        "ui.click_element",
+        "Click an element by id from ui.tree/ui.find. Runs the same Shell method the pointer \
+         handler runs (synthetic pointer events are impossible in gpui 0.2.2). Returns the new \
+         ui.state generation and toasts.",
+    );
     tool::<NoInput>(
         registry,
         &bridge,
@@ -332,6 +355,9 @@ mod tests {
             "ui.open_tab",
             "ui.capture_probe",
             "ui.list_actions",
+            "ui.tree",
+            "ui.find",
+            "ui.click_element",
             "ui.invoke_action",
             "ui.command",
             "ui.key",

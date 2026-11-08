@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Added
+- M1.4 Semantic UI tree (dev builds): `dev_id!` tags elements (compiled out without `dev-mcp`),
+  `ui.tree`, `ui.find` and `ui.click_element` (role, label, bounds, visible, clipped, focused, z;
+  virtualised lists report `total`). Clicks run the same `Shell` methods as the pointer handlers.
 - M1.3 Actions and input over MCP (dev builds): `ui.list_actions`, `ui.invoke_action`
   (disabled action is an error, `quit` is refused), `ui.command` (open_tab, select_tab,
   toggle_dock, set_environment, search), `ui.key` (keystrokes and chords, same 400 ms Cmd+K

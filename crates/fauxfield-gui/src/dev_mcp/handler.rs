@@ -97,6 +97,12 @@ pub fn dispatch(
             input::invoke_action(&i.name, window, cx)
         }
         "ui.command" => input::command(args(&req.params)?, shell, window, cx),
+        "ui.tree" => super::tree::tree(cx, &args(&req.params)?).map_err(UiError::Failed),
+        "ui.find" => Ok(super::tree::find(cx, &args(&req.params)?)),
+        "ui.click_element" => {
+            let i: super::tree::ClickElementInput = args(&req.params)?;
+            super::tree::click_element(&i.id, shell, window, cx)
+        }
         "ui.click" => input::click(args(&req.params)?),
         "ui.scroll" => input::scroll(args(&req.params)?),
         "ui.idle_probe" => {

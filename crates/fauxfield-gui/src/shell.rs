@@ -877,6 +877,11 @@ macro_rules! on_actions {
 
 impl Render for Shell {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        #[cfg(feature = "dev-mcp")]
+        crate::dev_mcp::tree::Registry::begin_frame(
+            cx,
+            self.picker.as_ref().map(|_| "picker-input"),
+        );
         let t = theme::theme(cx).clone();
         let body_h = div()
             .flex_1()
@@ -884,13 +889,31 @@ impl Render for Shell {
             .flex()
             .flex_row()
             .when(self.layout.left_open, |d| {
-                d.child(self.render_left_dock(&t, cx))
-                    .child(self.resize_handle_v(&t, Resize::Left, cx))
+                d.child(crate::dev_id!(
+                    self.render_left_dock(&t, cx),
+                    "left-dock",
+                    Dock,
+                    "Left dock",
+                    None
+                ))
+                .child(self.resize_handle_v(&t, Resize::Left, cx))
             })
-            .child(self.render_center(&t, cx))
+            .child(crate::dev_id!(
+                self.render_center(&t, cx),
+                "center",
+                Panel,
+                "Center pane",
+                None
+            ))
             .when(self.layout.right_open, |d| {
                 d.child(self.resize_handle_v(&t, Resize::Right, cx))
-                    .child(self.render_right_dock(&t, cx))
+                    .child(crate::dev_id!(
+                        self.render_right_dock(&t, cx),
+                        "right-dock",
+                        Dock,
+                        "Right dock",
+                        None
+                    ))
             });
 
         let root = div()
@@ -968,15 +991,41 @@ impl Render for Shell {
             Quit => |_this, _w, cx| cx.quit(),
         });
 
-        root.child(self.render_title_bar(&t, cx))
-            .child(body_h_with_bottom(self, body_h, &t, cx))
-            .child(self.render_status_bar(&t, cx))
-            .when(self.picker.is_some(), |d| {
-                d.child(self.render_picker(&t, cx))
-            })
-            .when(self.menu.is_some(), |d| {
-                d.child(self.render_row_menu(&t, cx))
-            })
+        root.child(crate::dev_id!(
+            self.render_title_bar(&t, cx),
+            "title-bar",
+            Toolbar,
+            "Title bar",
+            None
+        ))
+        .child(body_h_with_bottom(self, body_h, &t, cx))
+        .child(crate::dev_id!(
+            self.render_status_bar(&t, cx),
+            "status-bar",
+            Toolbar,
+            "Status bar",
+            None
+        ))
+        .when(self.picker.is_some(), |d| {
+            d.child(crate::dev_id_z!(
+                self.render_picker(&t, cx),
+                1,
+                self.picker_ids().0,
+                Modal,
+                self.picker_ids().1,
+                None
+            ))
+        })
+        .when(self.menu.is_some(), |d| {
+            d.child(crate::dev_id_z!(
+                self.render_row_menu(&t, cx),
+                1,
+                "row-menu",
+                Menu,
+                "Row context menu",
+                None
+            ))
+        })
     }
 }
 
@@ -993,8 +1042,13 @@ fn body_h_with_bottom(
         .flex_col()
         .child(top)
         .when(shell.layout.bottom_open, |d| {
-            d.child(shell.resize_handle_h(t, cx))
-                .child(shell.render_bottom_dock(t, cx))
+            d.child(shell.resize_handle_h(t, cx)).child(crate::dev_id!(
+                shell.render_bottom_dock(t, cx),
+                "bottom-dock",
+                Dock,
+                "Bottom dock",
+                None
+            ))
         })
 }
 

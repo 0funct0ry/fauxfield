@@ -1849,6 +1849,7 @@ dependencies = [
  "directories",
  "fauxfield-mcp",
  "gpui",
+ "insta",
  "nucleo-matcher",
  "schemars",
  "serde",

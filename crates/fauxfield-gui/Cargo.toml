@@ -32,3 +32,4 @@ schemars = { workspace = true, optional = true }
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
 tempfile = "3"
+insta = { version = "1", features = ["json"] }

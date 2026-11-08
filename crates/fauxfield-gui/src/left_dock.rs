@@ -31,7 +31,7 @@ impl Shell {
                     .text_color(t.text_muted)
                     .child("WORKSPACE"),
             )
-            .child(
+            .child(crate::dev_id!(
                 div()
                     .id("tree")
                     .flex_1()
@@ -40,7 +40,11 @@ impl Shell {
                     .flex()
                     .flex_col()
                     .children(rows.iter().map(|r| self.render_tree_row(t, r, cx))),
-            )
+                "tree",
+                List,
+                "Workspace tree",
+                None
+            ))
     }
 
     fn render_tree_row(&self, t: &Theme, r: &TreeRow, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -72,105 +76,123 @@ impl Shell {
             RowKind::Dataset => icon("server", 13., t.icon_muted).into_any_element(),
         };
         let chevron: gpui::AnyElement = if r.expandable {
-            div()
-                .id(crate::ui::eid(format!("chev-{}", r.id)))
-                .w(px(14.))
-                .flex_none()
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, _, _, cx| {
-                        this.toggle_row(&toggle_id);
-                        cx.stop_propagation();
-                        cx.notify();
-                    }),
-                )
-                .child(icon(
-                    if r.expanded {
-                        "chevron-down"
-                    } else {
-                        "chevron-right"
-                    },
-                    12.,
-                    t.icon_muted,
-                ))
-                .into_any_element()
+            crate::dev_id!(
+                div()
+                    .id(crate::ui::eid(format!("chev-{}", r.id)))
+                    .w(px(14.))
+                    .flex_none()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.toggle_row(&toggle_id);
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
+                    .child(icon(
+                        if r.expanded {
+                            "chevron-down"
+                        } else {
+                            "chevron-right"
+                        },
+                        12.,
+                        t.icon_muted,
+                    )),
+                format!("chev-{}", r.id),
+                Button,
+                format!("Toggle {}", r.label),
+                ToggleRow(r.id.clone())
+            )
+            .into_any_element()
         } else {
             div().w(px(14.)).flex_none().into_any_element()
         };
-        let dots = div()
-            .id(crate::ui::eid(format!("dots-{}", r.id)))
-            .size(px(18.))
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(3.))
-            .invisible()
-            .group_hover(group_name.clone(), |s| s.visible())
-            .hover(move |s| s.bg(sel))
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
-                    this.open_menu(
-                        &dots_id,
-                        f32::from(ev.position.x),
-                        f32::from(ev.position.y),
-                        cx,
-                    );
-                    cx.stop_propagation();
-                }),
-            )
-            .child(icon("ellipsis", 14., t.icon_muted));
+        let dots = crate::dev_id!(
+            div()
+                .id(crate::ui::eid(format!("dots-{}", r.id)))
+                .size(px(18.))
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(3.))
+                .invisible()
+                .group_hover(group_name.clone(), |s| s.visible())
+                .hover(move |s| s.bg(sel))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
+                        this.open_menu(
+                            &dots_id,
+                            f32::from(ev.position.x),
+                            f32::from(ev.position.y),
+                            cx,
+                        );
+                        cx.stop_propagation();
+                    }),
+                )
+                .child(icon("ellipsis", 14., t.icon_muted)),
+            format!("dots-{}", r.id),
+            Button,
+            format!("Menu for {}", r.label),
+            RowMenu(r.id.clone())
+        );
         let _ = group;
-        div()
-            .id(crate::ui::eid(format!("row-{}", r.id)))
-            .group(group_name)
-            .h(px(ROW_H))
-            .w_full()
-            .flex_none()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(5.))
-            .pl(px(6. + f32::from(r.depth) * 12.))
-            .pr(px(8.))
-            .cursor_pointer()
-            .text_size(px(if is_section { 11. } else { 13. }))
-            .text_color(if is_section { t.text_muted } else { t.text })
-            .when(selected, |d| d.bg(sel))
-            .hover(move |s| s.bg(hover))
-            .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| {
-                this.click_row(&id, ev.click_count(), cx)
-            }))
-            .on_mouse_down(
-                MouseButton::Right,
-                cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
-                    this.open_menu(
-                        &menu_id,
-                        f32::from(ev.position.x),
-                        f32::from(ev.position.y),
-                        cx,
-                    )
-                }),
-            )
-            .child(chevron)
-            .child(lead)
-            .child(div().flex_1().truncate().child(if is_section {
-                r.label.to_uppercase()
-            } else {
-                r.label.clone()
-            }))
-            .children(match &r.kind {
-                RowKind::Server { port, .. } => Some(
-                    div()
-                        .text_size(px(11.))
-                        .text_color(t.text_muted)
-                        .child(format!(":{port}")),
-                ),
-                _ => None,
-            })
-            .child(dots)
-            .into_any_element()
+        crate::dev_id!(
+            div()
+                .id(crate::ui::eid(format!("row-{}", r.id)))
+                .group(group_name)
+                .h(px(ROW_H))
+                .w_full()
+                .flex_none()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(5.))
+                .pl(px(6. + f32::from(r.depth) * 12.))
+                .pr(px(8.))
+                .cursor_pointer()
+                .text_size(px(if is_section { 11. } else { 13. }))
+                .text_color(if is_section { t.text_muted } else { t.text })
+                .when(selected, |d| d.bg(sel))
+                .hover(move |s| s.bg(hover))
+                .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| {
+                    this.click_row(&id, ev.click_count(), cx)
+                }))
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
+                        this.open_menu(
+                            &menu_id,
+                            f32::from(ev.position.x),
+                            f32::from(ev.position.y),
+                            cx,
+                        )
+                    }),
+                )
+                .child(chevron)
+                .child(lead)
+                .child(div().flex_1().truncate().child(if is_section {
+                    r.label.to_uppercase()
+                } else {
+                    r.label.clone()
+                }))
+                .children(match &r.kind {
+                    RowKind::Server { port, .. } => Some(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(t.text_muted)
+                            .child(format!(":{port}")),
+                    ),
+                    _ => None,
+                })
+                .child(dots),
+            format!("row-{}", r.id),
+            Row,
+            &r.label,
+            Row(r.id.clone())
+        )
+        .into_any_element()
     }
 }
 
@@ -209,17 +231,24 @@ impl Shell {
                     .shadow_md()
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .children(items.into_iter().map(|(label, act)| {
-                        div()
-                            .id(crate::ui::eid(format!("menu-{label}")))
-                            .h(px(26.))
-                            .px(px(12.))
-                            .flex()
-                            .items_center()
-                            .cursor_pointer()
-                            .text_size(px(12.))
-                            .hover(move |s| s.bg(hover))
-                            .on_click(cx.listener(move |this, _, _, cx| this.run_menu(act, cx)))
-                            .child(label)
+                        crate::dev_id_z!(
+                            div()
+                                .id(crate::ui::eid(format!("menu-{label}")))
+                                .h(px(26.))
+                                .px(px(12.))
+                                .flex()
+                                .items_center()
+                                .cursor_pointer()
+                                .text_size(px(12.))
+                                .hover(move |s| s.bg(hover))
+                                .on_click(cx.listener(move |this, _, _, cx| this.run_menu(act, cx)))
+                                .child(label),
+                            1,
+                            format!("menu-{label}"),
+                            MenuItem,
+                            label,
+                            Menu(act)
+                        )
                     })),
             )
     }

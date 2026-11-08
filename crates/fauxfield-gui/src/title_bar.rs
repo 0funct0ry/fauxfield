@@ -35,7 +35,7 @@ impl Shell {
             .bg(t.title_bar)
             .border_b_1()
             .border_color(t.border)
-            .child(
+            .child(crate::dev_id!(
                 toolbar_button(t, "title-workspace")
                     .child(icon("folder-open", 14., t.icon_muted))
                     .child(self.ws.name.clone())
@@ -43,8 +43,12 @@ impl Shell {
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.notify("Workspace menu arrives in M2.".into(), cx)
                     })),
-            )
-            .child(
+                "title-workspace",
+                Button,
+                &self.ws.name,
+                None
+            ))
+            .child(crate::dev_id!(
                 toolbar_button(t, "title-environment")
                     .child(icon("layers", 14., t.icon_muted))
                     .child(self.active_env.clone())
@@ -52,8 +56,12 @@ impl Shell {
                     .on_click(cx.listener(|this, _, w, cx| {
                         this.open_picker(PickerKind::Environment, w, cx)
                     })),
-            )
-            .child(
+                "title-environment",
+                Button,
+                &self.active_env,
+                Action("switch_environment")
+            ))
+            .child(crate::dev_id!(
                 toolbar_button(t, "title-run-all")
                     .child(icon(
                         if all_running { "square" } else { "play" },
@@ -62,7 +70,11 @@ impl Shell {
                     ))
                     .child(if all_running { "Stop all" } else { "Run all" })
                     .on_click(cx.listener(|this, _, _, cx| this.run_all(cx))),
-            )
+                "title-run-all",
+                Button,
+                if all_running { "Stop all" } else { "Run all" },
+                Action("run_all")
+            ))
             // Double-clicking empty title-bar space zooms the window (macOS convention).
             .child(
                 div()
@@ -75,7 +87,7 @@ impl Shell {
                         }
                     }),
             )
-            .child(
+            .child(crate::dev_id!(
                 toolbar_button(t, "title-search")
                     .w(px(220.))
                     .justify_between()
@@ -91,9 +103,15 @@ impl Shell {
                             .child("Search workspace"),
                     )
                     .child(keycap(t, &hint))
-                    .on_click(
-                        cx.listener(|this, _, w, cx| this.open_picker(PickerKind::Search, w, cx)),
-                    ),
-            )
+                    .on_click(cx.listener(|this, _, w, cx| this.open_picker(
+                        PickerKind::Search,
+                        w,
+                        cx
+                    )),),
+                "title-search",
+                Button,
+                "Search workspace",
+                Action("quick_search")
+            ))
     }
 }

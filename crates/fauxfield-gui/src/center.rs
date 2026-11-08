@@ -119,60 +119,72 @@ impl Shell {
             TabKind::Server => t.created,
             TabKind::Environment => t.modified,
         };
-        div()
-            .id(crate::ui::eid(format!("tab-{}", tab.id)))
-            .h_full()
-            .flex_none()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(6.))
-            .pl(px(10.))
-            .pr(px(6.))
-            .cursor_pointer()
-            .border_r_1()
-            .border_color(t.border_variant)
-            .text_size(px(12.))
-            .when(active, |d| d.bg(t.tab_active).text_color(t.text))
-            .when(!active, |d| {
-                d.bg(t.tab_inactive)
-                    .text_color(t.text_muted)
-                    .hover(move |s| s.bg(hover))
-            })
-            .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| {
-                this.activate_tab(i, cx);
-                if ev.click_count() >= 2 {
-                    this.pin_tab_at(i, cx);
-                }
-            }))
-            .on_drag(drag, |d, _, _, cx| cx.new(|_| DragGhost(d.title.clone())))
-            .drag_over::<DraggedTab>(move |s, _, _, _| s.bg(hover))
-            .on_drop(cx.listener(move |this, d: &DraggedTab, _, cx| this.move_tab(d.index, i, cx)))
-            .child(icon(tab_icon(tab.kind), 13., accent))
-            .child(
-                div()
-                    .when(tab.preview, |d| d.italic())
-                    .child(tab.title.clone()),
-            )
-            .child(
-                div()
-                    .id(crate::ui::eid(format!("tab-close-{}", tab.id)))
-                    .size(px(16.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(3.))
-                    .hover(move |s| s.bg(hover))
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, _, _, cx| {
-                            this.close_tab_at(i, cx);
-                            cx.stop_propagation();
-                        }),
-                    )
-                    .child(icon("x", 12., t.icon_muted)),
-            )
-            .into_any_element()
+        crate::dev_id!(
+            div()
+                .id(crate::ui::eid(format!("tab-{}", tab.id)))
+                .h_full()
+                .flex_none()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(6.))
+                .pl(px(10.))
+                .pr(px(6.))
+                .cursor_pointer()
+                .border_r_1()
+                .border_color(t.border_variant)
+                .text_size(px(12.))
+                .when(active, |d| d.bg(t.tab_active).text_color(t.text))
+                .when(!active, |d| {
+                    d.bg(t.tab_inactive)
+                        .text_color(t.text_muted)
+                        .hover(move |s| s.bg(hover))
+                })
+                .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| {
+                    this.activate_tab(i, cx);
+                    if ev.click_count() >= 2 {
+                        this.pin_tab_at(i, cx);
+                    }
+                }))
+                .on_drag(drag, |d, _, _, cx| cx.new(|_| DragGhost(d.title.clone())))
+                .drag_over::<DraggedTab>(move |s, _, _, _| s.bg(hover))
+                .on_drop(
+                    cx.listener(move |this, d: &DraggedTab, _, cx| this.move_tab(d.index, i, cx))
+                )
+                .child(icon(tab_icon(tab.kind), 13., accent))
+                .child(
+                    div()
+                        .when(tab.preview, |d| d.italic())
+                        .child(tab.title.clone()),
+                )
+                .child(crate::dev_id!(
+                    div()
+                        .id(crate::ui::eid(format!("tab-close-{}", tab.id)))
+                        .size(px(16.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(3.))
+                        .hover(move |s| s.bg(hover))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, _, cx| {
+                                this.close_tab_at(i, cx);
+                                cx.stop_propagation();
+                            }),
+                        )
+                        .child(icon("x", 12., t.icon_muted)),
+                    format!("tab-close-{}", tab.id),
+                    Button,
+                    format!("Close {}", tab.title),
+                    CloseTab(tab.id.clone())
+                ),),
+            format!("tab-{}", tab.id),
+            Tab,
+            &tab.title,
+            Tab(tab.id.clone())
+        )
+        .into_any_element()
     }
     fn render_tab_body(&self, t: &Theme, cx: &mut Context<Self>) -> AnyElement {
         let Some(tab) = self.tabs.active() else {
@@ -264,16 +276,18 @@ impl Shell {
                             .child(r.name.clone()),
                     )
                     .child(div().flex_1())
-                    .child(
+                    .child(crate::dev_id!(
                         toolbar_button(t, "route-send")
                             .child(icon("play", 12., t.created))
                             .child("Send test")
-                            .on_click(
-                                cx.listener(|this, _, w, cx| {
-                                    this.run_action_id("send_test", w, cx)
-                                }),
-                            ),
-                    ),
+                            .on_click(cx.listener(|this, _, w, cx| {
+                                this.run_action_id("send_test", w, cx)
+                            }),),
+                        format!("route-send-{}", r.id),
+                        Button,
+                        "Send test",
+                        Action("send_test")
+                    )),
             )
             .child(
                 div()
@@ -289,22 +303,28 @@ impl Shell {
                     .children(ROUTE_SUBTABS.iter().enumerate().map(|(i, name)| {
                         let rid = route_id.clone();
                         let active = i == sub;
-                        div()
-                            .id(crate::ui::eid(format!("subtab-{name}")))
-                            .px(px(10.))
-                            .h(px(28.))
-                            .flex()
-                            .items_center()
-                            .cursor_pointer()
-                            .text_size(px(12.))
-                            .border_b_2()
-                            .border_color(if active { t.accent } else { t.editor })
-                            .text_color(if active { t.text } else { t.text_muted })
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.route_sub.insert(rid.clone(), i);
-                                cx.notify();
-                            }))
-                            .child(*name)
+                        crate::dev_id!(
+                            div()
+                                .id(crate::ui::eid(format!("subtab-{name}")))
+                                .px(px(10.))
+                                .h(px(28.))
+                                .flex()
+                                .items_center()
+                                .cursor_pointer()
+                                .text_size(px(12.))
+                                .border_b_2()
+                                .border_color(if active { t.accent } else { t.editor })
+                                .text_color(if active { t.text } else { t.text_muted })
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.route_sub.insert(rid.clone(), i);
+                                    cx.notify();
+                                }))
+                                .child(*name),
+                            format!("subtab-{}-{name}", r.id),
+                            Tab,
+                            *name,
+                            SubTab(r.id.clone(), i)
+                        )
                     })),
             )
             .child(
@@ -339,22 +359,28 @@ impl Shell {
                     .border_color(t.border_variant)
                     .bg(t.panel)
                     .children(r.responses.iter().enumerate().map(|(i, resp)| {
-                        div()
-                            .id(crate::ui::eid(format!("resp-{}-{i}", r.id)))
-                            .h(px(ROW_H + 4.))
-                            .px(px(10.))
-                            .flex()
-                            .items_center()
-                            .gap(px(6.))
-                            .when(i == 0, |d| d.bg(t.element_selected))
-                            .child(
-                                div()
-                                    .text_size(px(11.))
-                                    .text_color(t.status_color(resp.status))
-                                    .child(resp.status.to_string()),
-                            )
-                            .child(div().flex_1().truncate().child(resp.name.clone()))
-                            .children(resp.default.then(|| icon("check", 12., t.created)))
+                        crate::dev_id!(
+                            div()
+                                .id(crate::ui::eid(format!("resp-{}-{i}", r.id)))
+                                .h(px(ROW_H + 4.))
+                                .px(px(10.))
+                                .flex()
+                                .items_center()
+                                .gap(px(6.))
+                                .when(i == 0, |d| d.bg(t.element_selected))
+                                .child(
+                                    div()
+                                        .text_size(px(11.))
+                                        .text_color(t.status_color(resp.status))
+                                        .child(resp.status.to_string()),
+                                )
+                                .child(div().flex_1().truncate().child(resp.name.clone()))
+                                .children(resp.default.then(|| icon("check", 12., t.created))),
+                            format!("resp-{}-{i}", r.id),
+                            Row,
+                            &resp.name,
+                            None
+                        )
                     })),
             )
             .child(
@@ -382,7 +408,7 @@ impl Shell {
                                     .child(format!("Delay {} ms", resp.delay_ms))
                                     .child(resp.content_type.clone()),
                             )
-                            .child(
+                            .child(crate::dev_id!(
                                 div()
                                     .id("body-editor")
                                     .flex_1()
@@ -397,7 +423,11 @@ impl Shell {
                                     } else {
                                         resp.body.clone()
                                     }),
-                            )
+                                "body-editor",
+                                Input,
+                                "Response body",
+                                None
+                            ))
                     })),
             )
     }
@@ -429,23 +459,30 @@ impl Shell {
                     .border_color(t.border_variant)
                     .children(SERVER_SECTIONS.iter().enumerate().map(|(i, name)| {
                         let sid = sid.clone();
-                        div()
-                            .id(crate::ui::eid(format!("section-{name}")))
-                            .h(px(ROW_H))
-                            .px(px(12.))
-                            .flex()
-                            .items_center()
-                            .cursor_pointer()
-                            .text_size(px(12.))
-                            .when(i == section, |d| {
-                                d.bg(t.element_selected).text_color(t.text)
-                            })
-                            .when(i != section, |d| d.text_color(t.text_muted))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.server_section.insert(sid.clone(), i);
-                                cx.notify();
-                            }))
-                            .child(*name)
+                        let sid_click = sid.clone();
+                        crate::dev_id!(
+                            div()
+                                .id(crate::ui::eid(format!("section-{name}")))
+                                .h(px(ROW_H))
+                                .px(px(12.))
+                                .flex()
+                                .items_center()
+                                .cursor_pointer()
+                                .text_size(px(12.))
+                                .when(i == section, |d| {
+                                    d.bg(t.element_selected).text_color(t.text)
+                                })
+                                .when(i != section, |d| d.text_color(t.text_muted))
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.server_section.insert(sid_click.clone(), i);
+                                    cx.notify();
+                                }))
+                                .child(*name),
+                            format!("section-{}-{name}", sid),
+                            Tab,
+                            *name,
+                            Section(sid.clone(), i)
+                        )
                     })),
             )
             .child(
@@ -470,7 +507,7 @@ impl Shell {
                                     .child(if s.running { "running" } else { "stopped" }),
                             )
                             .child(div().flex_1())
-                            .child(
+                            .child(crate::dev_id!(
                                 toolbar_button(t, "server-toggle")
                                     .child(icon(
                                         if s.running { "square" } else { "play" },
@@ -481,7 +518,11 @@ impl Shell {
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.toggle_server_at(index, cx)
                                     })),
-                            ),
+                                format!("server-toggle-{}", s.id),
+                                Button,
+                                if s.running { "Stop" } else { "Start" },
+                                Action("toggle_server")
+                            )),
                     )
                     .child(if section == 0 {
                         self.server_general(t, s).into_any_element()
@@ -565,7 +606,7 @@ impl Shell {
                         },
                     ))
                     .child(div().flex_1())
-                    .child(
+                    .child(crate::dev_id!(
                         toolbar_button(t, "env-reveal")
                             .child(if reveal {
                                 "Hide secrets"
@@ -576,7 +617,15 @@ impl Shell {
                                 this.reveal_secrets = !this.reveal_secrets;
                                 cx.notify();
                             })),
-                    ),
+                        "env-reveal",
+                        Button,
+                        if reveal {
+                            "Hide secrets"
+                        } else {
+                            "Show secrets"
+                        },
+                        None
+                    )),
             )
             .child(
                 div()

@@ -30,44 +30,64 @@ impl Shell {
             .border_color(t.border)
             .text_size(px(11.))
             .text_color(t.text_muted)
-            .child(
+            .child(crate::dev_id!(
                 toolbar_button(t, "status-left-dock")
                     .child(icon("columns-2", 14., on(self.layout.left_open)))
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_left(cx))),
-            )
-            .child(
+                "status-left-dock",
+                Button,
+                "Toggle left dock",
+                Action("toggle_left_dock")
+            ))
+            .child(crate::dev_id!(
                 toolbar_button(t, "status-bottom-dock")
                     .child(icon("rows-2", 14., on(self.layout.bottom_open)))
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_bottom(cx))),
-            )
-            .child(
+                "status-bottom-dock",
+                Button,
+                "Toggle bottom dock",
+                Action("toggle_bottom_dock")
+            ))
+            .child(crate::dev_id!(
                 toolbar_button(t, "status-right-dock")
                     .child(icon("columns-2", 14., on(self.layout.right_open)))
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_right(cx))),
-            )
+                "status-right-dock",
+                Button,
+                "Toggle right dock",
+                Action("toggle_right_dock")
+            ))
             .child(div().id("status-servers").child(format!(
                 "{}/{} servers running",
                 self.ws.running_count(),
                 total
             )))
-            .child(
+            .child(crate::dev_id!(
                 div()
                     .flex_1()
                     .truncate()
                     .px(px(8.))
                     .text_color(t.text)
                     .children(self.notice.as_ref().map(|(_, m)| m.clone())),
-            )
+                "toast",
+                Toast,
+                self.notice.as_ref().map(|(_, m)| m.as_str()).unwrap_or(""),
+                None
+            ))
             .child(div().id("status-network").child("Network: no throttling"))
-            .child(
+            .child(crate::dev_id!(
                 toolbar_button(t, "status-environment")
                     .child(icon("layers", 12., t.icon_muted))
                     .child(self.active_env.clone())
                     .on_click(cx.listener(|this, _, w, cx| {
                         this.open_picker(PickerKind::Environment, w, cx)
                     })),
-            )
-            .child(
+                "status-environment",
+                Button,
+                &self.active_env,
+                Action("switch_environment")
+            ))
+            .child(crate::dev_id!(
                 toolbar_button(t, "status-problems")
                     .child(icon(
                         "triangle-alert",
@@ -82,6 +102,10 @@ impl Shell {
                     .on_click(
                         cx.listener(|this, _, _, cx| this.show_bottom(BottomTab::Problems, cx)),
                     ),
-            )
+                "status-problems",
+                Button,
+                format!("Problems: {problems}"),
+                Action("show_problems")
+            ))
     }
 }

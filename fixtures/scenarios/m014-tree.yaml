@@ -1,0 +1,15 @@
+# M1.4 scenario: operate the shell by element id (ui.find / ui.click_element). Runner: M1.7.
+name: m014-tree
+size: default
+steps:
+  - click_element: {id: status-bottom-dock}
+  - click_element: {id: status-bottom-dock}
+  - find: {label: Traffic, role: table}
+  - assert_find: {pointer: /matches/0/total, equals: 10000}
+  - click_element: {id: row-rt_health}
+  - assert: {pointer: /tabs/0/preview, equals: true}
+  - click_element: {id: title-search}
+  - assert_find: {role: modal, ids: [quick-search]}
+  - key: escape
+  - click_element: {id: tab-close-rt_health}
+  - assert: {pointer: /tabs, equals: []}

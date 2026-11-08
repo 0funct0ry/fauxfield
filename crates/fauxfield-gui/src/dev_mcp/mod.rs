@@ -8,6 +8,7 @@ pub mod host;
 pub mod input;
 pub mod state;
 pub mod tools;
+pub mod tree;
 
 use std::path::PathBuf;
 

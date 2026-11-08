@@ -89,3 +89,48 @@ pub fn hairline_v(t: &Theme) -> Div {
 pub fn hairline_h(t: &Theme) -> Div {
     div().h(px(1.)).w_full().flex_none().bg(t.border)
 }
+
+/// Tags an element for the semantic UI tree (`ui.tree`, `ui.find`, `ui.click_element`).
+/// `dev_id!(element, id, role, label, click)`; `dev_id_z!` adds a z layer for overlays.
+/// Without `dev-mcp` it expands to the element itself: the arguments are never evaluated.
+#[cfg(feature = "dev-mcp")]
+#[macro_export]
+macro_rules! dev_id {
+    ($el:expr, $id:expr, $role:ident, $label:expr, $($click:tt)+) => {
+        $crate::dev_id_z!($el, 0, $id, $role, $label, $($click)+)
+    };
+}
+
+#[cfg(feature = "dev-mcp")]
+#[macro_export]
+macro_rules! dev_id_z {
+    ($el:expr, $z:expr, $id:expr, $role:ident, $label:expr, $($click:tt)+) => {
+        $crate::dev_mcp::tree::tag(
+            $el,
+            $crate::dev_mcp::tree::Spec {
+                id: ($id).to_string(),
+                role: $crate::dev_mcp::tree::Role::$role,
+                label: ($label).to_string(),
+                enabled: true,
+                z: $z,
+                click: $crate::dev_mcp::tree::Click::$($click)+,
+            },
+        )
+    };
+}
+
+#[cfg(not(feature = "dev-mcp"))]
+#[macro_export]
+macro_rules! dev_id {
+    ($el:expr, $($rest:tt)*) => {
+        $el
+    };
+}
+
+#[cfg(not(feature = "dev-mcp"))]
+#[macro_export]
+macro_rules! dev_id_z {
+    ($el:expr, $($rest:tt)*) => {
+        $el
+    };
+}

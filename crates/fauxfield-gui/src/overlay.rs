@@ -27,11 +27,24 @@ fn placeholder(kind: PickerKind) -> &'static str {
 }
 
 impl Shell {
+    /// Stable dev id and label for the open picker, by kind.
+    #[cfg_attr(not(feature = "dev-mcp"), allow(dead_code))]
+    pub(crate) fn picker_ids(&self) -> (&'static str, &'static str) {
+        match self.picker.as_ref().map(|p| p.kind) {
+            Some(PickerKind::Search) => ("quick-search", "Quick Search"),
+            Some(PickerKind::Palette) => ("command-palette", "Command Palette"),
+            Some(PickerKind::Theme) => ("theme-selector", "Theme selector"),
+            _ => ("environment-picker", "Environment picker"),
+        }
+    }
+
     pub(crate) fn render_picker(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.picker.as_ref().expect("picker is open");
         let n = p.hits.len();
         let list_h = (n.clamp(1, MAX_VISIBLE)) as f32 * ITEM_H;
         let kind = p.kind;
+        #[cfg(feature = "dev-mcp")]
+        crate::dev_mcp::tree::Registry::set_total(cx, "picker-items", n);
         let query = p.query.clone();
         div()
             .id("picker-backdrop")
@@ -75,15 +88,22 @@ impl Shell {
                             .border_b_1()
                             .border_color(t.border_variant)
                             .child(icon("search", 14., t.icon_muted))
-                            .child(if query.is_empty() {
-                                div()
-                                    .flex_1()
-                                    .truncate()
-                                    .text_color(t.text_placeholder)
-                                    .child(placeholder(kind))
-                            } else {
-                                div().flex_1().child(format!("{query}▏"))
-                            }),
+                            .child(crate::dev_id_z!(
+                                if query.is_empty() {
+                                    div()
+                                        .flex_1()
+                                        .truncate()
+                                        .text_color(t.text_placeholder)
+                                        .child(placeholder(kind))
+                                } else {
+                                    div().flex_1().child(format!("{query}▏"))
+                                },
+                                1,
+                                "picker-input",
+                                Input,
+                                &query,
+                                None
+                            )),
                     )
                     .child(if n == 0 {
                         div()
@@ -142,35 +162,42 @@ impl Shell {
             (None, Kind::Theme) => icon("palette", 14., t.icon_muted).into_any_element(),
             (None, _) => icon("terminal", 14., t.icon_muted).into_any_element(),
         };
-        div()
-            .id(("hit", i))
-            .h(px(ITEM_H))
-            .w_full()
-            .px(px(12.))
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(8.))
-            .cursor_pointer()
-            .when(selected, |d| d.bg(sel))
-            .hover(move |s| s.bg(hover))
-            .on_click(cx.listener(move |this, ev: &gpui::ClickEvent, w, cx| {
-                let mode = if ev.modifiers().secondary() {
-                    OpenMode::Pinned
-                } else {
-                    OpenMode::Preview
-                };
-                this.picker_select(i, mode, w, cx)
-            }))
-            .child(lead)
-            .child(div().flex_1().truncate().child(h.label.clone()))
-            .child(
-                div()
-                    .text_size(px(11.))
-                    .text_color(t.text_muted)
-                    .child(h.detail.clone()),
-            )
-            .children(h.binding.as_ref().map(|b| keycap(t, &display_keys(b, mac))))
-            .into_any_element()
+        crate::dev_id_z!(
+            div()
+                .id(crate::ui::eid(format!("hit-{}", h.label)))
+                .h(px(ITEM_H))
+                .w_full()
+                .px(px(12.))
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(8.))
+                .cursor_pointer()
+                .when(selected, |d| d.bg(sel))
+                .hover(move |s| s.bg(hover))
+                .on_click(cx.listener(move |this, ev: &gpui::ClickEvent, w, cx| {
+                    let mode = if ev.modifiers().secondary() {
+                        OpenMode::Pinned
+                    } else {
+                        OpenMode::Preview
+                    };
+                    this.picker_select(i, mode, w, cx)
+                }))
+                .child(lead)
+                .child(div().flex_1().truncate().child(h.label.clone()))
+                .child(
+                    div()
+                        .text_size(px(11.))
+                        .text_color(t.text_muted)
+                        .child(h.detail.clone()),
+                )
+                .children(h.binding.as_ref().map(|b| keycap(t, &display_keys(b, mac)))),
+            1,
+            format!("hit-{}", h.label),
+            Row,
+            &h.label,
+            PickerHit(i)
+        )
+        .into_any_element()
     }
 }
