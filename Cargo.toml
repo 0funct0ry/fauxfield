@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "xtask"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/0funct0ry/fauxfield"
+rust-version = "1.89"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[workspace.dependencies]
+# GPUI is pre-1.0; exact pin, see docs/adr/001-gpui-version.md.
+gpui = "=0.2.2"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+fauxfield-model = { path = "crates/fauxfield-model" }
+fauxfield-store = { path = "crates/fauxfield-store" }
+fauxfield-engine = { path = "crates/fauxfield-engine" }
+fauxfield-control = { path = "crates/fauxfield-control" }
+fauxfield-openapi = { path = "crates/fauxfield-openapi" }
+fauxfield-mcp = { path = "crates/fauxfield-mcp" }
+fauxfield-gui = { path = "crates/fauxfield-gui" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

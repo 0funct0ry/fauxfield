@@ -1,0 +1,28 @@
+[package]
+name = "fauxfield"
+description = "The fauxfield binary: CLI dispatch, opens the desktop app when no subcommand is given."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["gui"]
+gui = ["dep:fauxfield-gui"]
+# Servers and CLI only: no GPUI in the dependency tree (verified by `make verify-headless`).
+headless = []
+runtime-shaders = ["fauxfield-gui/runtime-shaders"]
+
+[dependencies]
+fauxfield-gui = { workspace = true, optional = true }
+clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
+serde_json.workspace = true
+
+[dev-dependencies]
+assert_cmd = "2"
+insta = { version = "1", features = ["json"] }

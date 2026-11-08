@@ -1,0 +1,207 @@
+//! Every user action, registered with GPUI and listed once in `ACTIONS` so the keymap, the
+//! Command Palette and (from M1.3) agent tooling read one table (SPEC §9.7, standing rule 5).
+
+use gpui::{Action, App, KeyBinding, Keystroke, actions};
+
+use crate::keymap::Keymap;
+use crate::search::CommandEntry;
+
+actions!(
+    fauxfield,
+    [
+        QuickSearch,
+        CommandPalette,
+        SelectTheme,
+        SwitchEnvironment,
+        ToggleLeftDock,
+        ToggleBottomDock,
+        ToggleRightDock,
+        ShowTraffic,
+        ShowProblems,
+        ShowLogs,
+        CloseTab,
+        PinTab,
+        ActivateTab1,
+        ActivateTab2,
+        ActivateTab3,
+        ActivateTab4,
+        ActivateTab5,
+        ActivateTab6,
+        ActivateTab7,
+        ActivateTab8,
+        ActivateTab9,
+        RunAll,
+        ToggleServer,
+        NewServer,
+        NewRoute,
+        SendTest,
+        Duplicate,
+        ResetState,
+        Quit,
+    ]
+);
+
+pub struct ActionInfo {
+    /// Stable snake_case id used in keymap TOML and by the palette.
+    pub id: &'static str,
+    /// Palette label.
+    pub label: &'static str,
+    pub build: fn() -> Box<dyn Action>,
+    bind: fn(&str, Option<&str>) -> KeyBinding,
+}
+
+macro_rules! row {
+    ($id:literal, $label:literal, $ty:ident) => {
+        ActionInfo {
+            id: $id,
+            label: $label,
+            build: || Box::new($ty),
+            bind: |keys, ctx| KeyBinding::new(keys, $ty, ctx),
+        }
+    };
+}
+
+pub static ACTIONS: &[ActionInfo] = &[
+    row!("quick_search", "Quick Search: Open", QuickSearch),
+    row!("command_palette", "Command Palette: Toggle", CommandPalette),
+    row!("select_theme", "Theme Selector: Toggle", SelectTheme),
+    row!(
+        "switch_environment",
+        "Environment: Switch…",
+        SwitchEnvironment
+    ),
+    row!("toggle_left_dock", "View: Toggle Left Dock", ToggleLeftDock),
+    row!(
+        "toggle_bottom_dock",
+        "View: Toggle Bottom Dock",
+        ToggleBottomDock
+    ),
+    row!(
+        "toggle_right_dock",
+        "View: Toggle Right Dock (Inspector)",
+        ToggleRightDock
+    ),
+    row!("show_traffic", "View: Show Traffic", ShowTraffic),
+    row!("show_problems", "View: Show Problems", ShowProblems),
+    row!("show_logs", "View: Show Logs", ShowLogs),
+    row!("close_tab", "Tab: Close", CloseTab),
+    row!("pin_tab", "Tab: Pin", PinTab),
+    row!("activate_tab_1", "Tab: Go to Tab 1", ActivateTab1),
+    row!("activate_tab_2", "Tab: Go to Tab 2", ActivateTab2),
+    row!("activate_tab_3", "Tab: Go to Tab 3", ActivateTab3),
+    row!("activate_tab_4", "Tab: Go to Tab 4", ActivateTab4),
+    row!("activate_tab_5", "Tab: Go to Tab 5", ActivateTab5),
+    row!("activate_tab_6", "Tab: Go to Tab 6", ActivateTab6),
+    row!("activate_tab_7", "Tab: Go to Tab 7", ActivateTab7),
+    row!("activate_tab_8", "Tab: Go to Tab 8", ActivateTab8),
+    row!("activate_tab_9", "Tab: Go to Tab 9", ActivateTab9),
+    row!("run_all", "Server: Run All / Stop All", RunAll),
+    row!(
+        "toggle_server",
+        "Server: Start / Stop Current",
+        ToggleServer
+    ),
+    row!("new_server", "Server: New…", NewServer),
+    row!("new_route", "Route: New…", NewRoute),
+    row!("send_test", "Route: Send Test Request", SendTest),
+    row!("duplicate", "Edit: Duplicate Response or Route", Duplicate),
+    row!("reset_state", "Dataset: Reset State", ResetState),
+    row!("quit", "Application: Quit", Quit),
+];
+
+pub fn find(id: &str) -> Option<&'static ActionInfo> {
+    ACTIONS.iter().find(|a| a.id == id)
+}
+
+/// Canonical form of a keystroke string (`secondary-k` → `cmd-k` on macOS), the form GPUI
+/// reports for key events, so chords compare equal.
+pub fn canonical(keys: &str) -> Option<String> {
+    Keystroke::parse(keys).ok().map(|k| k.unparse())
+}
+
+/// Palette entries: every action with its resolved binding.
+pub fn commands(keymap: &Keymap) -> Vec<CommandEntry> {
+    ACTIONS
+        .iter()
+        .map(|a| CommandEntry {
+            id: a.id.to_string(),
+            label: a.label.to_string(),
+            binding: keymap.binding_for(a.id).map(str::to_string),
+        })
+        .collect()
+}
+
+/// Registers the keymap with GPUI. Chords, and keys that start a chord, are handled by the
+/// shell's `ChordState` instead (400 ms timeout, SPEC §9.8) and are skipped here. Unknown
+/// actions and unparsable keystrokes are returned as problems, never panics.
+pub fn install(cx: &mut App, keymap: &Keymap) -> Vec<String> {
+    let prefixes: Vec<String> = keymap
+        .chords()
+        .filter_map(|b| b.keys.split_whitespace().next().and_then(canonical))
+        .collect();
+    let mut problems = Vec::new();
+    let mut bindings = Vec::new();
+    for b in &keymap.bindings {
+        let Some(info) = find(&b.action) else {
+            problems.push(format!("keymap: unknown action {:?}", b.action));
+            continue;
+        };
+        if b.is_chord() {
+            continue;
+        }
+        let Some(canon) = canonical(&b.keys) else {
+            problems.push(format!("keymap: invalid keys {:?}", b.keys));
+            continue;
+        };
+        if prefixes.contains(&canon) {
+            continue;
+        }
+        bindings.push((info.bind)(&b.keys, b.context.as_deref()));
+    }
+    cx.clear_key_bindings();
+    cx.bind_keys(bindings);
+    problems
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ids_and_labels_are_unique() {
+        let mut ids: Vec<&str> = ACTIONS.iter().map(|a| a.id).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), ACTIONS.len());
+        let mut labels: Vec<&str> = ACTIONS.iter().map(|a| a.label).collect();
+        labels.sort_unstable();
+        labels.dedup();
+        assert_eq!(labels.len(), ACTIONS.len());
+    }
+
+    #[test]
+    fn bundled_keymap_only_names_registered_actions() {
+        for b in &Keymap::bundled().bindings {
+            assert!(find(&b.action).is_some(), "{}", b.action);
+            for stroke in b.keys.split_whitespace() {
+                assert!(canonical(stroke).is_some(), "{stroke}");
+            }
+        }
+    }
+
+    #[test]
+    fn every_action_is_in_the_palette_with_its_binding() {
+        let km = Keymap::bundled();
+        let cmds = commands(&km);
+        assert_eq!(cmds.len(), ACTIONS.len());
+        let theme = cmds.iter().find(|c| c.id == "select_theme").unwrap();
+        assert_eq!(theme.binding.as_deref(), Some("secondary-k secondary-t"));
+        assert!(
+            cmds.iter()
+                .find(|c| c.id == "quit")
+                .unwrap()
+                .binding
+                .is_some()
+        );
+    }
+}

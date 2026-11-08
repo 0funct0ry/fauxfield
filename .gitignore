@@ -1,0 +1,60 @@
+# --- Rust / Cargo -------------------------------------------------------------
+# Build output. Cargo.lock is committed (this workspace ships binaries).
+/target/
+**/*.rs.bk
+*.pdb
+rustc-ice-*.txt
+
+# cargo-mutants, cargo-llvm-cov, criterion output outside target/
+**/mutants.out*/
+/lcov.info
+*.profraw
+
+# insta: pending snapshots that were not accepted (accepted ones, *.snap, are committed)
+*.snap.new
+*.pending-snap
+
+# cargo-fuzz (corpus and artifacts are large and local; fuzz targets are committed)
+/fuzz/corpus/
+/fuzz/artifacts/
+/fuzz/target/
+
+# --- Fauxfield runtime state (SPEC §4.1, §9.3, §14) ---------------------------
+# Per-workspace state: host.json, control socket, ui.json, recordings, dataset state.
+# `fauxfield init` writes the same rule into a workspace's own .gitignore.
+.fauxfield/
+
+# --- Release and packaging output (make dist, cargo-dist) ---------------------
+/dist/
+
+# --- Website (site/: Astro + Starlight) ---------------------------------------
+node_modules/
+/site/dist/
+/site/.astro/
+/site/public/pagefind/
+
+# --- Environment and secrets --------------------------------------------------
+# Real dotenv files stay local. Example files are committed.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# --- Editors, tools and OS ----------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Local agent state and design documents (not part of the repository)
+.claude/
+internal-docs/
+
+# Scratch files
+*.log
+/tmp/

@@ -1,0 +1,95 @@
+# Fauxfield default keymap (SPEC §9.8). `secondary` is Cmd on macOS and Ctrl elsewhere.
+# `keys` with a space is a chord (first key, then second within the chord timeout).
+# A user keymap in the config dir (keymap.toml) uses the same format and overrides by action.
+
+[[binding]]
+action = "quick_search"
+keys = "secondary-k"
+
+[[binding]]
+action = "command_palette"
+keys = "secondary-shift-p"
+
+[[binding]]
+action = "select_theme"
+keys = "secondary-k secondary-t"
+
+[[binding]]
+action = "new_route"
+keys = "secondary-n"
+
+[[binding]]
+action = "new_server"
+keys = "secondary-shift-n"
+
+[[binding]]
+action = "toggle_server"
+keys = "secondary-r"
+
+[[binding]]
+action = "run_all"
+keys = "secondary-shift-r"
+
+[[binding]]
+action = "send_test"
+keys = "secondary-enter"
+
+[[binding]]
+action = "toggle_left_dock"
+keys = "secondary-b"
+
+[[binding]]
+action = "toggle_bottom_dock"
+keys = "secondary-`"
+
+[[binding]]
+action = "toggle_right_dock"
+keys = "secondary-alt-b"
+
+[[binding]]
+action = "close_tab"
+keys = "secondary-w"
+
+[[binding]]
+action = "switch_environment"
+keys = "secondary-e"
+
+[[binding]]
+action = "duplicate"
+keys = "secondary-d"
+
+[[binding]]
+action = "reset_state"
+keys = "secondary-shift-backspace"
+
+[[binding]]
+action = "activate_tab_1"
+keys = "secondary-1"
+[[binding]]
+action = "activate_tab_2"
+keys = "secondary-2"
+[[binding]]
+action = "activate_tab_3"
+keys = "secondary-3"
+[[binding]]
+action = "activate_tab_4"
+keys = "secondary-4"
+[[binding]]
+action = "activate_tab_5"
+keys = "secondary-5"
+[[binding]]
+action = "activate_tab_6"
+keys = "secondary-6"
+[[binding]]
+action = "activate_tab_7"
+keys = "secondary-7"
+[[binding]]
+action = "activate_tab_8"
+keys = "secondary-8"
+[[binding]]
+action = "activate_tab_9"
+keys = "secondary-9"
+
+[[binding]]
+action = "quit"
+keys = "secondary-q"

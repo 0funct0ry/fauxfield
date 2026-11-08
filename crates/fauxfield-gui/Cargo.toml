@@ -1,0 +1,29 @@
+[package]
+name = "fauxfield-gui"
+description = "GPUI application: window shell, docks, tabs, palette, themes."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# Compile Metal shaders at runtime so macOS builds work without the Xcode Metal toolchain.
+runtime-shaders = ["gpui/runtime_shaders"]
+
+[dependencies]
+gpui.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml = "0.9"
+directories = "6"
+nucleo-matcher = "0.3.1"
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
+tempfile = "3"
