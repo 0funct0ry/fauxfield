@@ -62,3 +62,26 @@ fauxfield route list --server example-api --json
 `fauxfield mcp [PATH]` exposes `workspace_info`, `list_servers`, `get_server`, `create_server`,
 `update_server`, `delete_server`, `list_routes`, `get_route`, `upsert_route`, `delete_route` and
 `validate`. Writes use the same code path as the app. Variables that look like secrets are redacted.
+
+## Open, close, rename and Recent (app)
+
+- **Open folder** and **Create workspace** (Welcome, the workspace menu in the sidebar, the Command
+  Palette) open the system folder dialog. If no dialog is available you type the path instead; the
+  palette also has **Open Folder by Path** and **Create by Path**.
+- Opening a folder without `fauxfield.toml` says so and offers **Create workspace here**. Creating in
+  a folder that is already a workspace offers **Open it**. Creating in a non-empty folder asks first;
+  existing files are never overwritten.
+- **Close workspace** (palette, workspace menu) stops the servers after asking, releases the host and
+  returns to Welcome. Switching workspaces uses the same confirmation. Unresolved merge conflicts
+  block it ("Resolve the merge banner first.").
+- **Recent** lists up to 10 workspaces with their name, folder and when you opened them. A folder that
+  moved shows "Not found". **Remove** edits only the list; **Clear recent** empties it.
+- **Rename workspace** changes `name` in `fauxfield.toml` (comments and key order are kept, and it can
+  be undone). The folder on disk is not renamed. From the terminal:
+
+```bash
+fauxfield workspace info --json
+fauxfield workspace rename "My Mocks"
+```
+
+An invalid name (empty, over 80 characters, control characters) exits with code 3.

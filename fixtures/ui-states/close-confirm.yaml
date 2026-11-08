@@ -1,0 +1,9 @@
+# UI state fixture (M3.1): "Stop N servers and close <name>?" while a server runs.
+steps:
+  - reset
+  - open: {kind: server, id: srv_users}
+  - invoke: toggle_server
+  - wait_for: {condition: {pointer: /servers/0/status, equals: running}}
+  - command: {command: close_workspace}
+  - wait_for: {condition: {pointer: /modal, equals: close_confirm}}
+  - wait_idle

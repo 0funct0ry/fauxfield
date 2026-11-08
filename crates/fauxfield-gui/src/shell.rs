@@ -16,10 +16,10 @@ use crate::assets::UI_FONT;
 use crate::chord::{CHORD_TIMEOUT, ChordState, Outcome};
 use crate::keymap::Keymap;
 use crate::layout::{BottomTab, Layout};
-use crate::mock::{self, TrafficRow};
 use crate::search::{self, CommandEntry, Hit, Kind, Target};
 use crate::tabs::{TabKind, TabSet};
 use crate::theme::{self, Theme};
+use crate::traffic::TrafficRow;
 use crate::tree::{self, MenuAct, RowKind};
 use crate::ui::STATUS_BAR_H;
 use crate::view::{Problem, Workspace};
@@ -65,6 +65,13 @@ pub enum PromptAction {
     },
     OpenFolder,
     CreateWorkspace,
+    RenameWorkspace,
+    ServerHost {
+        server: String,
+    },
+    ServerPrefix {
+        server: String,
+    },
     ResponseBody {
         response: String,
     },
@@ -116,12 +123,29 @@ pub enum FieldEdit {
 }
 
 impl PromptAction {
+    /// One line of help shown under the prompt while no error is showing.
+    pub fn help(&self) -> &'static str {
+        match self {
+            PromptAction::RenameWorkspace => {
+                "Changes the name in fauxfield.toml. The folder on disk is not renamed."
+            }
+            PromptAction::ServerHost { .. } => {
+                "0.0.0.0 or :: makes the server reachable from your network."
+            }
+            PromptAction::ServerPrefix { .. } => "Starts with /, no trailing /. Empty removes it.",
+            _ => "",
+        }
+    }
+
     pub fn title(&self) -> &'static str {
         match self {
             PromptAction::NewServer => "New server name",
             PromptAction::ServerPort { .. } => "Port (1-65535)",
             PromptAction::OpenFolder => "Open workspace folder",
             PromptAction::CreateWorkspace => "Create workspace in folder",
+            PromptAction::RenameWorkspace => "Workspace name",
+            PromptAction::ServerHost { .. } => "Host (IP address or hostname)",
+            PromptAction::ServerPrefix { .. } => "Prefix (empty removes it)",
             PromptAction::NewFolder { .. } => "New folder name",
             PromptAction::NewRoute { .. } => "New route (METHOD /path)",
             PromptAction::Rename { .. } => "New name",
@@ -185,8 +209,8 @@ pub struct Shell {
     pub(crate) ws: Workspace,
     /// The open workspace; `None` shows the Welcome view.
     pub(crate) store: Option<Store>,
-    store_events: Option<std::sync::mpsc::Receiver<StoreEvent>>,
-    _background: Option<Background>,
+    pub(crate) store_events: Option<std::sync::mpsc::Receiver<StoreEvent>>,
+    pub(crate) _background: Option<Background>,
     pub(crate) recent_path: Option<PathBuf>,
     pub(crate) recents: Vec<PathBuf>,
     /// Files whose external edit collides with unsaved GUI edits (merge banner).
@@ -237,6 +261,7 @@ pub struct Shell {
     pub(crate) port_offset: u16,
     pub(crate) focus: FocusHandle,
     pub(crate) picker_focus: FocusHandle,
+    pub(crate) lc: crate::lifecycle::Lifecycle,
 }
 
 impl Focusable for Shell {
@@ -353,11 +378,7 @@ impl Shell {
             recent: Vec::new(),
             picker_scroll: UniformListScrollHandle::new(),
             // Real rows come from the engine; synthetic ones feed tests and dev-mcp scenarios.
-            traffic: if cfg!(any(test, feature = "dev-mcp")) {
-                mock::traffic(TRAFFIC_ROWS)
-            } else {
-                Vec::new()
-            },
+            traffic: initial_traffic(),
             traffic_scroll: UniformListScrollHandle::new(),
             traffic_selected: None,
             route_sub: HashMap::new(),
@@ -381,6 +402,7 @@ impl Shell {
             port_offset: opts.port_offset,
             focus,
             picker_focus: cx.focus_handle(),
+            lc: Default::default(),
         };
         if let Some(p) = problems.first() {
             shell.notify(p.clone(), cx);
@@ -388,6 +410,8 @@ impl Shell {
         if let Some(e) = open_error {
             shell.notify(format!("Could not open workspace: {e}"), cx);
         }
+        // Saved tab titles may be stale (files edited while the app was closed).
+        shell.refresh_tab_titles();
         shell.attach_store(cx);
         let weak = cx.entity().downgrade();
         window.on_window_should_close(cx, move |_w, cx| {
@@ -411,12 +435,23 @@ impl Shell {
             .map_err(|e| eprintln!("fauxfield: watcher unavailable: {e}"))
             .ok();
         self.attach_engine(cx);
+        self.lc.poll_gen += 1;
+        let gen_id = self.lc.poll_gen;
         cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor()
                     .timer(std::time::Duration::from_millis(60))
                     .await;
-                let alive = this.update(cx, |this, cx| this.poll_store(cx)).is_ok();
+                // A newer workspace (or a close) retires this loop.
+                let alive = this
+                    .update(cx, |this, cx| {
+                        if this.lc.poll_gen != gen_id {
+                            return false;
+                        }
+                        this.poll_store(cx);
+                        true
+                    })
+                    .unwrap_or(false);
                 if !alive {
                     break;
                 }
@@ -456,6 +491,15 @@ impl Shell {
             s.running = running.contains(&s.id);
         }
         self.sync_running();
+        // The active environment may have been renamed or deleted on disk.
+        if self.ws.find_environment(&self.active_env).is_none() {
+            self.active_env = self
+                .ws
+                .environments
+                .first()
+                .map(|e| e.name.clone())
+                .unwrap_or_default();
+        }
         self.problems = Workspace::problems(&snap);
         self.conflicts = store.conflicts();
         let ws = &self.ws;
@@ -471,8 +515,11 @@ impl Shell {
         for i in gone.into_iter().rev() {
             self.tabs.close(i);
         }
+        let retitled = self.refresh_tab_titles();
         if self.tabs.tabs().len() != before {
             self.sync_selection_to_tab();
+            self.save_layout();
+        } else if retitled {
             self.save_layout();
         }
         cx.notify();
@@ -485,11 +532,18 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
         let store = Store::open(path).map_err(|e| e.to_string())?;
+        // Switching: release the previous workspace first (servers, host.json, socket).
+        if self.store.is_some() {
+            self.teardown();
+        }
         let snap = store.snapshot();
         if let Some(p) = &self.recent_path {
             let _ = fauxfield_store::push_recent(p, &snap.root);
             self.recents = fauxfield_store::load_recent(p);
         }
+        self.lc
+            .opened_at
+            .insert(snap.root.clone(), std::time::SystemTime::now());
         self.ws = Workspace::from_snapshot(&snap);
         self.problems = Workspace::problems(&snap);
         self.store = Some(store);
@@ -620,6 +674,37 @@ impl Shell {
         Some((TabKind::Environment, name.to_string()))
     }
 
+    /// Title a tab of `kind` and `id` should show right now (derived from the files).
+    fn tab_title(&self, kind: TabKind, id: &str) -> Option<String> {
+        match kind {
+            TabKind::Route => self
+                .ws
+                .find_route(id)
+                .map(|(_, r)| format!("{} {}", r.method, r.path)),
+            TabKind::Server => self.ws.find_server(id).map(|s| s.name.clone()),
+            TabKind::Environment => self.ws.find_environment(id).map(|e| e.name.clone()),
+        }
+    }
+
+    /// Keep tab titles in step with the workspace: a verb, path or name edit (GUI or external)
+    /// changes the title. Returns true when any title changed.
+    pub(crate) fn refresh_tab_titles(&mut self) -> bool {
+        let wanted: Vec<(TabKind, String, String)> = self
+            .tabs
+            .tabs()
+            .iter()
+            .filter_map(|t| {
+                self.tab_title(t.kind, &t.id)
+                    .map(|title| (t.kind, t.id.clone(), title))
+            })
+            .collect();
+        let mut changed = false;
+        for (kind, id, title) in wanted {
+            changed |= self.tabs.retitle(kind, &id, &title);
+        }
+        changed
+    }
+
     /// Opens a tab by its tab id (route id, server id, environment name).
     pub fn open_tab(&mut self, id: &str, kind: TabKind, title: &str, pinned: bool) {
         if pinned {
@@ -719,7 +804,27 @@ impl Shell {
 
     // ---- tree context menu -------------------------------------------------------------
 
+    /// Test helper: run a server-menu item by its action key (`duplicate`, `delete`).
+    #[cfg(test)]
+    pub(crate) fn run_menu_for(&mut self, key: &str, id: &str, cx: &mut Context<Self>) {
+        match key {
+            "duplicate" => self.duplicate_row(id, cx),
+            "delete" => self.delete_row(id, cx),
+            _ => {}
+        }
+    }
+
     pub fn open_menu(&mut self, row_id: &str, x: f32, y: f32, cx: &mut Context<Self>) {
+        if row_id == tree::WORKSPACE_ROW {
+            self.menu = Some(RowMenu {
+                row_id: row_id.to_string(),
+                kind: RowKind::Workspace,
+                x,
+                y,
+            });
+            cx.notify();
+            return;
+        }
         let rows = tree::flatten(&self.ws, &self.collapsed, &self.active_env);
         let Some(row) = rows.into_iter().find(|r| r.id == row_id) else {
             return;
@@ -765,6 +870,22 @@ impl Shell {
             MenuAct::Duplicate => self.duplicate_row(&m.row_id, cx),
             MenuAct::Delete => self.delete_row(&m.row_id, cx),
             MenuAct::ResetDataset => self.stub("Resetting dataset state", "M8", cx),
+            MenuAct::Restart => self.restart_server_id(&m.row_id, cx),
+            MenuAct::ToggleEnabled => self.toggle_enabled(&m.row_id, cx),
+            MenuAct::ChangePort => self.change_port(&m.row_id, window, cx),
+            MenuAct::ChangeHost => self.change_host(&m.row_id, window, cx),
+            MenuAct::ChangePrefix => self.change_prefix(&m.row_id, window, cx),
+            MenuAct::NewServer => self.begin_prompt(PromptAction::NewServer, "", window, cx),
+            MenuAct::RenameWorkspace => self.rename_workspace(window, cx),
+            MenuAct::OpenFolder => self.pick_folder(false, window, cx),
+            MenuAct::CreateWorkspace => self.pick_folder(true, window, cx),
+            MenuAct::CloseWorkspace => self.guard(crate::lifecycle::Intent::Close, cx),
+            MenuAct::ClearRecent => self.clear_recent(cx),
+            MenuAct::OpenRecent(i) => {
+                if let Some(p) = self.recents.get(i).cloned() {
+                    self.open_recent(&p, cx);
+                }
+            }
         }
         cx.notify();
     }
@@ -824,10 +945,16 @@ impl Shell {
                     .as_ref()
                     .map(PromptAction::title)
                     .unwrap_or("Value");
+                // An inline error replaces the help line while the value is invalid.
+                let detail = match (&self.lc.prompt_error, self.prompt.as_ref()) {
+                    (Some(e), _) => e.clone(),
+                    (None, Some(p)) if !p.help().is_empty() => p.help().to_string(),
+                    _ => "Enter to confirm".to_string(),
+                };
                 vec![simple_hit(
                     Kind::Command,
                     &format!("{title}: {query}"),
-                    "Enter to confirm",
+                    &detail,
                     Target::Prompt,
                 )]
             }
@@ -998,6 +1125,14 @@ impl Shell {
                     .as_ref()
                     .map(|p| p.query.clone())
                     .unwrap_or_default();
+                // Invalid input keeps the prompt open with an inline message, not a toast.
+                if let Some(a) = &self.prompt
+                    && let Err(e) = Shell::validate_prompt(a, value.trim())
+                {
+                    self.lc.prompt_error = Some(e);
+                    self.refresh_picker(cx);
+                    return;
+                }
                 let action = self.prompt.take();
                 self.close_picker(true, window, cx);
                 if let Some(action) = action {
@@ -1109,6 +1244,11 @@ impl Shell {
     }
 
     fn on_capture_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.any_dialog_open() && ev.keystroke.key == "escape" {
+            self.cancel_dialog(cx);
+            cx.stop_propagation();
+            return;
+        }
         let stroke = ev.keystroke.unparse();
         match self.chord.feed(&stroke) {
             Outcome::Passthrough => {}
@@ -1155,6 +1295,7 @@ impl Shell {
         if self.picker.is_some() {
             self.close_picker(true, window, cx);
         }
+        self.lc.prompt_error = None;
         self.prompt = Some(action);
         self.open_picker(PickerKind::Prompt, window, cx);
         if let Some(p) = &mut self.picker {
@@ -1173,6 +1314,8 @@ impl Shell {
             self.notify("Open a workspace first.".into(), cx);
             return None;
         };
+        // Any edit made here targets a server file; Undo follows it again.
+        self.lc.undo_file = None;
         match f(&store) {
             Ok(r) => {
                 self.reload(cx);
@@ -1281,6 +1424,15 @@ impl Shell {
         }
     }
 
+    pub(crate) fn rename_server_row(
+        &mut self,
+        id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.rename_row(id, window, cx)
+    }
+
     fn rename_row(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
         if id.starts_with("env:") {
             return self.stub("Renaming environments", "M7", cx);
@@ -1331,6 +1483,10 @@ impl Shell {
         if id.starts_with("env:") {
             return self.stub("Deleting environments", "M7", cx);
         }
+        if self.ws.find_server(id).is_some() {
+            // Deleting a server asks first (modal `delete-confirm`).
+            return self.request_delete_server(id, cx);
+        }
         match self.row_target(id) {
             Some(t) => {
                 if self.store_op(cx, |s| s.delete(&t)).is_some() {
@@ -1357,7 +1513,7 @@ impl Shell {
     }
 
     fn undo_redo(&mut self, undo: bool, cx: &mut Context<Self>) {
-        let Some(file) = self.file_for_edit() else {
+        let Some(file) = self.lc.undo_file.clone().or_else(|| self.file_for_edit()) else {
             return self.notify("Nothing to undo here.".into(), cx);
         };
         let Some(store) = self.store.clone() else {
@@ -1439,21 +1595,56 @@ impl Shell {
         use fauxfield_store::Target as T;
         let v = value.to_string();
         match action {
-            PromptAction::OpenFolder => {
-                if let Err(e) = self.open_workspace(std::path::Path::new(&v), cx) {
-                    self.notify(e, cx);
+            PromptAction::OpenFolder => self.open_folder_chosen(PathBuf::from(&v), cx),
+            PromptAction::CreateWorkspace => self.create_folder_chosen(PathBuf::from(&v), cx),
+            PromptAction::RenameWorkspace => {
+                if self.store_op(cx, |s| s.set_workspace_name(&v)).is_some() {
+                    // Undo/Redo now act on fauxfield.toml.
+                    self.lc.undo_file = Some("fauxfield.toml".into());
                 }
             }
-            PromptAction::CreateWorkspace => {
-                if let Err(e) = self.create_workspace(std::path::Path::new(&v), cx) {
-                    self.notify(e, cx);
+            PromptAction::ServerHost { server } => {
+                let Some(old) = self.ws.find_server(&server).cloned() else {
+                    return;
+                };
+                let host = v.clone();
+                let sid = server.clone();
+                if self
+                    .store_op(cx, |s| s.set_str(&T::Server(sid), "host", Some(&host)))
+                    .is_some()
+                    && host != old.host
+                {
+                    let reachable = fauxfield_model::host_is_network_reachable(&host);
+                    let msg = match (old.running, reachable) {
+                        (true, true) => format!(
+                            "{} restarted on {host}:{}. Reachable from your network.",
+                            old.name, old.port
+                        ),
+                        (true, false) => format!("{} restarted on {host}:{}", old.name, old.port),
+                        (false, true) => "Reachable from your network.".to_string(),
+                        (false, false) => return,
+                    };
+                    self.notify(msg, cx);
                 }
+            }
+            PromptAction::ServerPrefix { server } => {
+                let prefix = fauxfield_model::validate_prefix(&v).ok().flatten();
+                self.store_op(cx, |s| {
+                    s.set_str(&T::Server(server.clone()), "prefix", prefix.as_deref())
+                });
             }
             PromptAction::ServerPort { server } => match v.parse::<u16>() {
                 Ok(p) if p > 0 => {
+                    let old = self.ws.find_server(&server).cloned();
                     self.store_op(cx, |s| {
                         s.set_int(&T::Server(server.clone()), "port", Some(p.into()))
                     });
+                    if let Some(o) = old
+                        && o.running
+                        && o.port != p
+                    {
+                        self.notify(format!("{} restarted on {}:{p}", o.name, o.host), cx);
+                    }
                 }
                 _ => self.notify("A port is a number from 1 to 65535.".into(), cx),
             },
@@ -1577,6 +1768,17 @@ impl Shell {
     }
 }
 
+/// Synthetic rows in test and dev-mcp builds only; a release build starts empty.
+#[cfg(any(test, feature = "dev-mcp"))]
+pub(crate) fn initial_traffic() -> Vec<TrafficRow> {
+    crate::traffic::synthetic(TRAFFIC_ROWS)
+}
+
+#[cfg(not(any(test, feature = "dev-mcp")))]
+pub(crate) fn initial_traffic() -> Vec<TrafficRow> {
+    Vec::new()
+}
+
 fn simple_hit(kind: Kind, label: &str, detail: &str, target: Target) -> Hit {
     Hit {
         label: label.to_string(),
@@ -1610,7 +1812,8 @@ macro_rules! on_actions {
 }
 
 impl Render for Shell {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.sync_window_title(window);
         #[cfg(feature = "dev-mcp")]
         crate::dev_mcp::tree::Registry::begin_frame(
             cx,
@@ -1733,11 +1936,34 @@ impl Render for Shell {
             },
             Undo => |this, _w, cx| this.undo_redo(true, cx),
             Redo => |this, _w, cx| this.undo_redo(false, cx),
-            OpenFolder => |this, w, cx| this.begin_prompt(PromptAction::OpenFolder, "", w, cx),
-            CreateWorkspace => |this, w, cx| this.begin_prompt(PromptAction::CreateWorkspace, "", w, cx),
+            OpenFolder => |this, w, cx| this.pick_folder(false, w, cx),
+            CreateWorkspace => |this, w, cx| this.pick_folder(true, w, cx),
+            OpenFolderByPath => |this, w, cx| this.begin_prompt(PromptAction::OpenFolder, "", w, cx),
+            CreateWorkspaceByPath => |this, w, cx| this.begin_prompt(PromptAction::CreateWorkspace, "", w, cx),
+            ClearRecent => |this, _w, cx| this.clear_recent(cx),
+            ConfirmDialog => |this, _w, cx| this.confirm_dialog(cx),
+            CancelDialog => |this, _w, cx| this.cancel_dialog(cx),
+            ToastAction => |this, w, cx| this.run_toast_action(w, cx),
+            EditServerHost => |this, w, cx| match this.current_server_id() {
+                Some(id) => this.change_host(&id, w, cx),
+                None => this.notify("Select a server first.".into(), cx),
+            },
+            EditServerPrefix => |this, w, cx| match this.current_server_id() {
+                Some(id) => this.change_prefix(&id, w, cx),
+                None => this.notify("Select a server first.".into(), cx),
+            },
+            ToggleServerEnabled => |this, _w, cx| match this.current_server_id() {
+                Some(id) => this.toggle_enabled(&id, cx),
+                None => this.notify("Select a server first.".into(), cx),
+            },
+            ToggleUnmatchedHint => |this, _w, cx| match this.current_server_id() {
+                Some(id) => this.toggle_unmatched_hint(&id, cx),
+                None => this.notify("Select a server first.".into(), cx),
+            },
             MergeKeepMine => |this, _w, cx| this.resolve_merge(true, cx),
             MergeLoadDisk => |this, _w, cx| this.resolve_merge(false, cx),
-            EditRouteMethod => |this, w, cx| this.edit_field(FieldEdit::RouteMethod, w, cx),
+            EditRouteMethod => |this, _w, cx| this.open_method_menu(None, cx),
+            EditRouteMethodCustom => |this, w, cx| this.edit_field(FieldEdit::RouteMethod, w, cx),
             EditRoutePath => |this, w, cx| this.edit_field(FieldEdit::RoutePath, w, cx),
             EditResponseStatus => |this, w, cx| this.edit_field(FieldEdit::ResponseStatus, w, cx),
             EditResponseName => |this, w, cx| this.edit_field(FieldEdit::ResponseName, w, cx),
@@ -1767,13 +1993,32 @@ impl Render for Shell {
             RestartServer => |this, _w, cx| this.restart_current(cx),
             ClearTraffic => |this, _w, cx| this.clear_traffic(cx),
             CopyAsCurl => |this, _w, cx| this.copy_curl(cx),
-            EditServerPort => |this, w, cx| match this.notice_action.as_ref().map(|a| a.server_id.clone()).or_else(|| this.current_server().and_then(|i| this.ws.servers.get(i)).map(|s| s.id.clone())) {
+            EditServerPort => |this, w, cx| match this.notice_action.as_ref().and_then(|a| match &a.action { crate::run::ToastAction::ChangePort(id) => Some(id.clone()), _ => None }).or_else(|| this.current_server().and_then(|i| this.ws.servers.get(i)).map(|s| s.id.clone())) {
                 Some(id) => this.change_port(&id, w, cx),
                 None => this.notify("Select a server first.".into(), cx),
             },
             QuitAnyway => |this, _w, cx| this.quit_now(cx),
             CancelQuit => |this, _w, cx| this.cancel_quit(cx),
             Quit => |this, _w, cx| this.request_quit(cx),
+        });
+
+        // Registered only while a workspace is open, so the palette and `ui.list_actions`
+        // report them as disabled in Welcome.
+        let root = root.when(self.store.is_some(), |d| {
+            d.on_action(cx.listener(
+                |this: &mut Shell,
+                 _: &actions::CloseWorkspace,
+                 _w: &mut Window,
+                 cx: &mut Context<Shell>| {
+                    this.guard(crate::lifecycle::Intent::Close, cx)
+                },
+            ))
+            .on_action(cx.listener(
+                |this: &mut Shell,
+                 _: &actions::RenameWorkspace,
+                 w: &mut Window,
+                 cx: &mut Context<Shell>| { this.rename_workspace(w, cx) },
+            ))
         });
 
         root.child(crate::dev_id!(
@@ -1807,6 +2052,19 @@ impl Render for Shell {
         })
         .when(self.quit_confirm, |d| {
             d.child(self.render_quit_confirm(&t, cx))
+        })
+        .when(self.any_dialog_open(), |d| {
+            d.child(self.render_dialogs(&t, cx))
+        })
+        .when(self.lc.method_menu.is_some(), |d| {
+            d.child(crate::dev_id_z!(
+                self.render_method_menu(&t, cx),
+                1,
+                "route-method-menu",
+                Menu,
+                "Route method menu",
+                None
+            ))
         })
         .when(self.menu.is_some(), |d| {
             d.child(crate::dev_id_z!(

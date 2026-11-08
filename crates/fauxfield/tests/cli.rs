@@ -196,3 +196,35 @@ fn not_a_workspace_is_a_runtime_error() {
     assert_eq!(code, 1);
     assert!(err.contains("not a workspace"));
 }
+
+#[test]
+fn workspace_info_and_rename_are_stable() {
+    let dir = workspace();
+    let d = dir.path().to_str().unwrap();
+    let (code, out, _) = run(&["workspace", "info", "-w", d, "--json"]);
+    assert_eq!(code, 0);
+    let mut v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    v["root"] = "<root>".into();
+    v["name"] = "<name>".into();
+    snap_json(Some("workspace_info"), &v);
+
+    let (code, out, _) = run(&["workspace", "rename", "My Mocks", "-w", d, "--json"]);
+    assert_eq!(code, 0);
+    let mut v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    v["root"] = "<root>".into();
+    snap_json(Some("workspace_rename"), &v);
+    let text = std::fs::read_to_string(dir.path().join("fauxfield.toml")).unwrap();
+    assert!(text.contains("name = \"My Mocks\""), "{text}");
+
+    // Invalid names exit 3 and change nothing.
+    for bad in ["", "   ", "a\nb"] {
+        let (code, _, err) = run(&["workspace", "rename", bad, "-w", d]);
+        assert_eq!(code, 3, "{bad:?}");
+        assert!(err.starts_with("error:"));
+    }
+    assert!(
+        std::fs::read_to_string(dir.path().join("fauxfield.toml"))
+            .unwrap()
+            .contains("My Mocks")
+    );
+}

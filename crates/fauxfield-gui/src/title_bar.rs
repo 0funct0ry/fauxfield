@@ -13,7 +13,8 @@ use crate::ui::{TITLE_BAR_H, icon, keycap, toolbar_button};
 impl Shell {
     pub(crate) fn render_title_bar(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let mac = cfg!(target_os = "macos");
-        let all_running = self.ws.running_count() == self.ws.servers.len();
+        let all_running =
+            self.ws.enabled_count() > 0 && self.ws.running_count() >= self.ws.enabled_count();
         let hint = self
             .keymap
             .binding_for("quick_search")
@@ -35,18 +36,38 @@ impl Shell {
             .bg(t.title_bar)
             .border_b_1()
             .border_color(t.border)
-            .child(crate::dev_id!(
+            .child(crate::dev_id_meta!(
                 toolbar_button(t, "title-workspace")
+                    .max_w(px(220.))
                     .child(icon("folder-open", 14., t.icon_muted))
-                    .child(self.ws.name.clone())
+                    .child(div().min_w_0().truncate().child(if self.store.is_some() {
+                        self.ws.name.clone()
+                    } else {
+                        "No workspace".to_string()
+                    }))
                     .child(icon("chevron-down", 12., t.icon_muted))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.notify("Workspace menu arrives in M2.".into(), cx)
+                    .tooltip(crate::lifecycle::tip(if self.store.is_some() {
+                        self.ws.root.display().to_string()
+                    } else {
+                        "No workspace is open".to_string()
+                    }))
+                    .on_click(cx.listener(|this, ev: &gpui::ClickEvent, _, cx| {
+                        let p = ev.position();
+                        this.open_menu(
+                            crate::tree::WORKSPACE_ROW,
+                            f32::from(p.x),
+                            f32::from(p.y) + 12.,
+                            cx,
+                        )
                     })),
+                crate::dev_mcp::tree::Meta {
+                    tooltip: true,
+                    ..Default::default()
+                },
                 "title-workspace",
                 Button,
                 &self.ws.name,
-                None
+                RowMenu(crate::tree::WORKSPACE_ROW.to_string())
             ))
             .child(crate::dev_id!(
                 toolbar_button(t, "title-environment")

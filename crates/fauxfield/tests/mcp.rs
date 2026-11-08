@@ -1,7 +1,9 @@
 //! End-to-end: the real `fauxfield mcp` process driven by an rmcp client over stdio and the
 //! unix socket (M1.1 acceptance).
 
-use std::{path::Path, process::Stdio, time::Duration};
+#[cfg(unix)]
+use std::path::Path;
+use std::{process::Stdio, time::Duration};
 
 use rmcp::{ServiceExt, model::CallToolRequestParams};
 use serde_json::json;
@@ -13,6 +15,7 @@ fn spawn(args: &[&str]) -> Child {
     Command::new(BIN)
         .arg("mcp")
         .args(args)
+        .current_dir(std::env::temp_dir())
         .env("FAUXFIELD_SETTINGS", "/nonexistent/settings.toml")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -22,6 +25,7 @@ fn spawn(args: &[&str]) -> Child {
         .unwrap()
 }
 
+#[cfg(unix)]
 async fn wait_for(path: &Path) {
     for _ in 0..200 {
         if path.exists() {
@@ -250,6 +254,12 @@ fn bad_flags_are_usage_errors() {
         vec!["mcp", "--allow", "bogus"],
         vec!["mcp", "--read-only", "--allow", "read"],
         vec!["mcp", "--transport", "tcp"],
+        // The wrong native socket for this platform names the right one.
+        vec![
+            "mcp",
+            "--transport",
+            if cfg!(windows) { "unix" } else { "pipe" },
+        ],
     ] {
         let out = std::process::Command::new(BIN)
             .args(&args)
@@ -450,4 +460,259 @@ async fn control_tools_start_send_traffic_stop() {
     assert!(!names.contains(&"start_server".to_string()));
     assert!(!names.contains(&"send_test_request".to_string()));
     c.cancel().await.unwrap();
+}
+
+fn init_ws() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(
+        std::process::Command::new(BIN)
+            .args(["init", dir.path().to_str().unwrap()])
+            .status()
+            .unwrap()
+            .success()
+    );
+    dir
+}
+
+fn free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+}
+
+#[test]
+fn wrong_native_transport_is_a_usage_error_naming_the_right_one() {
+    let wrong = if cfg!(windows) { "unix" } else { "pipe" };
+    let right = if cfg!(windows) { "pipe" } else { "unix" };
+    let out = std::process::Command::new(BIN)
+        .args(["mcp", "--transport", wrong])
+        .env("FAUXFIELD_SETTINGS", "/nonexistent/settings.toml")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains(&format!("--transport {right}")));
+}
+
+/// M3.1: rename the workspace and flip the 404 hint through MCP.
+#[tokio::test]
+async fn update_workspace_and_server_hint_and_prefix() {
+    let dir = init_ws();
+    let p = dir.path().to_str().unwrap();
+    let mut child = spawn(&[p]);
+    let c = ().serve((child.stdout.take().unwrap(), child.stdin.take().unwrap())).await.unwrap();
+    let call = |name: &'static str, args: serde_json::Value| {
+        let c = &c;
+        async move {
+            c.call_tool(
+                CallToolRequestParams::new(name).with_arguments(args.as_object().unwrap().clone()),
+            )
+            .await
+        }
+    };
+    let r = call("update_workspace", json!({"name": "  Renamed  "}))
+        .await
+        .unwrap();
+    assert_eq!(r.structured_content.unwrap()["name"], "Renamed");
+    assert!(
+        std::fs::read_to_string(dir.path().join("fauxfield.toml"))
+            .unwrap()
+            .contains("name = \"Renamed\"")
+    );
+    assert!(
+        call("update_workspace", json!({"name": ""})).await.is_err() || {
+            // tool failures come back as tool errors
+            call("update_workspace", json!({"name": ""}))
+                .await
+                .unwrap()
+                .is_error
+                == Some(true)
+        }
+    );
+    call(
+        "update_server",
+        json!({"server": "example-api", "unmatched_hint": false, "prefix": "/api"}),
+    )
+    .await
+    .unwrap();
+    let t = std::fs::read_to_string(dir.path().join("servers/example-api.toml")).unwrap();
+    assert!(t.contains("unmatched_hint = false") && t.contains("prefix = \"/api\""));
+    let s = call("get_server", json!({"server": "example-api"}))
+        .await
+        .unwrap()
+        .structured_content
+        .unwrap();
+    assert_eq!(s["unmatched_hint"], false);
+    // Empty prefix removes the key; a bad one is refused.
+    call(
+        "update_server",
+        json!({"server": "example-api", "prefix": ""}),
+    )
+    .await
+    .unwrap();
+    let t = std::fs::read_to_string(dir.path().join("servers/example-api.toml")).unwrap();
+    assert!(!t.contains("prefix"));
+    let bad = call(
+        "update_server",
+        json!({"server": "example-api", "prefix": "api/"}),
+    )
+    .await;
+    assert!(bad.is_err() || bad.unwrap().is_error == Some(true));
+    c.cancel().await.unwrap();
+}
+
+/// C3: a read-only MCP process never becomes a host.
+#[tokio::test]
+async fn read_only_get_traffic_never_creates_a_host() {
+    let dir = init_ws();
+    let p = dir.path().to_str().unwrap();
+    let mut child = spawn(&[p, "--read-only"]);
+    let c = ().serve((child.stdout.take().unwrap(), child.stdin.take().unwrap())).await.unwrap();
+    let t = c
+        .call_tool(CallToolRequestParams::new("get_traffic"))
+        .await
+        .unwrap()
+        .structured_content
+        .unwrap();
+    assert_eq!(t["count"], 0);
+    assert_eq!(t["host"], "not running");
+    assert!(!dir.path().join(".fauxfield/run/host.json").exists());
+    c.cancel().await.unwrap();
+    let out = std::process::Command::new(BIN)
+        .args(["status", "-w", p])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(4), "no host must be running");
+}
+
+/// C3: two MCP processes that both need a host end with exactly one, and both see traffic.
+#[tokio::test]
+async fn two_processes_share_one_host() {
+    let dir = init_ws();
+    let p = dir.path().to_str().unwrap();
+    let port = free_port();
+    let file = dir.path().join("servers/example-api.toml");
+    let t = std::fs::read_to_string(&file)
+        .unwrap()
+        .replace("3001", &port.to_string());
+    std::fs::write(&file, t).unwrap();
+    let (mut a, mut b) = (spawn(&[p]), spawn(&[p]));
+    let ca = ().serve((a.stdout.take().unwrap(), a.stdin.take().unwrap())).await.unwrap();
+    let cb = ().serve((b.stdout.take().unwrap(), b.stdin.take().unwrap())).await.unwrap();
+    async fn start(
+        c: &rmcp::service::RunningService<rmcp::RoleClient, ()>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::service::ServiceError> {
+        c.call_tool(
+            CallToolRequestParams::new("start_server").with_arguments(
+                json!({"server": "example-api"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        )
+        .await
+    }
+    let (ra, rb) = tokio::join!(start(&ca), start(&cb));
+    for r in [ra, rb] {
+        let r = r.unwrap();
+        assert_ne!(r.is_error, Some(true), "{r:?}");
+        assert_eq!(
+            r.structured_content.unwrap()["servers"][0]["status"]["state"],
+            "running"
+        );
+    }
+    // One request through one process is visible from the other.
+    let sent = ca
+        .call_tool(
+            CallToolRequestParams::new("send_test_request").with_arguments(
+                json!({"server": "example-api", "path": "/health"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        )
+        .await
+        .unwrap();
+    assert_ne!(sent.is_error, Some(true));
+    for c in [&ca, &cb] {
+        let t = c
+            .call_tool(CallToolRequestParams::new("get_traffic"))
+            .await
+            .unwrap()
+            .structured_content
+            .unwrap();
+        assert_eq!(t["count"], 1, "{t}");
+    }
+    let status = std::process::Command::new(BIN)
+        .args(["status", "--json", "-w", p])
+        .output()
+        .unwrap();
+    assert_eq!(status.status.code(), Some(0));
+    let v: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(v["servers"].as_array().unwrap().len(), 1);
+    ca.cancel().await.unwrap();
+    cb.cancel().await.unwrap();
+}
+
+#[cfg(windows)]
+mod windows {
+    use super::*;
+    use tokio::net::windows::named_pipe::ClientOptions;
+
+    fn pipe_name(tag: &str) -> String {
+        format!(r"\\.\pipe\fauxfield-test-{}-{tag}", std::process::id())
+    }
+
+    async fn connect_retry(name: &str) -> tokio::net::windows::named_pipe::NamedPipeClient {
+        for _ in 0..200 {
+            if let Ok(c) = ClientOptions::new().open(name) {
+                return c;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        panic!("could not connect to {name}");
+    }
+
+    #[tokio::test]
+    async fn pipe_serves_and_refuses_a_live_name() {
+        let name = pipe_name("a");
+        let mut live = spawn(&["--transport", "pipe", "--socket", &name]);
+        let c = ().serve(connect_retry(&name).await).await.unwrap();
+        ping(&c).await;
+        let second = std::process::Command::new(BIN)
+            .args(["mcp", "--transport", "pipe", "--socket", &name])
+            .env("FAUXFIELD_SETTINGS", "/nonexistent/settings.toml")
+            .output()
+            .unwrap();
+        assert_eq!(second.status.code(), Some(1));
+        drop(c);
+        let _ = live.kill().await;
+    }
+
+    #[tokio::test]
+    async fn both_keeps_serving_the_pipe_after_stdin_closes() {
+        let name = pipe_name("b");
+        let mut child = spawn(&["--transport", "both", "--socket", &name]);
+        let io = (child.stdout.take().unwrap(), child.stdin.take().unwrap());
+        let stdio = ().serve(io).await.unwrap();
+        ping(&stdio).await;
+        stdio.cancel().await.unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "process must outlive stdin"
+        );
+        let c = ().serve(connect_retry(&name).await).await.unwrap();
+        ping(&c).await;
+        let info = c
+            .call_tool(CallToolRequestParams::new("server_info"))
+            .await
+            .unwrap()
+            .structured_content
+            .unwrap();
+        assert_eq!(info["transports"], json!(["stdio", "pipe"]));
+        drop(c);
+        let _ = child.kill().await;
+    }
 }

@@ -78,6 +78,16 @@ pub enum CommandName {
     ToggleDock,
     SetEnvironment,
     Search,
+    /// Close the open workspace (through the shared guard).
+    CloseWorkspace,
+    /// Bind `port` on loopback and keep it until `ui.reset_view`.
+    HoldPort,
+    /// Open the quit confirmation; refused when nothing is running.
+    RequestQuit,
+    /// Remove a Recent entry by `path`.
+    RemoveRecent,
+    /// Add `path` (which need not exist) to Recent, newest first.
+    AddRecent,
 }
 
 #[derive(Clone, Copy, Deserialize, JsonSchema)]
@@ -92,7 +102,8 @@ pub enum DockArg {
 #[derive(Deserialize, JsonSchema)]
 pub struct CommandInput {
     /// `open_tab` (kind, id), `select_tab` (index or id), `toggle_dock` (dock),
-    /// `set_environment` (name), `search` (query).
+    /// `set_environment` (name), `search` (query), `close_workspace`, `hold_port` (port),
+    /// `request_quit`, `remove_recent` (path), `add_recent` (path).
     pub command: CommandName,
     /// open_tab: `route`, `server` or `environment`.
     #[serde(default)]
@@ -112,6 +123,19 @@ pub struct CommandInput {
     /// search: text to put in Quick Search (prefixes `@ / # $ >` work).
     #[serde(default)]
     pub query: Option<String>,
+    /// hold_port: TCP port to hold.
+    #[serde(default)]
+    pub port: Option<u16>,
+    /// remove_recent: workspace folder path.
+    #[serde(default)]
+    pub path: Option<String>,
+}
+
+static HELD_PORTS: std::sync::Mutex<Vec<std::net::TcpListener>> = std::sync::Mutex::new(Vec::new());
+
+/// Drop every listener `hold_port` created (called by `ui.reset_view`).
+pub fn release_held_ports() {
+    HELD_PORTS.lock().unwrap_or_else(|p| p.into_inner()).clear();
 }
 
 fn fail<T>(msg: impl Into<String>) -> Result<T, UiError> {
@@ -237,6 +261,41 @@ pub fn command(
             }
             shell.set_environment(&name, cx);
             Ok(json!({ "ok": true, "active_environment": shell.active_env }))
+        }
+        CommandName::CloseWorkspace => {
+            if shell.store.is_none() {
+                return fail("no workspace is open");
+            }
+            shell.guard(crate::lifecycle::Intent::Close, cx);
+            Ok(json!({
+                "ok": true,
+                "view": if shell.store.is_some() { "workspace" } else { "welcome" },
+                "modal": shell.dialog_name(),
+            }))
+        }
+        CommandName::HoldPort => {
+            let port = need(input.port, "port", "hold_port")?;
+            let l = std::net::TcpListener::bind(("127.0.0.1", port))
+                .map_err(|e| UiError::Failed(format!("cannot hold port {port}: {e}")))?;
+            HELD_PORTS.lock().unwrap_or_else(|p| p.into_inner()).push(l);
+            Ok(json!({ "ok": true, "port": port }))
+        }
+        CommandName::RequestQuit => {
+            if shell.servers_running() == 0 {
+                return fail("refused: no servers are running, this would quit the app");
+            }
+            shell.request_quit(cx);
+            Ok(json!({ "ok": true, "modal": "quit_confirm" }))
+        }
+        CommandName::AddRecent => {
+            let path = need(input.path, "path", "add_recent")?;
+            shell.add_recent(std::path::PathBuf::from(path), cx);
+            Ok(json!({ "ok": true }))
+        }
+        CommandName::RemoveRecent => {
+            let path = need(input.path, "path", "remove_recent")?;
+            shell.remove_recent(std::path::Path::new(&path), cx);
+            Ok(json!({ "ok": true }))
         }
         CommandName::Search => {
             let query = need(input.query, "query", "search")?;

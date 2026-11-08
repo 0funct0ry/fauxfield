@@ -62,8 +62,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p fauxfield-engine -p fauxfield-control
-      - if: runner.os != 'Windows'
-        run: cargo test -p fauxfield --no-default-features --features headless --test run
+      - run: cargo test -p fauxfield --no-default-features --features headless --test run
 
   # The dev-mcp app driven by the scenarios in fixtures/scenarios; fails on a failed step or an
   # audit error. Linux runs under xvfb with ImageMagick for screenshots; macOS runners have no

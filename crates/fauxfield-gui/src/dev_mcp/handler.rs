@@ -27,6 +27,13 @@ pub struct OpenWorkspaceInput {
     pub path: String,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct CreateWorkspaceInput {
+    /// Folder to create the workspace in (SPEC §4.1). Goes through the same Shell method as the
+    /// Create workspace button, including the existing-workspace and non-empty-folder rules.
+    pub path: String,
+}
+
 #[derive(Clone, Copy, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TabKindArg {
@@ -114,8 +121,17 @@ fn reset_view(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) {
     shell.mask_volatile = false;
     shell.quit_confirm = false;
     shell.notice_action = None;
+    shell.notice = None;
+    shell.menu = None;
+    shell.prompt = None;
+    shell.lc.method_menu = None;
+    shell.lc.close_confirm = None;
+    shell.lc.delete_confirm = None;
+    shell.lc.create_confirm = None;
+    shell.lc.prompt_error = None;
+    super::input::release_held_ports();
     // Baseline Traffic is the synthetic 10k rows; real requests and the engine's buffer go.
-    shell.traffic = crate::mock::traffic(crate::shell::TRAFFIC_ROWS);
+    shell.traffic = crate::traffic::synthetic(crate::shell::TRAFFIC_ROWS);
     if let Some(h) = &shell.host {
         h.engine().stop_all();
         h.engine().clear_traffic();
@@ -174,6 +190,23 @@ pub fn dispatch(
                 .map_err(UiError::Failed)?;
             host.workspace_path = Some(shell.ws.root.display().to_string());
             Ok(json!({ "workspace": shell.ws.name, "path": shell.ws.root.display().to_string() }))
+        }
+        "ui.create_workspace" => {
+            let input: CreateWorkspaceInput = args(&req.params)?;
+            let path = std::path::PathBuf::from(&input.path);
+            if !path.is_dir() {
+                return Err(UiError::Failed(format!("{} is not a folder", input.path)));
+            }
+            // Same flow as the button: refusals and confirmations surface as toasts and modals.
+            shell.create_folder_chosen(path, cx);
+            if shell.store.is_some() {
+                host.workspace_path = Some(shell.ws.root.display().to_string());
+            }
+            Ok(json!({
+                "workspace": shell.ws.name,
+                "path": shell.store.as_ref().map(|_| shell.ws.root.display().to_string()),
+                "modal": shell.dialog_name(),
+            }))
         }
         "ui.open_tab" => {
             let input: OpenTabInput = args(&req.params)?;
@@ -245,7 +278,7 @@ pub fn dispatch(
         "ui.reset_view" => {
             reset_view(shell, window, cx);
             match &host.baseline {
-                Some(b) if shell.store.is_some() && shell.ws.root != *b => {
+                Some(b) if shell.store.is_none() || shell.ws.root != *b => {
                     shell.open_workspace(b, cx).map_err(UiError::Failed)?;
                 }
                 _ => {}

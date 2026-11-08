@@ -56,6 +56,11 @@ pub enum Command {
     },
     /// Validate the workspace files; exit code 3 when there are errors.
     Validate(crate::workspace_cmd::WsArgs),
+    /// Show or rename the workspace.
+    Workspace {
+        #[command(subcommand)]
+        action: crate::workspace_cmd::WorkspaceAction,
+    },
     /// List and inspect Servers.
     Server {
         #[command(subcommand)]
@@ -96,10 +101,10 @@ pub struct McpArgs {
     pub action: Option<McpAction>,
     /// Workspace folder to serve tools over.
     pub path: Option<PathBuf>,
-    /// Transport: stdio, unix, both, or http (http arrives in M16).
+    /// Transport: stdio, unix, pipe (Windows), both, or http (http arrives in M16).
     #[arg(long, value_parser = parse_transport)]
     pub transport: Option<fauxfield_mcp::TransportKind>,
-    /// Unix socket path (default: per-user runtime dir, mcp-<pid>.sock).
+    /// Unix socket path, or a pipe name on Windows (default: per-user runtime dir, mcp-<pid>.sock; \\\\.\\pipe\\fauxfield-mcp-<pid>).
     #[arg(long, value_name = "PATH")]
     pub socket: Option<PathBuf>,
     /// Tool classes to expose: read, write, execute (default: all).
@@ -153,6 +158,7 @@ pub fn run() -> i32 {
         Some(Command::Open { path }) => open(path),
         Some(Command::Init { path, json }) => crate::workspace_cmd::init(path, json),
         Some(Command::Validate(a)) => crate::workspace_cmd::validate(&a),
+        Some(Command::Workspace { action }) => crate::workspace_cmd::workspace(action),
         Some(Command::Server { action }) => crate::workspace_cmd::server(action),
         Some(Command::Route { action }) => crate::workspace_cmd::route(action),
         Some(Command::Run(a)) => crate::host_cmd::run(a),
@@ -193,7 +199,8 @@ fn mcp(args: McpArgs) -> i32 {
             .unwrap_or(Ok(None))
     };
     let config = allow
-        .and_then(|allow| McpSettings::load_default()?.resolve(args.transport, args.socket, allow));
+        .and_then(|allow| McpSettings::load_default()?.resolve(args.transport, args.socket, allow))
+        .and_then(|c| c.transport.check_platform().map(|()| c));
     let config = match config {
         Ok(c) => c,
         Err(e) => {
@@ -240,26 +247,39 @@ fn control_provider(
 ) -> fauxfield_mcp::control_tools::ControlProvider {
     use fauxfield_control::{ControlApi, Host, HostOptions, RemoteControl, read_host};
     let slot = slot.clone();
-    std::sync::Arc::new(move || {
+    std::sync::Arc::new(move |mode| {
+        use fauxfield_mcp::control_tools::ControlMode;
+        use std::sync::Arc;
         let mut g = slot.lock().unwrap();
         if let Some(h) = g.as_ref() {
-            return Ok(h.control() as std::sync::Arc<dyn ControlApi>);
+            return Ok(Some(h.control() as Arc<dyn ControlApi>));
         }
         if let Some(info) = read_host(&root) {
-            return Ok(std::sync::Arc::new(RemoteControl::new(&info.socket)));
+            return Ok(Some(Arc::new(RemoteControl::new(&info.socket))));
         }
-        let host = Host::start(
+        if mode == ControlMode::AttachOnly {
+            // Read-only tools never create a host.
+            return Ok(None);
+        }
+        match Host::start(
             &root,
             HostOptions {
                 watch: true,
                 publish: true,
                 ..Default::default()
             },
-        )
-        .map_err(|e| e.to_string())?;
-        let control = host.control() as std::sync::Arc<dyn ControlApi>;
-        *g = Some(host);
-        Ok(control)
+        ) {
+            Ok(host) => {
+                let control = host.control() as Arc<dyn ControlApi>;
+                *g = Some(host);
+                Ok(Some(control))
+            }
+            // Lost the race to another process: attach to the winner.
+            Err(fauxfield_control::HostError::Already(info)) => {
+                Ok(Some(Arc::new(RemoteControl::new(&info.socket))))
+            }
+            Err(e) => Err(e.to_string()),
+        }
     })
 }
 

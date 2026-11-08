@@ -3,6 +3,18 @@
 ## Unreleased
 
 ### Added
+- M3.1 Workspace lifecycle and M3 completion: native folder picker (typed-path fallback), Close
+  workspace with a shared guard and confirmation, a Recent list (remove, clear, missing folders),
+  rename workspace (`Store::set_workspace_name`, `fauxfield workspace info|rename`, MCP
+  `update_workspace`), a sidebar workspace node and per-server hamburger menus, an editable Server
+  tab (host, port, prefix, enabled, 404 closest-routes hint), disabled servers (skipped by Run all
+  and `fauxfield run`, refused on explicit start, `Enable and start` toast), delete confirmation,
+  safe duplicate. The control socket and MCP transport work on Windows (named pipes), read-only MCP
+  no longer creates a host, an invalid file edit keeps the previous routes serving, `unmatched_hint`
+  setting, `logs --har` reports "--har arrives in M12", `mock.rs` removed. Scenario
+  `m031-workspace`, ten new state fixtures, `ui.create_workspace` and new `ui.command`s.
+  Known gaps: Windows CI jobs not run locally; save-to-served latency is about 69 ms against the
+  50 ms budget (bench in M4).
 - M3 Run a mock server (GUI and headless): `fauxfield-engine` (a hyper listener per Server, exact
   Route matching with the Server prefix, static Responses with headers, `body_file` and delay, a
   404 `application/problem+json` with the closest Routes, atomic route-table hot reload, port-in-use

@@ -423,6 +423,15 @@ impl Store {
         Ok(())
     }
 
+    /// Set `name` in fauxfield.toml (comments and key order survive).
+    pub fn set_workspace_name(&self, name: &str) -> Result<(), StoreError> {
+        let name = fauxfield_model::validate_workspace_name(name).map_err(StoreError::Invalid)?;
+        self.edit(MANIFEST, |d| {
+            d["name"] = value(name.as_str());
+            Ok(())
+        })
+    }
+
     pub fn duplicate_server(&self, id: &str) -> Result<String, StoreError> {
         let file = self
             .server_file(id)
@@ -437,13 +446,33 @@ impl Store {
             .and_then(Item::as_str)
             .unwrap_or("Server")
             .to_string();
-        let port = doc.get("port").and_then(Item::as_integer).unwrap_or(3000) + 1;
+        let mut st = self.lock();
+        // New unique port (max + 1) and unique name ("<name> copy", "<name> copy 2", ...).
+        let mut max_port = 0i64;
+        let mut names = Vec::new();
+        for (f, d) in st.docs.iter() {
+            if !f.starts_with("servers/") {
+                continue;
+            }
+            if let Ok(o) = d.text().parse::<DocumentMut>() {
+                max_port = max_port.max(o.get("port").and_then(Item::as_integer).unwrap_or(0));
+                if let Some(n) = o.get("name").and_then(Item::as_str) {
+                    names.push(n.to_string());
+                }
+            }
+        }
+        let port = (max_port + 1).min(65535);
+        let mut new_name = format!("{name} copy");
+        let mut k = 2;
+        while names.contains(&new_name) {
+            new_name = format!("{name} copy {k}");
+            k += 1;
+        }
         doc["id"] = value(new.clone());
-        doc["name"] = value(format!("{name} copy"));
+        doc["name"] = value(new_name.clone());
         doc["port"] = value(port);
         regen_ids(&mut doc);
-        let mut st = self.lock();
-        let slug = slugify(&format!("{name} copy"));
+        let slug = slugify(&new_name);
         let mut rel = format!("servers/{slug}.toml");
         let mut n = 2;
         while st.docs.contains_key(&rel) {

@@ -1,10 +1,6 @@
 //! Transport selection, configuration merging and the unix-socket lifecycle (SPEC §11.1, §13).
 
-use std::{
-    fmt,
-    path::{Path, PathBuf},
-    str::FromStr,
-};
+use std::{fmt, path::PathBuf, str::FromStr};
 
 use serde::Deserialize;
 
@@ -15,6 +11,8 @@ use crate::class::AllowedClasses;
 pub enum TransportKind {
     Stdio,
     Unix,
+    /// Windows named pipe (`\\\\.\\pipe\\fauxfield-mcp-<pid>`).
+    Pipe,
     Both,
     Http,
 }
@@ -24,6 +22,7 @@ impl TransportKind {
         match self {
             Self::Stdio => "stdio",
             Self::Unix => "unix",
+            Self::Pipe => "pipe",
             Self::Both => "both",
             Self::Http => "http",
         }
@@ -33,6 +32,34 @@ impl TransportKind {
     }
     pub fn uses_unix(self) -> bool {
         matches!(self, Self::Unix | Self::Both)
+    }
+    pub fn uses_pipe(self) -> bool {
+        matches!(self, Self::Pipe | Self::Both)
+    }
+    /// The socket transport `both` means on this platform: a unix socket, or a pipe on Windows.
+    pub fn native_socket() -> TransportKind {
+        if cfg!(windows) {
+            Self::Pipe
+        } else {
+            Self::Unix
+        }
+    }
+    /// True when this transport listens on the platform's native socket (unix socket or pipe).
+    pub fn uses_native_socket(self) -> bool {
+        match Self::native_socket() {
+            Self::Pipe => self.uses_pipe(),
+            _ => self.uses_unix(),
+        }
+    }
+    /// Reject a transport the platform cannot serve, naming the right value.
+    pub fn check_platform(self) -> Result<(), String> {
+        if cfg!(windows) && self == Self::Unix {
+            return Err("the unix transport is not available on Windows; use `--transport pipe` (or `both`)".into());
+        }
+        if !cfg!(windows) && self == Self::Pipe {
+            return Err("the pipe transport is only available on Windows; use `--transport unix` (or `both`)".into());
+        }
+        Ok(())
     }
 }
 
@@ -48,10 +75,11 @@ impl FromStr for TransportKind {
         match s {
             "stdio" => Ok(Self::Stdio),
             "unix" => Ok(Self::Unix),
+            "pipe" => Ok(Self::Pipe),
             "both" => Ok(Self::Both),
             "http" => Ok(Self::Http),
             o => Err(format!(
-                "unknown transport `{o}` (expected stdio, unix, both or http)"
+                "unknown transport `{o}` (expected stdio, unix, pipe, both or http)"
             )),
         }
     }
@@ -142,9 +170,12 @@ fn settings_path() -> Option<PathBuf> {
     Some(base.join("fauxfield").join("settings.toml"))
 }
 
-/// `$XDG_RUNTIME_DIR/fauxfield/mcp-<pid>.sock`; elsewhere the per-user temp dir
-/// (on macOS `$TMPDIR` is already per-user).
+/// Unix: `$XDG_RUNTIME_DIR/fauxfield/mcp-<pid>.sock` (elsewhere the per-user temp dir; on macOS
+/// `$TMPDIR` is already per-user). Windows: `\\.\pipe\fauxfield-mcp-<pid>`.
 pub fn default_socket_path() -> PathBuf {
+    if cfg!(windows) {
+        return PathBuf::from(format!(r"\\.\pipe\fauxfield-mcp-{}", std::process::id()));
+    }
     let base = std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir);
@@ -157,13 +188,22 @@ pub use fauxfield_control::ipc::SocketGuard;
 
 /// Bind the MCP socket; stale-socket logic is shared with the control socket.
 #[cfg(unix)]
-pub async fn bind_unix(path: &Path) -> Result<(tokio::net::UnixListener, SocketGuard), String> {
+pub async fn bind_unix(
+    path: &std::path::Path,
+) -> Result<(tokio::net::UnixListener, SocketGuard), String> {
     fauxfield_control::ipc::bind_unix(
         path,
         "Fauxfield MCP server",
         "choose another path with --socket",
     )
     .await
+}
+
+/// Create the first instance of the MCP pipe; a live name is refused (first instance wins).
+#[cfg(windows)]
+pub fn bind_pipe(name: &str) -> Result<tokio::net::windows::named_pipe::NamedPipeServer, String> {
+    fauxfield_control::ipc::bind_pipe(name)
+        .map_err(|e| format!("{e}; choose another name with --socket"))
 }
 
 #[cfg(test)]
@@ -178,7 +218,7 @@ mod tests {
         .unwrap();
         let c = s.resolve(Some(TransportKind::Both), None, None).unwrap();
         assert_eq!(c.transport, TransportKind::Both);
-        assert_eq!(c.socket.as_deref(), Some(Path::new("/a.sock")));
+        assert_eq!(c.socket.as_deref(), Some(std::path::Path::new("/a.sock")));
         assert_eq!(c.allow, AllowedClasses::read_only());
     }
 
@@ -195,5 +235,16 @@ mod tests {
                 .is_err()
         );
         assert!("http".parse::<TransportKind>().is_ok());
+        assert_eq!(
+            "pipe".parse::<TransportKind>().unwrap(),
+            TransportKind::Pipe
+        );
+        let wrong = if cfg!(windows) {
+            TransportKind::Unix
+        } else {
+            TransportKind::Pipe
+        };
+        assert!(wrong.check_platform().unwrap_err().contains("--transport"));
+        assert!(TransportKind::Both.check_platform().is_ok());
     }
 }

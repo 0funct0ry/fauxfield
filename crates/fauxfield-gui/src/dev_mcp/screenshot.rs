@@ -94,6 +94,16 @@ fixtures!(
     "server-running",
     "traffic-live",
     "traffic-empty",
+    "welcome-empty",
+    "welcome-recent",
+    "server-general",
+    "server-disabled",
+    "port-in-use-toast",
+    "quit-confirm",
+    "close-confirm",
+    "delete-confirm",
+    "workspace-menu-open",
+    "rename-workspace-prompt",
 );
 
 pub fn named_steps(name: &str) -> Result<Vec<Step>, String> {

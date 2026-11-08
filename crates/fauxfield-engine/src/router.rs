@@ -44,7 +44,7 @@ impl RouteTable {
             .collect();
         RouteTable {
             entries,
-            unmatched_hint: true,
+            unmatched_hint: server.unmatched_hint.unwrap_or(true),
         }
     }
 

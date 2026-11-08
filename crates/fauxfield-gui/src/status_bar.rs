@@ -13,7 +13,7 @@ use crate::ui::{STATUS_BAR_H, icon, toolbar_button};
 impl Shell {
     pub(crate) fn render_status_bar(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let on = |open: bool| if open { t.accent } else { t.icon_muted };
-        let total = self.ws.servers.len();
+        let total = self.ws.enabled_count();
         let problems = self.problems.len();
         div()
             .id("status-bar")
@@ -78,13 +78,11 @@ impl Shell {
                 crate::dev_id!(
                     toolbar_button(t, "toast-action")
                         .child(a.label)
-                        .on_click(cx.listener(|this, _, w, cx| {
-                            this.run_action_id("edit_server_port", w, cx)
-                        })),
+                        .on_click(cx.listener(|this, _, w, cx| this.run_toast_action(w, cx)),),
                     "toast-action",
                     Button,
                     a.label,
-                    Action("edit_server_port")
+                    Action("toast_action")
                 )
             }))
             .child(div().id("status-network").child("Network: no throttling"))

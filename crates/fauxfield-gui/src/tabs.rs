@@ -60,6 +60,17 @@ impl TabSet {
 
     /// Single-click: focus the tab if open, else open it as a preview, replacing the current
     /// preview tab in place.
+    /// Update the title of the tab `(kind, id)`; true when it changed.
+    pub fn retitle(&mut self, kind: TabKind, id: &str, title: &str) -> bool {
+        match self.tabs.iter_mut().find(|t| t.kind == kind && t.id == id) {
+            Some(t) if t.title != title => {
+                t.title = title.to_string();
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub fn open_preview(&mut self, id: &str, kind: TabKind, title: &str) {
         if let Some(i) = self.position(id) {
             self.active = Some(i);

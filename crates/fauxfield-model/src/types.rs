@@ -68,6 +68,9 @@ pub struct Server {
     pub port: u16,
     #[serde(default)]
     pub prefix: Option<String>,
+    /// Add the closest-routes hint to 404 bodies (default true).
+    #[serde(default)]
+    pub unmatched_hint: Option<bool>,
     #[serde(default)]
     pub docs: Option<String>,
     #[serde(default)]

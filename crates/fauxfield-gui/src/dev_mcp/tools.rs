@@ -191,7 +191,15 @@ pub fn register_ui_tools(registry: &mut Registry, bridge: Arc<dyn UiBridge>) {
         registry,
         &bridge,
         "ui.open_workspace",
-        "Open a workspace folder. Before M2 this selects the mock workspace.",
+        "Open a workspace folder (replaces the open one; servers stop first).",
+    );
+    tool::<super::handler::CreateWorkspaceInput>(
+        registry,
+        &bridge,
+        "ui.create_workspace",
+        "Create a workspace in a folder and open it, through the same flow as the Create \
+         workspace button (refuses an existing workspace; a non-empty folder asks to confirm \
+         with modal `create_confirm`). Native folder dialogs cannot be driven, so use this.",
     );
     tool::<OpenTabInput>(
         registry,

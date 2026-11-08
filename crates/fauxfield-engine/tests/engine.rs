@@ -241,3 +241,38 @@ fn authorization_header_is_redacted_in_recordings() {
     );
     e.stop_all();
 }
+
+#[test]
+fn explicit_start_of_a_disabled_server_fails_and_run_all_skips_it() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(&rt, dir.path());
+    let mut s = server(free_port(), "{}", "");
+    s.enabled = false;
+    e.apply(vec![s]);
+    match e.start("srv_a") {
+        Err(EngineError::Disabled(n)) => assert_eq!(n, "Users API"),
+        other => panic!("expected Disabled, got {other:?}"),
+    }
+    assert!(e.start_all().is_empty(), "run all skips disabled servers");
+    assert_eq!(e.list()[0].status.label(), "stopped");
+}
+
+#[test]
+fn unmatched_hint_false_omits_closest_but_keeps_the_problem() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(&rt, dir.path());
+    let mut s = server(free_port(), "{}", "");
+    s.unmatched_hint = Some(false);
+    e.apply(vec![s]);
+    e.start("srv_a").unwrap();
+    let r = rt
+        .block_on(e.send_test("srv_a", &req("GET", "/api/user")))
+        .unwrap();
+    assert_eq!(r.status, 404);
+    let v: serde_json::Value = serde_json::from_str(&r.body).unwrap();
+    assert!(v.get("closest").is_none(), "{v}");
+    assert_eq!(v["status"], 404);
+    e.stop_all();
+}

@@ -1,4 +1,3 @@
-#![cfg(unix)]
 //! End to end: `run` hosts a workspace, `status`/`logs`/`stop` attach over the control socket.
 
 use std::io::{Read, Write};
@@ -224,5 +223,33 @@ fn run_rejects_invalid_workspaces_with_exit_3() {
         Some(3),
         "{}",
         String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn explicit_start_of_a_disabled_server_fails_and_run_skips_it() {
+    let dir = workspace();
+    let file = dir.path().join("servers/example-api.toml");
+    let t = std::fs::read_to_string(&file)
+        .unwrap()
+        .replace("enabled = true", "enabled = false");
+    std::fs::write(&file, t).unwrap();
+    let out = fauxfield(dir.path(), &["run", "--server", "Example API"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("is disabled. Enable it first."),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn logs_har_is_not_available_yet() {
+    let dir = workspace();
+    let out = fauxfield(dir.path(), &["logs", "--har", "out.har"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr).trim(),
+        "error: --har arrives in M12"
     );
 }

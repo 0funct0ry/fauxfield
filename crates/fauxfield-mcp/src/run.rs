@@ -14,7 +14,7 @@ use crate::{
 /// Build the registry for this process. M1.1 has only the core tools.
 pub fn build_registry(config: &McpConfig) -> Registry {
     let transports = match config.transport {
-        TransportKind::Both => vec![TransportKind::Stdio, TransportKind::Unix],
+        TransportKind::Both => vec![TransportKind::Stdio, TransportKind::native_socket()],
         t => vec![t],
     };
     core_registry(ServerFacts {
@@ -33,21 +33,30 @@ pub async fn serve_with(config: McpConfig, registry: Option<Registry>) -> Result
     if config.transport == TransportKind::Http {
         return Err("the http transport is not available until M16".into());
     }
-    #[cfg(not(unix))]
-    if config.transport.uses_unix() {
-        return Err(
-            "the unix socket transport is not available on this platform; use stdio".into(),
-        );
-    }
+    config.transport.check_platform()?;
     let registry = Arc::new(registry.unwrap_or_else(|| build_registry(&config)));
     let handler = FauxfieldServer::new(registry, config.allow);
 
     #[cfg(unix)]
-    let socket = if config.transport.uses_unix() {
+    let socket = if config.transport.uses_native_socket() {
         let path = config.socket.clone().unwrap_or_else(default_socket_path);
         let (listener, guard) = crate::transport::bind_unix(&path).await?;
         tracing::info!("mcp socket listening at {}", guard.path().display());
         Some((listener, guard))
+    } else {
+        None
+    };
+    #[cfg(windows)]
+    let pipe = if config.transport.uses_native_socket() {
+        let name = config
+            .socket
+            .clone()
+            .unwrap_or_else(default_socket_path)
+            .to_string_lossy()
+            .to_string();
+        let first = crate::transport::bind_pipe(&name)?;
+        tracing::info!("mcp pipe listening at {name}");
+        Some((first, name))
     } else {
         None
     };
@@ -97,6 +106,34 @@ pub async fn serve_with(config: McpConfig, registry: Option<Registry>) -> Result
         })
     };
 
+    #[cfg(windows)]
+    let accept_pipe = {
+        let h = handler.clone();
+        pipe.map(|(first, name)| {
+            tokio::spawn(async move {
+                let mut server = first;
+                loop {
+                    if server.connect().await.is_err() {
+                        continue;
+                    }
+                    let Ok(next) = fauxfield_control::ipc::next_pipe_instance(&name) else {
+                        break;
+                    };
+                    let conn = std::mem::replace(&mut server, next);
+                    let h = h.clone();
+                    tokio::spawn(async move {
+                        match h.serve(conn).await {
+                            Ok(r) => {
+                                let _ = r.waiting().await;
+                            }
+                            Err(e) => tracing::debug!("pipe session ended: {e}"),
+                        }
+                    });
+                }
+            })
+        })
+    };
+
     let stdio_only = config.transport == TransportKind::Stdio;
     let stdio_wait = async {
         match stdio_done {
@@ -121,6 +158,10 @@ pub async fn serve_with(config: McpConfig, registry: Option<Registry>) -> Result
     if let Some((guard, task)) = accept {
         task.abort();
         drop(guard); // removes the socket file
+    }
+    #[cfg(windows)]
+    if let Some(task) = accept_pipe {
+        task.abort();
     }
     Ok(())
 }

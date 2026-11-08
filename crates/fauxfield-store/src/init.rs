@@ -60,6 +60,10 @@ pub fn init_workspace(root: &Path) -> Result<Vec<PathBuf>, StoreError> {
     let mut written = Vec::new();
     for (rel, text) in files {
         let p = root.join(rel);
+        // Existing files are never overwritten.
+        if p.exists() {
+            continue;
+        }
         std::fs::write(&p, text)?;
         written.push(p);
     }

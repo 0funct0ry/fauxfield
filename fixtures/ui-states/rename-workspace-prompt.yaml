@@ -1,0 +1,6 @@
+# UI state fixture (M3.1): the Rename workspace prompt, prefilled with the current name.
+steps:
+  - reset
+  - invoke: rename_workspace
+  - wait_for: {condition: {pointer: /prompt, equals: Workspace name}}
+  - wait_idle

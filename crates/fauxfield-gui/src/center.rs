@@ -264,12 +264,19 @@ impl Shell {
                             .font_family(BUFFER_FONT)
                             .text_size(px(12.))
                             .text_color(t.method_color(&r.method))
-                            .on_click(cx.listener(|this, _, w, cx| this.run_action_id(
-                                "edit_route_method",
-                                w,
-                                cx
-                            )))
-                            .child(r.method.clone()),
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap(px(4.))
+                            .on_click(cx.listener(|this, ev: &gpui::ClickEvent, _, cx| {
+                                let p = ev.position();
+                                this.open_method_menu(
+                                    Some((f32::from(p.x) - 8., f32::from(p.y) + 14.)),
+                                    cx,
+                                )
+                            }))
+                            .child(r.method.clone())
+                            .child(icon("chevron-down", 12., t.icon_muted)),
                         format!("route-method-{}", r.id),
                         Button,
                         "Route method",
@@ -357,10 +364,16 @@ impl Shell {
                         .p(px(16.))
                         .text_color(t.text_muted)
                         .child(format!(
-                            "{} arrive{} in {}.",
+                            "{} {} in {}.",
                             ROUTE_SUBTABS[n],
-                            "s",
-                            ["", "M5", "M2", "M14", "M15", "M2"][n]
+                            // Rules and Callbacks are plural; the rest are singular.
+                            if matches!(n, 1 | 3) {
+                                "arrive"
+                            } else {
+                                "arrives"
+                            },
+                            // PROMPTS.md: Rules M5, Headers M6, Callbacks M14, Docs M15, Settings M4.
+                            ["", "M5", "M6", "M14", "M15", "M4"][n]
                         ))
                         .into_any_element(),
                 }),
@@ -500,154 +513,216 @@ impl Shell {
 
     // ---- Server tab ----------------------------------------------------------------------
 
+    /// Header plus one scrolling form of sections (MOCKUP `serverView`). Only General has
+    /// content before M7 to M11; the other headings say when theirs arrive.
     fn render_server_tab(&self, t: &Theme, s: &Server, cx: &mut Context<Self>) -> impl IntoElement {
-        let section = self.server_section.get(&s.id).copied().unwrap_or(0);
-        let sid = s.id.clone();
         let index = self
             .ws
             .servers
             .iter()
             .position(|x| x.id == s.id)
             .unwrap_or(0);
+        let addr = s
+            .listen
+            .clone()
+            .unwrap_or_else(|| format!("{}:{}", s.host, s.port));
+        let url = format!("http://{addr}");
+        let url_copy = url.clone();
         div()
             .id(crate::ui::eid(format!("server-tab-{}", s.id)))
             .size_full()
             .flex()
-            .flex_row()
+            .flex_col()
             .child(
                 div()
-                    .w(px(160.))
-                    .h_full()
+                    .h(px(40.))
                     .flex_none()
-                    .py(px(6.))
-                    .bg(t.panel)
-                    .border_r_1()
+                    .px(px(16.))
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(8.))
+                    .border_b_1()
                     .border_color(t.border_variant)
-                    .children(SERVER_SECTIONS.iter().enumerate().map(|(i, name)| {
-                        let sid = sid.clone();
-                        let sid_click = sid.clone();
-                        crate::dev_id!(
+                    .child(status_dot(t, s.running))
+                    .child(div().text_size(px(14.)).child(s.name.clone()))
+                    .when(!s.enabled, |d| {
+                        d.child(
                             div()
-                                .id(crate::ui::eid(format!("section-{name}")))
-                                .h(px(ROW_H))
-                                .px(px(12.))
-                                .flex()
-                                .items_center()
-                                .cursor_pointer()
-                                .text_size(px(12.))
-                                .when(i == section, |d| {
-                                    d.bg(t.element_selected).text_color(t.text)
-                                })
-                                .when(i != section, |d| d.text_color(t.text_muted))
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.server_section.insert(sid_click.clone(), i);
-                                    cx.notify();
-                                }))
-                                .child(*name),
-                            format!("section-{}-{name}", sid),
-                            Tab,
-                            *name,
-                            Section(sid.clone(), i)
+                                .px(px(6.))
+                                .rounded(px(3.))
+                                .border_1()
+                                .border_color(t.border_variant)
+                                .text_size(px(11.))
+                                .text_color(t.text_muted)
+                                .child("disabled"),
                         )
-                    })),
+                    })
+                    .child(crate::dev_id!(
+                        div()
+                            .id("server-address")
+                            .font_family(BUFFER_FONT)
+                            .text_size(px(12.))
+                            .text_color(t.text_muted)
+                            .cursor_pointer()
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                    url_copy.clone(),
+                                ));
+                                this.notify("Copied address".into(), cx);
+                            }))
+                            .child(url.clone()),
+                        "server-address",
+                        Button,
+                        &url,
+                        None
+                    ))
+                    .child(div().flex_1())
+                    .child(crate::dev_id!(
+                        toolbar_button(t, "server-toggle")
+                            .child(icon(
+                                if s.running { "square" } else { "play" },
+                                12.,
+                                t.created,
+                            ))
+                            .child(if s.running { "Stop" } else { "Start" })
+                            .on_click(
+                                cx.listener(move |this, _, _, cx| this.toggle_server_at(index, cx)),
+                            ),
+                        format!("server-toggle-{}", s.id),
+                        Button,
+                        if s.running { "Stop" } else { "Start" },
+                        Action("toggle_server")
+                    )),
             )
             .child(
                 div()
+                    .id(crate::ui::eid(format!("server-form-{}", s.id)))
                     .flex_1()
-                    .min_w_0()
+                    .min_h_0()
+                    .overflow_y_scroll()
                     .p(px(16.))
                     .flex()
                     .flex_col()
-                    .gap(px(10.))
-                    .child(
+                    .gap(px(2.))
+                    .child(self.server_general(t, s, cx))
+                    .children(SERVER_SECTIONS.iter().enumerate().skip(1).map(|(i, name)| {
                         div()
+                            .mt(px(14.))
                             .flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .child(status_dot(t, s.running))
-                            .child(div().text_size(px(16.)).child(s.name.clone()))
-                            .child(
-                                div()
-                                    .text_size(px(12.))
-                                    .text_color(t.text_muted)
-                                    .child(if s.running { "running" } else { "stopped" }),
-                            )
-                            .child(div().flex_1())
-                            .child(crate::dev_id!(
-                                toolbar_button(t, "server-toggle")
-                                    .child(icon(
-                                        if s.running { "square" } else { "play" },
-                                        12.,
-                                        t.created,
-                                    ))
-                                    .child(if s.running { "Stop" } else { "Start" })
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.toggle_server_at(index, cx)
-                                    })),
-                                format!("server-toggle-{}", s.id),
-                                Button,
-                                if s.running { "Stop" } else { "Start" },
-                                Action("toggle_server")
-                            )),
-                    )
-                    .child(if section == 0 {
-                        self.server_general(t, s, cx).into_any_element()
-                    } else {
-                        div()
-                            .text_color(t.text_muted)
-                            .child(format!(
-                                "{} settings arrive in {}.",
-                                SERVER_SECTIONS[section],
-                                ["", "M10", "M10", "M9", "M9", "M11", "M8", "M7", "M15"][section]
+                            .flex_col()
+                            .child(section_heading(t, name))
+                            .child(div().text_size(px(12.)).text_color(t.text_muted).child(
+                                format!(
+                                    "Settings arrive in {}.",
+                                    ["", "M10", "M10", "M9", "M9", "M11", "M8", "M7", "M15"][i]
+                                ),
                             ))
-                            .into_any_element()
-                    }),
+                    })),
             )
     }
 
     fn server_general(&self, t: &Theme, s: &Server, cx: &mut Context<Self>) -> impl IntoElement {
-        let kv = |k: &str, v: String| {
+        let label = |k: &str| {
             div()
-                .flex()
-                .flex_row()
-                .h(px(ROW_H + 4.))
-                .items_center()
-                .child(
-                    div()
-                        .w(px(120.))
-                        .text_color(t.text_muted)
-                        .child(k.to_string()),
-                )
-                .child(div().font_family(BUFFER_FONT).text_size(px(12.)).child(v))
+                .w(px(190.))
+                .flex_none()
+                .text_color(t.text_muted)
+                .child(k.to_string())
+        };
+        let row = || div().flex().flex_row().h(px(ROW_H + 4.)).items_center();
+        let sid = s.id.clone();
+        let (id_name, id_host, id_port, id_prefix) =
+            (sid.clone(), sid.clone(), sid.clone(), sid.clone());
+        let (id_en, id_hint) = (sid.clone(), sid.clone());
+        let prefix = if s.prefix.is_empty() {
+            "(none)".to_string()
+        } else {
+            s.prefix.clone()
         };
         div()
             .flex()
             .flex_col()
-            .child(kv("Name", s.name.clone()))
-            .child(kv("Host", s.host.clone()))
+            .child(section_heading(t, "General"))
+            .child(row().child(label("Name")).child(field_button_with(
+                "server-name",
+                s.name.clone(),
+                "rename",
+                cx.listener(move |this, _, w, cx| this.rename_server_row(&id_name, w, cx)),
+            )))
+            .child(row().child(label("Host")).child(field_button_with(
+                "server-host",
+                s.host.clone(),
+                "edit_server_host",
+                cx.listener(move |this, _, w, cx| this.change_host(&id_host, w, cx)),
+            )))
+            .child(row().child(label("Port")).child(field_button_with(
+                "server-port",
+                s.port.to_string(),
+                "edit_server_port",
+                cx.listener(move |this, _, w, cx| this.change_port(&id_port, w, cx)),
+            )))
+            .child(row().child(label("Prefix")).child(field_button_with(
+                "server-prefix",
+                prefix,
+                "edit_server_prefix",
+                cx.listener(move |this, _, w, cx| this.change_prefix(&id_prefix, w, cx)),
+            )))
             .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .h(px(ROW_H + 4.))
-                    .items_center()
-                    .child(div().w(px(120.)).text_color(t.text_muted).child("Port"))
-                    .child(field_button(
-                        "server-port",
-                        s.port.to_string(),
-                        "edit_server_port",
-                        cx,
+                row()
+                    .child(label("Enabled"))
+                    .child(toggle_button(
+                        t,
+                        "server-enabled",
+                        s.enabled,
+                        "toggle_server_enabled",
+                        cx.listener(move |this, _, _, cx| this.toggle_enabled(&id_en, cx)),
+                    ))
+                    .child(
+                        div()
+                            .ml(px(8.))
+                            .text_size(px(12.))
+                            .text_color(t.text_muted)
+                            .child(if s.enabled {
+                                "Started by Run all"
+                            } else {
+                                "Skipped by Run all; start it explicitly after enabling"
+                            }),
+                    ),
+            )
+            .child(
+                row()
+                    .child(label("Suggest closest routes on 404"))
+                    .child(toggle_button(
+                        t,
+                        "server-unmatched-hint",
+                        s.unmatched_hint,
+                        "toggle_unmatched_hint",
+                        cx.listener(move |this, _, _, cx| this.toggle_unmatched_hint(&id_hint, cx)),
                     )),
             )
-            .child(kv(
-                "Prefix",
-                if s.prefix.is_empty() {
-                    "(none)".into()
-                } else {
-                    s.prefix.clone()
-                },
-            ))
-            .child(kv("Routes", s.all_routes().count().to_string()))
+            .child(
+                row().child(label("Routes")).child(
+                    div()
+                        .font_family(BUFFER_FONT)
+                        .text_size(px(12.))
+                        .child(s.all_routes().count().to_string()),
+                ),
+            )
+            .children(s.error.clone().map(|e| {
+                crate::dev_id!(
+                    div()
+                        .id("server-error")
+                        .mt(px(6.))
+                        .text_size(px(12.))
+                        .text_color(t.deleted)
+                        .child(format!("Last start failed: {e}")),
+                    "server-error",
+                    Text,
+                    format!("Last start failed: {e}"),
+                    None
+                )
+            }))
     }
 
     // ---- Environment tab -----------------------------------------------------------------
@@ -767,7 +842,7 @@ impl Shell {
     fn render_inspector_detail(
         &self,
         t: &Theme,
-        row: &crate::mock::TrafficRow,
+        row: &crate::traffic::TrafficRow,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let Some(rec) = row.rec.as_deref() else {
@@ -937,6 +1012,76 @@ impl Shell {
     }
 }
 
+fn section_heading(t: &Theme, name: &str) -> impl IntoElement {
+    div()
+        .mt(px(4.))
+        .pb(px(4.))
+        .text_size(px(11.))
+        .text_color(t.text_muted)
+        .child(name.to_uppercase())
+}
+
+/// A field button whose click is a custom closure; the dev id names the action it mirrors.
+fn field_button_with(
+    id: &'static str,
+    label: String,
+    action: &'static str,
+    on_click: impl Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static,
+) -> impl IntoElement {
+    let _ = action;
+    crate::dev_id!(
+        div()
+            .id(id)
+            .h(px(22.))
+            .px(px(4.))
+            .flex()
+            .items_center()
+            .font_family(BUFFER_FONT)
+            .text_size(px(12.))
+            .cursor_pointer()
+            .on_click(on_click)
+            .child(label.clone()),
+        id,
+        Button,
+        label,
+        Action(action)
+    )
+}
+
+/// A small on/off switch.
+fn toggle_button(
+    t: &Theme,
+    id: &'static str,
+    on: bool,
+    action: &'static str,
+    on_click: impl Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static,
+) -> impl IntoElement {
+    let _ = action;
+    crate::dev_id!(
+        div()
+            .id(id)
+            // 36x20 pt: a comfortable hit area (UX103) around the 16 pt knob track.
+            .w(px(36.))
+            .h(px(20.))
+            .flex_none()
+            .rounded_full()
+            .cursor_pointer()
+            .border_1()
+            .border_color(t.border)
+            .bg(if on { t.created } else { t.surface })
+            .flex()
+            .items_center()
+            .px(px(2.))
+            .when(on, |d| d.justify_end())
+            .on_click(on_click)
+            .child(div().size(px(14.)).rounded_full().bg(t.text)),
+        id,
+        Button,
+        if on { "On" } else { "Off" },
+        Action(action)
+    )
+}
+
 /// A muted, clickable field label that runs an edit action (opens its Prompt).
 fn field_button(
     id: &'static str,
@@ -1021,7 +1166,146 @@ impl Shell {
 
     /// The Welcome view: shown when no workspace is open.
     pub(crate) fn render_welcome(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        let recents: Vec<_> = self.recents.iter().take(8).cloned().collect();
+        let recents = self.recent_entries();
+        let n = recents.len();
+        let (accent, on_accent, hover, border) =
+            (t.accent, t.background, t.element_hover, t.border);
+        let primary = crate::dev_id!(
+            div()
+                .id("welcome-open")
+                .h(px(32.))
+                .px(px(16.))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .rounded(px(6.))
+                .bg(accent)
+                .text_color(on_accent)
+                .text_size(px(13.))
+                .cursor_pointer()
+                .hover(|s| s.opacity(0.9))
+                .on_click(cx.listener(|this, _, w, cx| this.run_action_id("open_folder", w, cx)))
+                .child(icon("folder-open", 14., on_accent))
+                .child("Open folder…"),
+            "welcome-open-folder",
+            Button,
+            "Open folder",
+            Action("open_folder")
+        );
+        let secondary = crate::dev_id!(
+            div()
+                .id("welcome-create")
+                .h(px(32.))
+                .px(px(16.))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .rounded(px(6.))
+                .border_1()
+                .border_color(border)
+                .text_size(px(13.))
+                .cursor_pointer()
+                .hover(move |s| s.bg(hover))
+                .on_click(cx.listener(|this, _, w, cx| this.run_action_id(
+                    "create_workspace",
+                    w,
+                    cx
+                )))
+                .child(icon("plus", 14., t.icon_muted))
+                .child("Create workspace…"),
+            "welcome-create-workspace",
+            Button,
+            "Create workspace",
+            Action("create_workspace")
+        );
+        let rows = recents.iter().enumerate().map(|(i, r)| {
+            let (open_path, rm_path) = (r.path.clone(), r.path.clone());
+            let (exists, path_s) = (r.exists, r.path.display().to_string());
+            let muted = t.text_muted;
+            let color = if r.exists { t.text } else { t.text_muted };
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .when(i + 1 < n, |d| d.border_b_1().border_color(t.border_variant))
+                .child(crate::dev_id_meta!(
+                    div()
+                        .id(crate::ui::eid(format!("recent-{i}")))
+                        .flex_1()
+                        .min_w_0()
+                        .px(px(12.))
+                        .py(px(8.))
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap(px(10.))
+                        .text_color(color)
+                        .when(r.exists, |d| d.cursor_pointer().hover(move |s| s.bg(hover)))
+                        .on_click(
+                            cx.listener(move |this, _, _, cx| this.open_recent(&open_path, cx))
+                        )
+                        .tooltip(crate::lifecycle::tip(path_s.clone()))
+                        .child(icon("folder", 16., t.icon_muted))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .flex()
+                                .flex_col()
+                                .child(div().truncate().text_size(px(13.)).child(r.name.clone()))
+                                .child(
+                                    div()
+                                        .truncate()
+                                        .text_size(px(11.))
+                                        .text_color(muted)
+                                        .child(path_s.clone()),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_size(px(11.))
+                                .text_color(muted)
+                                .child(if exists {
+                                    format!("Opened {}", r.opened)
+                                } else {
+                                    "Not found".to_string()
+                                },)
+                        ),
+                    crate::dev_mcp::tree::Meta {
+                        tooltip: true,
+                        ..Default::default()
+                    },
+                    format!("recent-{i}"),
+                    Row,
+                    &r.name,
+                    Recent(r.path.to_string_lossy().into_owned())
+                ))
+                .child(div().px(px(8.)).child(crate::dev_id_meta!(
+                        div()
+                            .id(crate::ui::eid(format!("recent-remove-{i}")))
+                            .size(px(24.))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(4.))
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(hover))
+                            .tooltip(crate::lifecycle::tip("Remove from recent".to_string()))
+                            .on_click(
+                                cx.listener(move |this, _, _, cx| this.remove_recent(&rm_path, cx))
+                            )
+                            .child(icon("x", 14., t.icon_muted)),
+                        crate::dev_mcp::tree::Meta {
+                            tooltip: true,
+                            ..Default::default()
+                        },
+                        format!("recent-remove-{i}"),
+                        Button,
+                        "Remove from recent",
+                        RemoveRecent(r.path.to_string_lossy().into_owned())
+                    )))
+        });
         crate::dev_id!(
             div()
                 .id("welcome")
@@ -1031,76 +1315,83 @@ impl Shell {
                 .flex_col()
                 .items_center()
                 .justify_center()
-                .gap(px(14.))
                 .bg(t.editor)
-                .child(icon("server", 32., t.icon_muted))
-                .child(div().text_size(px(20.)).child("Fauxfield"))
                 .child(
                     div()
-                        .text_color(t.text_muted)
-                        .child("Open a workspace folder or create a new one.")
-                )
-                .child(
-                    div()
+                        .w(px(520.))
                         .flex()
-                        .flex_row()
-                        .gap(px(10.))
-                        .child(crate::dev_id!(
-                            toolbar_button(t, "welcome-open")
-                                .child("Open folder…")
-                                .on_click(cx.listener(|this, _, w, cx| this.run_action_id(
-                                    "open_folder",
-                                    w,
-                                    cx
-                                ))),
-                            "welcome-open-folder",
-                            Button,
-                            "Open folder",
-                            Action("open_folder")
-                        ))
-                        .child(crate::dev_id!(
-                            toolbar_button(t, "welcome-create")
-                                .child("Create workspace…")
-                                .on_click(cx.listener(|this, _, w, cx| this.run_action_id(
-                                    "create_workspace",
-                                    w,
-                                    cx
-                                ))),
-                            "welcome-create-workspace",
-                            Button,
-                            "Create workspace",
-                            Action("create_workspace")
-                        )),
-                )
-                .child(
-                    div()
-                        .mt(px(8.))
-                        .text_size(px(12.))
-                        .text_color(t.text_muted)
-                        .child("Recent workspaces")
-                )
-                .children(recents.iter().enumerate().map(|(i, p)| {
-                    let path = p.clone();
-                    let label = p.to_string_lossy().into_owned();
-                    div()
-                        .id(crate::ui::eid(format!("recent-{i}")))
-                        .cursor_pointer()
-                        .text_size(px(12.))
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            if let Err(e) = this.open_workspace(&path, cx) {
-                                this.notify(e, cx);
-                            }
-                        }))
-                        .child(label)
-                }))
-                .when(recents.is_empty(), |d| {
-                    d.child(
-                        div()
-                            .text_size(px(12.))
-                            .text_color(t.text_placeholder)
-                            .child("No recent workspaces yet."),
-                    )
-                }),
+                        .flex_col()
+                        .gap(px(28.))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .items_center()
+                                .gap(px(10.))
+                                .child(
+                                    div()
+                                        .size(px(56.))
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .rounded(px(14.))
+                                        .border_1()
+                                        .border_color(t.border)
+                                        .bg(t.panel)
+                                        .child(icon("server", 28., t.accent)),
+                                )
+                                .child(div().text_size(px(22.)).child("Fauxfield"))
+                                .child(
+                                    div()
+                                        .text_size(px(13.))
+                                        .text_color(t.text_muted)
+                                        .child("Local-first mock APIs, driven by plain files."),
+                                )
+                                .child(
+                                    div()
+                                        .mt(px(8.))
+                                        .flex()
+                                        .flex_row()
+                                        .gap(px(10.))
+                                        .child(primary)
+                                        .child(secondary),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(px(8.))
+                                .child(
+                                    div()
+                                        .text_size(px(11.))
+                                        .text_color(t.text_muted)
+                                        .child("RECENT WORKSPACES"),
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        .rounded(px(8.))
+                                        .border_1()
+                                        .border_color(t.border)
+                                        .bg(t.panel)
+                                        .overflow_hidden()
+                                        .children(rows)
+                                        .when(recents.is_empty(), |d| {
+                                            d.child(
+                                                div()
+                                                    .py(px(20.))
+                                                    .flex()
+                                                    .justify_center()
+                                                    .text_size(px(12.))
+                                                    .text_color(t.text_placeholder)
+                                                    .child("No recent workspaces yet."),
+                                            )
+                                        }),
+                                ),
+                        ),
+                ),
             "welcome",
             Panel,
             "Welcome",

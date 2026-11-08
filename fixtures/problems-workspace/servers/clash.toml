@@ -1,0 +1,16 @@
+schema = 1
+id = "srv_clash"
+name = "Clash API"
+host = "127.0.0.1"
+port = 4500
+
+[[routes]]
+id = "rte_clash"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_clash"
+  status = 200
+  body = "{}"

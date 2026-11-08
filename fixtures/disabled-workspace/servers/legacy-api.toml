@@ -1,0 +1,19 @@
+schema = 1
+id = "srv_legacy"
+name = "Legacy API"
+enabled = false
+host = "127.0.0.1"
+port = 4620
+
+[[routes]]
+id = "rte_legacy_ping"
+name = "Ping"
+method = "GET"
+path = "/ping"
+
+  [[routes.responses]]
+  id = "rsp_legacy_ok"
+  name = "OK"
+  default = true
+  status = 200
+  body = "pong"

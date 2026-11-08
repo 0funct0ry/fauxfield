@@ -30,6 +30,14 @@ steps:
   # Delete the route: its tab closes.
   - invoke: delete
   - assert: {pointer: /tabs, equals: []}
+  # Clean up: deleting a server asks first.
+  - command: {command: search, query: "@Scenario API"}
+  - key: enter
+  - invoke: delete
+  - assert: {pointer: /modal, equals: delete_confirm}
+  - wait_for_idle: {}
+  - click_element: delete-confirm-yes
+  - assert: {pointer: /servers/2/name, equals: Scenario API, not: true}
   # A workspace with validation errors fills the Problems list.
   - open_workspace: fixtures/problems-workspace
   - assert: {pointer: /problems, equals: 3}

@@ -15,8 +15,8 @@ Arguments:
   [PATH]  Workspace folder to serve tools over
 
 Options:
-      --transport <TRANSPORT>  Transport: stdio, unix, both, or http (http arrives in M16)
-      --socket <PATH>          Unix socket path (default: per-user runtime dir, mcp-<pid>.sock)
+      --transport <TRANSPORT>  Transport: stdio, unix, pipe (Windows), both, or http (http arrives in M16)
+      --socket <PATH>          Unix socket path, or a pipe name on Windows (default: per-user runtime dir, mcp-<pid>.sock; \\\\.\\pipe\\fauxfield-mcp-<pid>)
       --allow <CLASSES>        Tool classes to expose: read, write, execute (default: all)
       --read-only              Shorthand for --allow read
   -h, --help                   Print help

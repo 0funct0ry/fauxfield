@@ -1,0 +1,9 @@
+# UI state fixture (M3.1): starting a server whose port something else holds shows the toast with "Change port".
+# `hold_port` is dev-mcp only and released by `reset`. Needs port 4010 free.
+steps:
+  - reset
+  - command: {command: hold_port, port: 4010}
+  - open: {kind: route, id: rt_users_list}
+  - invoke: toggle_server
+  - wait_for: {condition: {pointer: /toast_action, equals: Change port}}
+  - wait_idle

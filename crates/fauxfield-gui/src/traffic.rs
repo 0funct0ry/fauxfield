@@ -1,5 +1,6 @@
 //! Traffic rows (runtime-only, never files). Real rows come from engine recordings; the
-//! synthetic generator below exists for tests, screenshots and the dev-mcp scroll scenarios.
+//! synthetic generator below exists only in test and dev-mcp builds (screenshots and the scroll
+//! scenarios), so a release build does not contain it.
 
 use fauxfield_engine::Recording;
 
@@ -37,7 +38,8 @@ impl TrafficRow {
 }
 
 /// `n` deterministic rows (xorshift, fixed seed) shaped like real mocked traffic.
-pub fn traffic(n: usize) -> Vec<TrafficRow> {
+#[cfg(any(test, feature = "dev-mcp"))]
+pub fn synthetic(n: usize) -> Vec<TrafficRow> {
     const METHODS: [&str; 5] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
     const STATUS: [u16; 8] = [200, 200, 200, 201, 204, 404, 422, 500];
     let mut s: u64 = 0x2545_F491_4F6C_DD1D;
@@ -85,10 +87,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn traffic_is_deterministic_and_sized() {
-        let a = traffic(10_000);
+    fn synthetic_traffic_is_deterministic_and_sized() {
+        let a = synthetic(10_000);
         assert_eq!(a.len(), 10_000);
-        assert_eq!(a, traffic(10_000));
+        assert_eq!(a, synthetic(10_000));
         assert!(a.iter().any(|r| r.status == 500));
     }
 }

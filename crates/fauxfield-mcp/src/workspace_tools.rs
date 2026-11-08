@@ -41,7 +41,16 @@ struct UpdateServer {
     port: Option<u16>,
     host: Option<String>,
     enabled: Option<bool>,
+    /// Must start with `/` and not end with `/`; an empty string removes the prefix.
     prefix: Option<String>,
+    /// Add the closest-routes hint to 404 bodies (default true).
+    unmatched_hint: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct UpdateWorkspace {
+    /// New workspace name (1 to 80 characters). The folder on disk is not renamed.
+    name: String,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -127,7 +136,7 @@ fn find_route(store: &Store, id: &str) -> Result<(Server, Route), String> {
 }
 
 fn summary(file: &str, s: &Server) -> Value {
-    json!({ "id": s.id, "name": s.name, "file": file, "host": s.host, "port": s.port, "enabled": s.enabled, "routes": s.routes.len(), "folders": s.folders.len() })
+    json!({ "id": s.id, "name": s.name, "file": file, "host": s.host, "port": s.port, "enabled": s.enabled, "prefix": s.prefix, "unmatched_hint": s.unmatched_hint.unwrap_or(true), "routes": s.routes.len(), "folders": s.folders.len() })
 }
 
 fn route_json(s: &Server, r: &Route) -> Value {
@@ -201,6 +210,21 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
         },
     ));
     let p = provider.clone();
+    r.register(ToolDef::new::<UpdateWorkspace>(
+        "update_workspace",
+        "Rename the workspace (the `name` in fauxfield.toml; comments and key order are kept).",
+        ToolClass::Write,
+        move |m| {
+            let Some(s) = p() else { return no_workspace() };
+            let out = parse::<UpdateWorkspace>(m).and_then(|a| {
+                s.set_workspace_name(&a.name).map_err(e)?;
+                s.flush().map_err(e)?;
+                Ok(json!({ "name": s.snapshot().manifest.name }))
+            });
+            Box::pin(async move { out })
+        },
+    ));
+    let p = provider.clone();
     r.register(ToolDef::new::<NoInput>("list_servers", "List Servers.", ToolClass::Read, move |_| {
         let Some(s) = p() else { return no_workspace() };
         let v = json!({ "servers": s.snapshot().servers.iter().map(|(f, x)| summary(f, x)).collect::<Vec<_>>() });
@@ -241,7 +265,7 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
     let p = provider.clone();
     r.register(ToolDef::new::<UpdateServer>(
         "update_server",
-        "Update Server fields (name, port, host, enabled, prefix).",
+        "Update Server fields (name, port, host, enabled, prefix, unmatched_hint).",
         ToolClass::Write,
         move |m| {
             let Some(s) = p() else { return no_workspace() };
@@ -255,13 +279,18 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                     s.set_int(&t, "port", Some(v.into())).map_err(e)?;
                 }
                 if let Some(v) = &a.host {
-                    s.set_str(&t, "host", Some(v)).map_err(e)?;
+                    let v = fauxfield_model::validate_host(v)?;
+                    s.set_str(&t, "host", Some(&v)).map_err(e)?;
                 }
                 if let Some(v) = a.enabled {
                     s.set_bool(&t, "enabled", v).map_err(e)?;
                 }
                 if let Some(v) = &a.prefix {
-                    s.set_str(&t, "prefix", Some(v)).map_err(e)?;
+                    let v = fauxfield_model::validate_prefix(v)?;
+                    s.set_str(&t, "prefix", v.as_deref()).map_err(e)?;
+                }
+                if let Some(v) = a.unmatched_hint {
+                    s.set_bool(&t, "unmatched_hint", v).map_err(e)?;
                 }
                 s.flush().map_err(e)?;
                 Ok(json!({ "id": srv.id }))

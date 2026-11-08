@@ -38,7 +38,8 @@ tools only, no `ui.*`.
 
 | Group | Tools |
 |---|---|
-| State | `ui.state`, `ui.open_workspace`, `ui.open_tab` |
+| State | `ui.state`, `ui.open_workspace`, `ui.create_workspace`, `ui.open_tab` |
+| Workspace | `update_workspace`, `update_server` (incl. `unmatched_hint`), `ui.command` `close_workspace`, `add_recent`, `remove_recent`, `hold_port` (binds a port until `ui.reset_view`), `request_quit` (refused when nothing runs) |
 | Run | `start_server`, `stop_server`, `restart_server`, `send_test_request`, `get_traffic` (product tools, not `ui.*`; they drive the engine the window hosts) |
 | Input | `ui.list_actions`, `ui.invoke_action`, `ui.command`, `ui.key`, `ui.type_text`, `ui.wait_for_idle`, `ui.wait_for` (`ui.click` and `ui.scroll` return an error: GPUI 0.2.2 cannot inject pointer events) |
 | Tree | `ui.tree`, `ui.find`, `ui.click_element` |

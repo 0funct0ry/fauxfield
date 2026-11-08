@@ -1,0 +1,6 @@
+# UI state fixture (M3.1): the workspace hamburger menu in the sidebar.
+steps:
+  - reset
+  - click_element: workspace-menu
+  - wait_for: {condition: {pointer: /modal, equals: row_menu}}
+  - wait_idle

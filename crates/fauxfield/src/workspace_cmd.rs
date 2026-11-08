@@ -20,6 +20,19 @@ pub struct WsArgs {
 }
 
 #[derive(Subcommand, Debug)]
+pub enum WorkspaceAction {
+    /// Show the workspace name, folder, environments and servers.
+    Info(WsArgs),
+    /// Rename the workspace (the `name` in fauxfield.toml; the folder on disk is not renamed).
+    Rename {
+        /// New name: 1 to 80 characters, no control characters.
+        name: String,
+        #[command(flatten)]
+        ws: WsArgs,
+    },
+}
+
+#[derive(Subcommand, Debug)]
 pub enum ServerAction {
     /// List Servers.
     List(WsArgs),
@@ -203,4 +216,61 @@ pub fn route(action: RouteAction) -> i32 {
         }
     }
     EXIT_OK
+}
+
+pub fn workspace(action: WorkspaceAction) -> i32 {
+    match action {
+        WorkspaceAction::Info(a) => {
+            let store = match open_store(&a) {
+                Ok(s) => s,
+                Err(c) => return c,
+            };
+            let snap = store.snapshot();
+            let v = json!({
+                "name": snap.manifest.name,
+                "root": snap.root.to_string_lossy(),
+                "default_environment": snap.manifest.default_environment,
+                "environments": snap.environments.iter().map(|(_, e)| e.name.clone()).collect::<Vec<_>>(),
+                "servers": snap.servers.len(),
+            });
+            if a.json {
+                print_json(&v);
+            } else {
+                println!("{}  ({})", snap.manifest.name, snap.root.display());
+                println!(
+                    "{} server(s), {} environment(s)",
+                    snap.servers.len(),
+                    snap.environments.len()
+                );
+            }
+            EXIT_OK
+        }
+        WorkspaceAction::Rename { name, ws } => {
+            let name = match fauxfield_model::validate_workspace_name(&name) {
+                Ok(n) => n,
+                Err(m) => {
+                    eprintln!("error: {m}");
+                    return EXIT_VALIDATION;
+                }
+            };
+            let store = match open_store(&ws) {
+                Ok(s) => s,
+                Err(c) => return c,
+            };
+            if let Err(e) = store
+                .set_workspace_name(&name)
+                .and_then(|_| store.flush().map(|_| ()))
+            {
+                eprintln!("error: {e}");
+                return EXIT_RUNTIME;
+            }
+            let root = store.snapshot().root;
+            if ws.json {
+                print_json(&json!({ "name": name, "root": root.to_string_lossy() }));
+            } else {
+                println!("Renamed workspace to {name} (folder not renamed)");
+            }
+            EXIT_OK
+        }
+    }
 }

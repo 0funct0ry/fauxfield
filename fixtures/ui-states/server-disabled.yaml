@@ -1,0 +1,6 @@
+# UI state fixture (M3.1): a disabled server dimmed in the tree with its "disabled" tag; Server tab open.
+steps:
+  - reset
+  - open_workspace: fixtures/disabled-workspace
+  - open: {kind: server, id: srv_legacy}
+  - wait_idle

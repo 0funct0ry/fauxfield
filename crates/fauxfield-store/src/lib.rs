@@ -8,6 +8,6 @@ mod store;
 mod watch;
 
 pub use init::{discover, init_workspace, slugify};
-pub use recent::{load_recent, push_recent};
+pub use recent::{clear_recent, load_recent, push_recent, remove_recent};
 pub use store::{Event, Snapshot, Store, StoreError, Target, load_ui_state, save_ui_state};
 pub use watch::Background;

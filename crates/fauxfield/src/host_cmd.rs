@@ -75,6 +75,9 @@ pub struct LogsArgs {
     /// Only requests newer than this, e.g. `30s`, `10m`, `2h`.
     #[arg(long, value_name = "AGE")]
     pub since: Option<String>,
+    /// HAR export (arrives in M12).
+    #[arg(long, hide = true, value_name = "FILE")]
+    pub har: Option<PathBuf>,
     #[command(flatten)]
     pub ws: crate::workspace_cmd::WsArgs,
 }
@@ -376,6 +379,10 @@ fn parse_age(s: &str) -> Result<Duration, String> {
 }
 
 pub fn logs(a: LogsArgs) -> i32 {
+    if a.har.is_some() {
+        eprintln!("error: --har arrives in M12");
+        return EXIT_USAGE;
+    }
     let status = match a.status.as_deref().map(parse_status).transpose() {
         Ok(s) => s,
         Err(e) => {

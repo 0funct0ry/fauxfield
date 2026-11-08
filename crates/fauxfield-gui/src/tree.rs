@@ -5,16 +5,28 @@ use std::collections::HashSet;
 
 use crate::view::Workspace;
 
+/// Row id of the workspace header (and its hamburger menu).
+pub const WORKSPACE_ROW: &str = "ws:workspace";
 pub const SEC_ENVIRONMENTS: &str = "sec_environments";
 pub const SEC_DATASETS: &str = "sec_datasets";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RowKind {
-    Server { port: u16, running: bool },
+    Server {
+        port: u16,
+        running: bool,
+        enabled: bool,
+    },
+    /// The workspace root header (rendered above the tree, not part of `flatten`).
+    Workspace,
     Folder,
-    Route { method: String },
+    Route {
+        method: String,
+    },
     Section,
-    Environment { active: bool },
+    Environment {
+        active: bool,
+    },
     Dataset,
 }
 
@@ -58,6 +70,7 @@ pub fn flatten(ws: &Workspace, collapsed: &HashSet<String>, active_env: &str) ->
             RowKind::Server {
                 port: s.port,
                 running: s.running,
+                enabled: s.enabled,
             },
             true,
         );
@@ -144,21 +157,99 @@ pub enum MenuAct {
     Duplicate,
     Delete,
     ResetDataset,
+    // Server menu (M3.1).
+    Restart,
+    ToggleEnabled,
+    ChangePort,
+    ChangeHost,
+    ChangePrefix,
+    // Workspace menu (M3.1).
+    NewServer,
+    RenameWorkspace,
+    OpenFolder,
+    CreateWorkspace,
+    CloseWorkspace,
+    ClearRecent,
+    OpenRecent(usize),
+}
+
+impl MenuAct {
+    /// Stable dev-id key for a menu item.
+    pub fn key(self) -> String {
+        use MenuAct::*;
+        match self {
+            Open => "open".into(),
+            OpenPinned => "open-pinned".into(),
+            StartStop => "start-stop".into(),
+            SetActive => "set-active".into(),
+            NewRoute => "new-route".into(),
+            NewFolder => "new-folder".into(),
+            NewResponse => "new-response".into(),
+            Rename => "rename".into(),
+            Duplicate => "duplicate".into(),
+            Delete => "delete".into(),
+            ResetDataset => "reset-dataset".into(),
+            Restart => "restart".into(),
+            ToggleEnabled => "toggle-enabled".into(),
+            ChangePort => "change-port".into(),
+            ChangeHost => "change-host".into(),
+            ChangePrefix => "change-prefix".into(),
+            NewServer => "new-server".into(),
+            RenameWorkspace => "rename-workspace".into(),
+            OpenFolder => "open-folder".into(),
+            CreateWorkspace => "create-workspace".into(),
+            CloseWorkspace => "close-workspace".into(),
+            ClearRecent => "clear-recent".into(),
+            OpenRecent(i) => format!("recent-{i}"),
+        }
+    }
+}
+
+/// Items of the workspace hamburger menu: lifecycle, new server, then recents.
+pub fn workspace_menu_items(recents: &[std::path::PathBuf]) -> Vec<(String, MenuAct)> {
+    let mut v: Vec<(String, MenuAct)> = vec![
+        ("New server…".into(), MenuAct::NewServer),
+        ("Rename workspace…".into(), MenuAct::RenameWorkspace),
+        ("Open folder…".into(), MenuAct::OpenFolder),
+        ("Create workspace…".into(), MenuAct::CreateWorkspace),
+        ("Close workspace".into(), MenuAct::CloseWorkspace),
+    ];
+    for (i, p) in recents.iter().take(10).enumerate() {
+        let name = p
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| p.display().to_string());
+        v.push((format!("Recent: {name}"), MenuAct::OpenRecent(i)));
+    }
+    if !recents.is_empty() {
+        v.push(("Clear recent".into(), MenuAct::ClearRecent));
+    }
+    v
 }
 
 /// Items of the "⋯" / right-click menu of a tree row, in display order.
 pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, MenuAct)> {
     use MenuAct::*;
     match kind {
-        RowKind::Server { .. } => vec![
-            ("Open", Open),
-            (if server_running { "Stop" } else { "Start" }, StartStop),
-            ("New route…", NewRoute),
-            ("New folder…", NewFolder),
-            ("Rename…", Rename),
-            ("Duplicate", Duplicate),
-            ("Delete", Delete),
-        ],
+        RowKind::Server { enabled, .. } => {
+            let mut v = vec![(if server_running { "Stop" } else { "Start" }, StartStop)];
+            if server_running {
+                v.push(("Restart", Restart));
+            }
+            v.extend([
+                ("New route…", NewRoute),
+                ("New folder…", NewFolder),
+                (if *enabled { "Disable" } else { "Enable" }, ToggleEnabled),
+                ("Change Port…", ChangePort),
+                ("Change Host…", ChangeHost),
+                ("Change Prefix…", ChangePrefix),
+                ("Rename…", Rename),
+                ("Duplicate", Duplicate),
+                ("Delete", Delete),
+            ]);
+            v
+        }
+        RowKind::Workspace => vec![],
         RowKind::Folder => vec![
             ("New route…", NewRoute),
             ("Rename…", Rename),
@@ -250,9 +341,34 @@ mod tests {
         let srv = RowKind::Server {
             port: 1,
             running: true,
+            enabled: true,
         };
-        assert_eq!(labels(&srv, true)[1], "Stop");
-        assert_eq!(labels(&srv, false)[1], "Start");
+        assert_eq!(
+            labels(&srv, true),
+            [
+                "Stop",
+                "Restart",
+                "New route…",
+                "New folder…",
+                "Disable",
+                "Change Port…",
+                "Change Host…",
+                "Change Prefix…",
+                "Rename…",
+                "Duplicate",
+                "Delete"
+            ]
+        );
+        // Restart is hidden while stopped; a disabled server offers Enable.
+        let off = RowKind::Server {
+            port: 1,
+            running: false,
+            enabled: false,
+        };
+        let l = labels(&off, false);
+        assert_eq!((l[0], l[1], l[2]), ("Start", "New route…", "New folder…"));
+        assert_eq!(l[3], "Enable");
+        assert!(!l.contains(&"Restart"));
         assert!(
             labels(&RowKind::Environment { active: true }, false)
                 .iter()

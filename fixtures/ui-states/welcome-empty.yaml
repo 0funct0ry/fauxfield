@@ -1,0 +1,8 @@
+# UI state fixture (M3.1): the Welcome view with an empty Recent list.
+# Needs an isolated recent.json (dev-mcp builds never touch the real one).
+steps:
+  - reset
+  - invoke: clear_recent
+  - command: {command: close_workspace}
+  - wait_for: {condition: {pointer: /view, equals: welcome}}
+  - wait_idle

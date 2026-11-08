@@ -1847,6 +1847,7 @@ dependencies = [
  "fauxfield-engine",
  "fauxfield-model",
  "fauxfield-store",
+ "getrandom 0.3.4",
  "serde",
  "serde_json",
  "tempfile",

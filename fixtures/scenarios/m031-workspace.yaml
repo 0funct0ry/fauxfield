@@ -1,0 +1,104 @@
+# M3.1 scenario: the workspace lifecycle and server management, end to end.
+# Needs the example workspace as the launch workspace (scripts/smoke-ui.sh copies it), ports
+# 4010 and 4020 free, and port 4650 free. dev-mcp builds keep Recent in a scratch file, so the
+# Recent list below is the scenario's own.
+name: m031-workspace
+size: default
+steps:
+  - state: [reset]
+  - invoke: clear_recent
+  # Close the launch workspace: Welcome, nothing open. (The Rust tests check host.json and the
+  # control socket are gone.)
+  - command: {command: close_workspace}
+  - assert: {pointer: /view, equals: welcome}
+  - wait_for_idle: {}
+  - assert: {pointer: /workspace/name, equals: ""}
+  - assert: {pointer: /servers, equals: []}
+  # Close put the workspace first in Recent; opening it from Recent is one click.
+  - assert: {pointer: /recent_workspaces/0/exists, equals: true}
+  - click_element: recent-0
+  - wait_for_idle: {}
+  - assert: {pointer: /view, equals: workspace}
+  - assert: {pointer: /servers/0/id, equals: srv_users}
+  # Rename it through the prompt (prefilled with the current name).
+  - invoke: rename_workspace
+  - assert: {pointer: /prompt, equals: Workspace name}
+  - key: backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace
+  # An empty name is refused inline (the prompt stays open, no toast).
+  - key: enter
+  - assert: {pointer: /prompt, equals: Workspace name}
+  - assert: {pointer: /prompt_error, contains: empty}
+  - type_text: Renamed Mocks
+  - key: enter
+  - assert: {pointer: /workspace/name, equals: Renamed Mocks}
+  # Close and reopen from Recent: the new name persisted in fauxfield.toml.
+  - command: {command: close_workspace}
+  - assert: {pointer: /view, equals: welcome}
+  - wait_for_idle: {}
+  - assert: {pointer: /recent_workspaces/0/name, equals: Renamed Mocks}
+  - click_element: recent-0
+  - wait_for_idle: {}
+  - assert: {pointer: /workspace/name, equals: Renamed Mocks}
+  # Add a server; it becomes the selected row.
+  - invoke: new_server
+  - type_text: Scratch API
+  - key: enter
+  - assert: {pointer: /servers/2/name, equals: Scratch API}
+  - assert: {pointer: /servers/2/enabled, equals: true}
+  # Host: 0.0.0.0 is reachable from the network, which the toast says once.
+  - invoke: edit_server_host
+  - key: backspace backspace backspace backspace backspace backspace backspace backspace backspace
+  - type_text: 0.0.0.0
+  - key: enter
+  - assert: {pointer: /servers/2/host, equals: 0.0.0.0}
+  - assert: {pointer: /toasts/0, equals: Reachable from your network.}
+  # Port and prefix.
+  - invoke: edit_server_port
+  - key: backspace backspace backspace backspace backspace backspace
+  - type_text: "4650"
+  - key: enter
+  - assert: {pointer: /servers/2/port, equals: 4650}
+  - invoke: edit_server_prefix
+  - key: backspace backspace backspace backspace backspace backspace
+  - type_text: /v2
+  - key: enter
+  - assert: {pointer: /servers/2/prefix, equals: /v2}
+  # Disable it: Run all skips it.
+  - invoke: toggle_server_enabled
+  - assert: {pointer: /servers/2/enabled, equals: false}
+  - invoke: run_all
+  - wait_for: {condition: {pointer: /servers/1/status, equals: running}}
+  - assert: {pointer: /servers/0/status, equals: running}
+  - assert: {pointer: /servers/2/status, equals: stopped}
+  # An explicit start of a disabled server is refused with an actionable toast.
+  - invoke: toggle_server
+  - wait_for: {condition: {pointer: /toast_action, equals: Enable and start}}
+  - wait_for_idle: {}
+  - assert: {pointer: /toasts/0, contains: is disabled. Enable it first.}
+  # The toast action enables and starts it.
+  - click_element: toast-action
+  - wait_for: {condition: {pointer: /servers/2/status, equals: running}}
+  - assert: {pointer: /servers/2/enabled, equals: true}
+  - assert: {pointer: /servers/2/address, equals: "0.0.0.0:4650"}
+  # Send a request through the first server's route and see it in Traffic.
+  - invoke: clear_traffic
+  - open: {kind: route, id: rt_users_list}
+  - invoke: send_test
+  - wait_for: {condition: {pointer: /traffic/row_count, equals: 1}}
+  - assert: {pointer: /traffic/last/status, equals: 200}
+  # Delete the new server through the confirmation (it is running, so the modal says so).
+  - command: {command: search, query: "@Scratch API"}
+  - key: enter
+  - invoke: delete
+  - assert: {pointer: /modal, equals: delete_confirm}
+  - wait_for_idle: {}
+  - click_element: delete-confirm-yes
+  - wait_for: {condition: {pointer: /servers/2/name, equals: Scratch API, not: true}, timeout_ms: 3000}
+  # Put the name back so later scenarios see the original workspace.
+  - invoke: rename_workspace
+  - key: backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace backspace
+  - type_text: example-workspace
+  - key: enter
+  - assert: {pointer: /workspace/name, equals: example-workspace}
+  - audit: {}
+  - state: [reset]

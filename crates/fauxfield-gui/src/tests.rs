@@ -399,7 +399,10 @@ fn welcome_view_without_a_workspace(cx: &mut TestAppContext) {
     // Creating a workspace from the Welcome view opens it.
     let dir = tempfile::tempdir().unwrap();
     let target = dir.path().join("fresh");
-    view.update_in(cx, |s, w, cx| s.run_action_id("create_workspace", w, cx));
+    // The native dialog cannot run in the test platform; the typed-path action is its fallback.
+    view.update_in(cx, |s, w, cx| {
+        s.run_action_id("create_workspace_by_path", w, cx)
+    });
     cx.run_until_parked();
     type_prompt(&view, cx, target.to_str().unwrap());
     assert!(target.join("fauxfield.toml").is_file());
@@ -518,9 +521,408 @@ fn a_port_in_use_becomes_a_toast_with_a_change_port_action(cx: &mut TestAppConte
     assert!(!read(&view, cx, |s| s.ws.servers[index].running));
 
     // Change port opens the Server tab and prompts with the current port.
-    view.update_in(cx, |s, w, cx| s.change_port(&action.server_id, w, cx));
+    let crate::run::ToastAction::ChangePort(server_id) = action.action.clone() else {
+        panic!("expected ChangePort, got {:?}", action.action);
+    };
+    view.update_in(cx, |s, w, cx| s.change_port(&server_id, w, cx));
     assert_eq!(
         read(&view, cx, |s| s.picker.as_ref().map(|p| p.kind)),
         Some(PickerKind::Prompt)
     );
+}
+
+// ---- M3.1: workspace lifecycle and server management ---------------------------------------
+
+fn setup_recent(
+    cx: &mut TestAppContext,
+) -> (
+    Entity<Shell>,
+    &mut VisualTestContext,
+    tempfile::TempDir,
+    std::path::PathBuf,
+) {
+    let tmp = tempfile::tempdir().unwrap();
+    let recent = tmp.path().join("recent.json");
+    let r2 = recent.clone();
+    let (view, cx) = cx.add_window_view(move |w, cx| {
+        Shell::new(
+            ShellOptions {
+                recent_path: Some(r2),
+                ..crate::view::test_options()
+            },
+            w,
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    (view, cx, tmp, recent)
+}
+
+fn notice(view: &Entity<Shell>, cx: &mut VisualTestContext) -> String {
+    read(view, cx, |s| {
+        s.notice.clone().map(|n| n.1).unwrap_or_default()
+    })
+}
+
+fn start_first(view: &Entity<Shell>, cx: &mut VisualTestContext) {
+    view.update(cx, |s, cx| s.toggle_server_at(0, cx));
+    settle(cx, view, |s| s.ws.servers[0].running);
+}
+
+#[gpui::test]
+fn closing_releases_the_host_and_returns_to_welcome(cx: &mut TestAppContext) {
+    let (view, cx, _tmp, recent) = setup_recent(cx);
+    let root = read(&view, cx, |s| s.ws.root.clone());
+    let host_json = root.join(".fauxfield/run/host.json");
+    assert!(host_json.is_file(), "the open workspace is hosted");
+    let sock = read(&view, cx, |s| {
+        fauxfield_control::read_host(&s.ws.root).map(|h| h.socket)
+    })
+    .expect("live host");
+    view.update(cx, |s, cx| s.guard(crate::lifecycle::Intent::Close, cx));
+    assert!(read(&view, cx, |s| s.store.is_none() && s.host.is_none()));
+    assert!(!host_json.exists(), "host.json is released");
+    assert!(!sock.exists(), "the control socket is released");
+    assert_eq!(fauxfield_store::load_recent(&recent)[0], root);
+    assert!(read(&view, cx, |s| s.tabs.tabs().is_empty()
+        && s.traffic.is_empty()
+        && s.problems.is_empty()));
+    assert!(root.join(".fauxfield/ui.json").is_file());
+    // The window title follows.
+    assert_eq!(read(&view, cx, |s| s.window_title_text()), "Fauxfield");
+    // Reopening from Recent works in one call.
+    view.update(cx, |s, cx| s.open_recent(&root, cx));
+    assert!(read(&view, cx, |s| s.store.is_some()));
+    assert!(host_json.is_file());
+}
+
+#[gpui::test]
+fn closing_with_running_servers_confirms_then_stops(cx: &mut TestAppContext) {
+    let (view, cx, _tmp, _r) = setup_recent(cx);
+    start_first(&view, cx);
+    let port = read(&view, cx, |s| s.ws.servers[0].port + s.port_offset);
+    view.update(cx, |s, cx| s.guard(crate::lifecycle::Intent::Close, cx));
+    assert_eq!(read(&view, cx, |s| s.dialog_name()), Some("close_confirm"));
+    assert!(read(&view, cx, |s| s.store.is_some()), "nothing closed yet");
+    cx.run_until_parked(); // the modal renders
+    view.update(cx, |s, cx| s.cancel_dialog(cx));
+    assert!(read(&view, cx, |s| s.store.is_some()
+        && s.dialog_name().is_none()));
+    view.update(cx, |s, cx| s.guard(crate::lifecycle::Intent::Close, cx));
+    view.update(cx, |s, cx| s.confirm_dialog(cx));
+    assert!(read(&view, cx, |s| s.store.is_none()));
+    assert!(std::net::TcpStream::connect(("127.0.0.1", port)).is_err());
+}
+
+#[gpui::test]
+fn a_merge_conflict_blocks_closing_and_switching(cx: &mut TestAppContext) {
+    let (view, cx, _tmp, _r) = setup_recent(cx);
+    let (root, store) = read(&view, cx, |s| (s.ws.root.clone(), s.store.clone().unwrap()));
+    store
+        .set_str(
+            &fauxfield_store::Target::Server("srv_users".into()),
+            "docs",
+            Some("mine"),
+        )
+        .unwrap();
+    let p = root.join("servers/01-users-api.toml");
+    let t = std::fs::read_to_string(&p).unwrap();
+    std::fs::write(&p, t.replace("4010", "4011")).unwrap();
+    store.reconcile();
+    assert!(!store.conflicts().is_empty());
+    view.update(cx, |s, cx| s.guard(crate::lifecycle::Intent::Close, cx));
+    assert!(read(&view, cx, |s| s.store.is_some()));
+    assert_eq!(notice(&view, cx), "Resolve the merge banner first.");
+    let other = tempfile::tempdir().unwrap();
+    view.update(cx, |s, cx| {
+        s.guard(
+            crate::lifecycle::Intent::Switch {
+                path: other.path().to_path_buf(),
+                create: true,
+            },
+            cx,
+        )
+    });
+    assert_eq!(read(&view, cx, |s| s.ws.root.clone()), root);
+}
+
+#[gpui::test]
+fn open_and_create_folder_rules_toast_and_confirm(cx: &mut TestAppContext) {
+    let (view, cx, _tmp, _r) = setup_recent(cx);
+    let root = read(&view, cx, |s| s.ws.root.clone());
+    let plain = tempfile::tempdir().unwrap();
+    // Open on a folder without fauxfield.toml explains what to do.
+    view.update(cx, |s, cx| {
+        s.open_folder_chosen(plain.path().to_path_buf(), cx)
+    });
+    assert!(notice(&view, cx).starts_with("No fauxfield.toml in "));
+    let action = read(&view, cx, |s| s.notice_action.clone().unwrap());
+    assert_eq!(action.label, "Create workspace here");
+    assert_eq!(read(&view, cx, |s| s.ws.root.clone()), root);
+    // Create on an existing workspace: toast with "Open it", nothing written.
+    view.update(cx, |s, cx| s.create_folder_chosen(root.clone(), cx));
+    assert!(notice(&view, cx).ends_with("is already a workspace."));
+    assert_eq!(
+        read(&view, cx, |s| s.notice_action.clone().unwrap().label),
+        "Open it"
+    );
+    // Create on a non-empty folder asks first and never overwrites.
+    std::fs::write(plain.path().join("notes.txt"), "keep").unwrap();
+    std::fs::create_dir_all(plain.path().join("environments")).unwrap();
+    std::fs::write(
+        plain.path().join("environments/local.toml"),
+        "name = \"mine\"\n",
+    )
+    .unwrap();
+    view.update(cx, |s, cx| {
+        s.create_folder_chosen(plain.path().to_path_buf(), cx)
+    });
+    assert_eq!(read(&view, cx, |s| s.dialog_name()), Some("create_confirm"));
+    assert!(
+        !plain.path().join("fauxfield.toml").exists(),
+        "nothing written before confirming"
+    );
+    cx.run_until_parked();
+    view.update(cx, |s, cx| s.confirm_dialog(cx));
+    assert!(plain.path().join("fauxfield.toml").is_file());
+    assert_eq!(
+        std::fs::read_to_string(plain.path().join("notes.txt")).unwrap(),
+        "keep"
+    );
+    assert_eq!(
+        std::fs::read_to_string(plain.path().join("environments/local.toml")).unwrap(),
+        "name = \"mine\"\n"
+    );
+    assert_eq!(
+        read(&view, cx, |s| s.ws.root.canonicalize().unwrap()),
+        plain.path().canonicalize().unwrap()
+    );
+}
+
+#[gpui::test]
+fn recent_workspaces_list_remove_clear_and_missing(cx: &mut TestAppContext) {
+    let (view, cx, tmp, recent) = setup_recent(cx);
+    let root = read(&view, cx, |s| s.ws.root.clone());
+    let gone = tmp.path().join("gone");
+    fauxfield_store::push_recent(&recent, &gone).unwrap();
+    fauxfield_store::push_recent(&recent, &root).unwrap();
+    view.update(cx, |s, cx| {
+        s.remove_recent(std::path::Path::new("/nope"), cx)
+    });
+    let entries = read(&view, cx, |s| s.recent_entries());
+    assert_eq!(entries[0].path, root);
+    assert!(entries[0].exists);
+    assert_eq!(entries[1].path, gone);
+    assert!(!entries[1].exists);
+    // A missing entry cannot be opened.
+    view.update(cx, |s, cx| s.open_recent(&gone, cx));
+    assert!(notice(&view, cx).ends_with("no longer exists"));
+    assert_eq!(read(&view, cx, |s| s.ws.root.clone()), root);
+    // Remove edits recent.json only.
+    view.update(cx, |s, cx| s.remove_recent(&gone, cx));
+    assert!(!fauxfield_store::load_recent(&recent).contains(&gone));
+    assert!(root.join("fauxfield.toml").is_file());
+    view.update(cx, |s, cx| s.clear_recent(cx));
+    assert!(fauxfield_store::load_recent(&recent).is_empty());
+}
+
+#[gpui::test]
+fn renaming_the_workspace_validates_inline_and_can_be_undone(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    let root = read(&view, cx, |s| s.ws.root.clone());
+    let original = read(&view, cx, |s| s.ws.name.clone());
+    view.update_in(cx, |s, w, cx| s.run_action_id("rename_workspace", w, cx));
+    cx.run_until_parked();
+    assert_eq!(
+        read(&view, cx, |s| s.picker.as_ref().map(|p| p.query.clone())),
+        Some(original.clone()),
+        "prefilled with the current name"
+    );
+    // Invalid input keeps the prompt open with an inline message, not a toast.
+    for _ in 0..original.chars().count() {
+        view.update(cx, |s, cx| s.picker_backspace(cx));
+    }
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s.picker.is_some()));
+    assert!(read(&view, cx, |s| s.lc.prompt_error.clone()).is_some());
+    assert_eq!(notice(&view, cx), "");
+    type_prompt(&view, cx, "My Mocks");
+    assert_eq!(read(&view, cx, |s| s.ws.name.clone()), "My Mocks");
+    assert_eq!(
+        read(&view, cx, |s| s.window_title_text()),
+        "Fauxfield — My Mocks"
+    );
+    let text = view_text(&view, cx);
+    assert!(text.contains("name = \"My Mocks\""));
+    // The folder on disk is untouched.
+    assert!(root.is_dir());
+    // Undo restores the old name, redo applies it again.
+    view.update_in(cx, |s, w, cx| s.run_action_id("undo", w, cx));
+    cx.run_until_parked();
+    assert_eq!(read(&view, cx, |s| s.ws.name.clone()), original);
+}
+
+fn view_text(view: &Entity<Shell>, cx: &mut VisualTestContext) -> String {
+    read(view, cx, |s| {
+        s.store.as_ref().unwrap().text("fauxfield.toml").unwrap()
+    })
+}
+
+#[gpui::test]
+fn server_fields_host_prefix_enabled_and_hint_are_editable(cx: &mut TestAppContext) {
+    use crate::run::ToastAction;
+    let (view, cx) = setup(cx, None);
+    let id = "srv_users".to_string();
+    // Host: invalid input stays in the prompt; 0.0.0.0 toasts once.
+    view.update_in(cx, |s, w, cx| s.change_host(&id, w, cx));
+    cx.run_until_parked();
+    for _ in 0..9 {
+        view.update(cx, |s, cx| s.picker_backspace(cx));
+    }
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s.lc.prompt_error.clone().unwrap()).contains("empty"));
+    type_prompt(&view, cx, "0.0.0.0");
+    assert_eq!(
+        read(&view, cx, |s| s.ws.find_server(&id).unwrap().host.clone()),
+        "0.0.0.0"
+    );
+    assert_eq!(notice(&view, cx), "Reachable from your network.");
+    // Prefix: validation text, set, then empty removes the key.
+    view.update_in(cx, |s, w, cx| s.change_prefix(&id, w, cx));
+    cx.run_until_parked();
+    for _ in 0..30 {
+        view.update(cx, |s, cx| s.picker_backspace(cx));
+    }
+    type_prompt(&view, cx, "api");
+    assert!(read(&view, cx, |s| s.lc.prompt_error.clone().unwrap()).contains("start with"));
+    for _ in 0..3 {
+        view.update(cx, |s, cx| s.picker_backspace(cx));
+    }
+    type_prompt(&view, cx, "/v1/{{ vars.x }}");
+    assert_eq!(
+        read(&view, cx, |s| s.ws.find_server(&id).unwrap().prefix.clone()),
+        "/v1/{{ vars.x }}"
+    );
+    view.update_in(cx, |s, w, cx| s.change_prefix(&id, w, cx));
+    cx.run_until_parked();
+    for _ in 0..30 {
+        view.update(cx, |s, cx| s.picker_backspace(cx));
+    }
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert_eq!(
+        read(&view, cx, |s| s.ws.find_server(&id).unwrap().prefix.clone()),
+        ""
+    );
+    // 404 hint toggles in the file.
+    view.update(cx, |s, cx| s.toggle_unmatched_hint(&id, cx));
+    assert!(!read(&view, cx, |s| s
+        .ws
+        .find_server(&id)
+        .unwrap()
+        .unmatched_hint));
+    view.update(cx, |s, cx| s.toggle_unmatched_hint(&id, cx));
+    assert!(read(&view, cx, |s| s
+        .ws
+        .find_server(&id)
+        .unwrap()
+        .unmatched_hint));
+    // Enabled: disabled servers are skipped by Run all and refuse an explicit start.
+    view.update(cx, |s, cx| s.toggle_enabled(&id, cx));
+    assert!(!read(&view, cx, |s| s.ws.find_server(&id).unwrap().enabled));
+    let ix = read(&view, cx, |s| {
+        s.ws.servers.iter().position(|x| x.id == id).unwrap()
+    });
+    view.update(cx, |s, cx| s.run_all(cx));
+    settle(cx, &view, |s| s.ws.servers.iter().any(|x| x.running));
+    assert!(
+        !read(&view, cx, |s| s.ws.servers[ix].running),
+        "Run all skips it"
+    );
+    view.update(cx, |s, cx| s.toggle_server_at(ix, cx));
+    settle(cx, &view, |s| s.notice_action.is_some());
+    assert!(notice(&view, cx).ends_with("is disabled. Enable it first."));
+    assert_eq!(
+        read(&view, cx, |s| s.notice_action.clone().unwrap().action),
+        ToastAction::EnableAndStart(id.clone())
+    );
+    view.update_in(cx, |s, w, cx| s.run_toast_action(w, cx));
+    settle(cx, &view, |s| s.ws.servers[ix].running);
+    assert!(read(&view, cx, |s| s.ws.servers[ix].enabled));
+    // Disabling a running server stops it.
+    view.update(cx, |s, cx| s.toggle_enabled(&id, cx));
+    assert!(notice(&view, cx).ends_with("disabled and stopped"));
+    assert!(!read(&view, cx, |s| s.ws.servers[ix].running));
+}
+
+#[gpui::test]
+fn deleting_a_server_asks_first_and_duplicates_stay_stopped(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    let id = "srv_users".to_string();
+    start_first(&view, cx);
+    // Duplicate while running does not start the copy.
+    view.update(cx, |s, cx| s.run_menu_for("duplicate", &id, cx));
+    let copy = read(&view, cx, |s| {
+        s.ws.servers
+            .iter()
+            .find(|x| x.name.ends_with(" copy"))
+            .cloned()
+    })
+    .expect("a copy exists");
+    assert!(!copy.running);
+    assert_ne!(copy.id, id);
+    // Delete asks, naming the server; Cancel keeps it.
+    view.update(cx, |s, cx| s.run_menu_for("delete", &id, cx));
+    assert_eq!(read(&view, cx, |s| s.dialog_name()), Some("delete_confirm"));
+    cx.run_until_parked();
+    view.update(cx, |s, cx| s.cancel_dialog(cx));
+    assert!(read(&view, cx, |s| s.ws.find_server(&id).is_some()));
+    view.update(cx, |s, cx| s.run_menu_for("delete", &id, cx));
+    view.update(cx, |s, cx| s.confirm_dialog(cx));
+    assert!(read(&view, cx, |s| s.ws.find_server(&id).is_none()));
+}
+
+#[gpui::test]
+fn the_route_method_dropdown_changes_the_verb(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    view.update(cx, |s, _cx| {
+        s.open_tab("rt_users_get", TabKind::Route, "Get user", false)
+    });
+    assert_eq!(
+        read(&view, cx, |s| s
+            .ws
+            .find_route("rt_users_get")
+            .unwrap()
+            .1
+            .method
+            .clone()),
+        "GET"
+    );
+    view.update_in(cx, |s, w, cx| s.run_action_id("edit_route_method", w, cx));
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s.lc.method_menu.is_some()));
+    cx.run_until_parked(); // the dropdown renders
+    view.update(cx, |s, cx| s.set_route_method("rt_users_get", "patch", cx));
+    assert!(read(&view, cx, |s| s.lc.method_menu.is_none()));
+    assert_eq!(
+        read(&view, cx, |s| s
+            .ws
+            .find_route("rt_users_get")
+            .unwrap()
+            .1
+            .method
+            .clone()),
+        "PATCH"
+    );
+}
+
+#[gpui::test]
+fn a_vanished_active_environment_falls_back(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    view.update(cx, |s, _cx| s.active_env = "deleted-env".into());
+    view.update(cx, |s, cx| s.reload(cx));
+    let env = read(&view, cx, |s| s.active_env.clone());
+    assert!(!env.is_empty() && env != "deleted-env", "{env}");
 }

@@ -51,6 +51,12 @@ pub enum Click {
     SubTab(String, usize),
     Section(String, usize),
     Menu(MenuAct),
+    /// Open a Recent workspace by path (Welcome list).
+    Recent(String),
+    /// Pick a verb in the route method dropdown (route id, method or `custom`).
+    RouteMethod(String, String),
+    /// Remove a Recent entry by path (recent.json only).
+    RemoveRecent(String),
     TrafficRow(usize),
     /// Select a response of a route in the Responses sub-tab.
     Response(String, usize),
@@ -508,6 +514,16 @@ pub fn click_element(
             cx.notify();
         }
         Click::Menu(act) => shell.run_menu(act, window, cx),
+        Click::RouteMethod(route, m) => {
+            if m == "custom" {
+                shell.lc.method_menu = None;
+                super::input::invoke_action("edit_route_method_custom", window, cx)?;
+            } else {
+                shell.set_route_method(&route, &m, cx);
+            }
+        }
+        Click::Recent(path) => shell.open_recent(std::path::Path::new(&path), cx),
+        Click::RemoveRecent(path) => shell.remove_recent(std::path::Path::new(&path), cx),
         Click::Response(route, i) => {
             shell.resp_sel.insert(route, i);
             cx.notify();

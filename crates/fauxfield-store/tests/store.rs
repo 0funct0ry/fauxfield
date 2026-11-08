@@ -189,3 +189,107 @@ fn external_edit_reloads_when_clean_and_conflicts_when_dirty() {
     assert_eq!(s.snapshot().servers[0].1.port, 5555);
     assert!(s.conflicts().is_empty());
 }
+
+#[test]
+fn workspace_rename_keeps_comments_undoes_and_reloads_externally() {
+    let dir = tempfile::tempdir().unwrap();
+    init_workspace(dir.path()).unwrap();
+    let manifest = dir.path().join("fauxfield.toml");
+    let text = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        &manifest,
+        format!(
+            "# top comment\n{}",
+            text.replace("[variables]", "# vars\n[variables]")
+        ),
+    )
+    .unwrap();
+    let s = Store::open(dir.path()).unwrap();
+    s.set_workspace_name("  Renamed  ").unwrap();
+    assert_eq!(s.snapshot().manifest.name, "Renamed");
+    let t = s.text("fauxfield.toml").unwrap();
+    assert!(t.starts_with("# top comment\n") && t.contains("# vars\n[variables]"));
+    assert!(t.find("schema").unwrap() < t.find("name").unwrap());
+    assert!(s.set_workspace_name("").is_err());
+    assert!(s.set_workspace_name("a\nb").is_err());
+    assert!(s.undo("fauxfield.toml"));
+    assert_ne!(s.snapshot().manifest.name, "Renamed");
+    assert!(s.redo("fauxfield.toml"));
+    s.flush().unwrap();
+    assert!(
+        std::fs::read_to_string(&manifest)
+            .unwrap()
+            .contains("Renamed")
+    );
+
+    let _bg = s.start_background(Duration::from_secs(60)).unwrap();
+    let ext = std::fs::read_to_string(&manifest)
+        .unwrap()
+        .replace("Renamed", "External");
+    std::fs::write(&manifest, ext).unwrap();
+    assert!(wait(|| s.snapshot().manifest.name == "External"));
+}
+
+#[test]
+fn init_never_overwrites_existing_files() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("environments")).unwrap();
+    std::fs::write(
+        dir.path().join("environments/local.toml"),
+        "name = \"mine\"\n",
+    )
+    .unwrap();
+    std::fs::write(dir.path().join(".gitignore"), "keep\n").unwrap();
+    std::fs::write(dir.path().join("notes.txt"), "hi").unwrap();
+    init_workspace(dir.path()).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("environments/local.toml")).unwrap(),
+        "name = \"mine\"\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join(".gitignore")).unwrap(),
+        "keep\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("notes.txt")).unwrap(),
+        "hi"
+    );
+    assert!(dir.path().join("fauxfield.toml").is_file());
+}
+
+#[test]
+fn duplicate_gets_new_id_max_port_and_unique_names() {
+    let (_d, s) = ws();
+    let id = s.snapshot().servers[0].1.id.clone();
+    s.create_server("Other", 4000).unwrap();
+    let c1 = s.duplicate_server(&id).unwrap();
+    let c2 = s.duplicate_server(&id).unwrap();
+    let snap = s.snapshot();
+    let get = |i: &str| {
+        snap.servers
+            .iter()
+            .find(|(_, x)| x.id == i)
+            .unwrap()
+            .1
+            .clone()
+    };
+    assert_ne!(c1, id);
+    assert_eq!(get(&c1).name, "Example API copy");
+    assert_eq!(get(&c2).name, "Example API copy 2");
+    assert_eq!(get(&c1).port, 4001);
+    assert_eq!(get(&c2).port, 4002);
+}
+
+#[test]
+fn problems_fixture_has_exactly_three_errors() {
+    let root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/problems-workspace");
+    let s = Store::open(&root).unwrap();
+    let errors = s
+        .snapshot()
+        .diagnostics
+        .iter()
+        .filter(|d| d.severity == fauxfield_model::Severity::Error)
+        .count();
+    assert_eq!(errors, 3);
+}

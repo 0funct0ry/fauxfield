@@ -21,16 +21,7 @@ impl Shell {
             .flex()
             .flex_col()
             .bg(t.panel)
-            .child(
-                div()
-                    .h(px(ROW_H + 4.))
-                    .px(px(10.))
-                    .flex()
-                    .items_center()
-                    .text_size(px(11.))
-                    .text_color(t.text_muted)
-                    .child("WORKSPACE"),
-            )
+            .child(self.render_workspace_header(t, cx))
             .child(crate::dev_id!(
                 div()
                     .id("tree")
@@ -57,6 +48,8 @@ impl Shell {
         let group = crate::ui::eid(format!("grp-{}", r.id));
         let group_name = format!("grp-{}", r.id);
         let is_section = matches!(r.kind, RowKind::Section);
+        let is_server = matches!(r.kind, RowKind::Server { .. });
+        let disabled = matches!(r.kind, RowKind::Server { enabled: false, .. });
         let lead: gpui::AnyElement = match &r.kind {
             RowKind::Server { running, .. } => status_dot(t, *running).into_any_element(),
             RowKind::Folder => icon(
@@ -66,7 +59,7 @@ impl Shell {
             )
             .into_any_element(),
             RowKind::Route { method } => method_badge(t, method).into_any_element(),
-            RowKind::Section => div().into_any_element(),
+            RowKind::Section | RowKind::Workspace => div().into_any_element(),
             RowKind::Environment { active } => icon(
                 if *active { "check" } else { "layers" },
                 13.,
@@ -120,8 +113,10 @@ impl Shell {
                 .items_center()
                 .justify_center()
                 .rounded(px(3.))
-                .invisible()
-                .group_hover(group_name.clone(), |s| s.visible())
+                .when(!is_server, |d| {
+                    d.invisible()
+                        .group_hover(group_name.clone(), |s| s.visible())
+                })
                 .hover(move |s| s.bg(sel))
                 .on_mouse_down(
                     MouseButton::Left,
@@ -135,7 +130,15 @@ impl Shell {
                         cx.stop_propagation();
                     }),
                 )
-                .child(icon("ellipsis", 14., t.icon_muted)),
+                .child(icon(
+                    if is_server {
+                        "ellipsis-vertical"
+                    } else {
+                        "ellipsis"
+                    },
+                    14.,
+                    t.icon_muted
+                )),
             format!("dots-{}", r.id),
             Button,
             format!("Menu for {}", r.label),
@@ -153,11 +156,15 @@ impl Shell {
                 .flex_row()
                 .items_center()
                 .gap(px(5.))
-                .pl(px(6. + f32::from(r.depth) * 12.))
+                .pl(px(6. + (f32::from(r.depth) + 1.) * 12.))
                 .pr(px(8.))
                 .cursor_pointer()
                 .text_size(px(if is_section { 11. } else { 13. }))
-                .text_color(if is_section { t.text_muted } else { t.text })
+                .text_color(if is_section || disabled {
+                    t.text_muted
+                } else {
+                    t.text
+                })
                 .when(selected, |d| d.bg(sel))
                 .hover(move |s| s.bg(hover))
                 .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| {
@@ -182,10 +189,24 @@ impl Shell {
                     r.label.clone()
                 }))
                 .children(match &r.kind {
-                    RowKind::Server { port, .. } => Some(
+                    RowKind::Server { port, enabled, .. } => Some(
                         div()
+                            .flex()
+                            .flex_row()
+                            .gap(px(4.))
                             .text_size(px(11.))
                             .text_color(t.text_muted)
+                            .when(!enabled, |d| {
+                                d.child(crate::dev_id!(
+                                    div()
+                                        .id(crate::ui::eid(format!("disabled-{}", r.id)))
+                                        .child("disabled"),
+                                    format!("tag-disabled-{}", r.id),
+                                    Text,
+                                    "disabled",
+                                    None
+                                ))
+                            })
                             .child(format!(":{port}")),
                     ),
                     _ => None,
@@ -203,11 +224,106 @@ impl Shell {
 use gpui::prelude::FluentBuilder as _;
 
 impl Shell {
+    /// The workspace node above the tree: name (tooltip: full path) and its hamburger menu.
+    fn render_workspace_header(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        let (hover, sel) = (t.element_hover, t.element_selected);
+        let name = self.ws.name.clone();
+        let path = self.ws.root.display().to_string();
+        crate::dev_id!(
+            div()
+                .id("tree-workspace")
+                .h(px(ROW_H + 4.))
+                .pl(px(10.))
+                .pr(px(6.))
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(6.))
+                .border_b_1()
+                .border_color(t.border_variant)
+                .hover(move |s| s.bg(hover))
+                .child(icon("folder-open", 14., t.icon_muted))
+                .child(crate::dev_id_meta!(
+                    div()
+                        .id("tree-workspace-name")
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(px(12.))
+                        .tooltip(crate::lifecycle::tip(path))
+                        .child(name.clone()),
+                    crate::dev_mcp::tree::Meta {
+                        tooltip: true,
+                        ..Default::default()
+                    },
+                    "tree-workspace-name",
+                    Text,
+                    &name,
+                    None
+                ))
+                .child(crate::dev_id!(
+                    div()
+                        .id("workspace-menu")
+                        .size(px(20.))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(3.))
+                        .cursor_pointer()
+                        .hover(move |s| s.bg(sel))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+                                this.open_menu(
+                                    tree::WORKSPACE_ROW,
+                                    f32::from(ev.position.x),
+                                    f32::from(ev.position.y),
+                                    cx,
+                                );
+                                cx.stop_propagation();
+                            }),
+                        )
+                        .child(icon("ellipsis-vertical", 14., t.icon_muted)),
+                    "workspace-menu",
+                    Button,
+                    "Workspace menu",
+                    RowMenu(tree::WORKSPACE_ROW.to_string())
+                )),
+            "tree-workspace",
+            Row,
+            &self.ws.name,
+            None
+        )
+    }
+
     pub(crate) fn render_row_menu(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let m = self.menu.as_ref().expect("menu is open");
         let running = self.ws.find_server(&m.row_id).is_some_and(|s| s.running);
         let hover = t.element_hover;
-        let items = tree::menu_items(&m.kind, running);
+        let (is_ws, is_server) = (
+            matches!(m.kind, RowKind::Workspace),
+            matches!(m.kind, RowKind::Server { .. }),
+        );
+        // (label, dev id, action)
+        let items: Vec<(String, String, tree::MenuAct)> = if is_ws {
+            tree::workspace_menu_items(&self.recents)
+                .into_iter()
+                .map(|(l, a)| (l, format!("menu-workspace-{}", a.key()), a))
+                .collect()
+        } else {
+            tree::menu_items(&m.kind, running)
+                .into_iter()
+                .map(|(l, a)| {
+                    let id = if is_server {
+                        format!("menu-server-{}", slug(l))
+                    } else {
+                        format!("menu-{l}")
+                    };
+                    (l.to_string(), id, a)
+                })
+                .collect()
+        };
         div()
             .id("row-menu-backdrop")
             .absolute()
@@ -234,10 +350,10 @@ impl Shell {
                     .border_color(t.border)
                     .shadow_md()
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .children(items.into_iter().map(|(label, act)| {
+                    .children(items.into_iter().map(|(label, dev_id, act)| {
                         crate::dev_id_z!(
                             div()
-                                .id(crate::ui::eid(format!("menu-{label}")))
+                                .id(crate::ui::eid(dev_id.clone()))
                                 .h(px(26.))
                                 .px(px(12.))
                                 .flex()
@@ -248,9 +364,9 @@ impl Shell {
                                 .on_click(
                                     cx.listener(move |this, _, w, cx| this.run_menu(act, w, cx))
                                 )
-                                .child(label),
+                                .child(label.clone()),
                             1,
-                            format!("menu-{label}"),
+                            dev_id,
                             MenuItem,
                             label,
                             Menu(act)
@@ -258,4 +374,17 @@ impl Shell {
                     })),
             )
     }
+}
+
+/// `Change Port…` -> `change-port`.
+fn slug(label: &str) -> String {
+    let mut out = String::new();
+    for c in label.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+        } else if !out.ends_with('-') && !out.is_empty() {
+            out.push('-');
+        }
+    }
+    out.trim_end_matches('-').to_string()
 }

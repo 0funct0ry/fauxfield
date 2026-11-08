@@ -260,7 +260,10 @@ pub fn command_hits(needle: &str, commands: &[CommandEntry]) -> Vec<Hit> {
             })
         })
         .collect();
-    finish(hits)
+    // The palette lists every action, so commands are never truncated.
+    let mut hits: Vec<Hit> = hits;
+    hits.sort_by(|a, b| b.score.cmp(&a.score));
+    hits
 }
 
 #[cfg(test)]

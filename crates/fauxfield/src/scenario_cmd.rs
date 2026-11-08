@@ -5,7 +5,9 @@ use std::path::PathBuf;
 
 use clap::Args;
 
+#[cfg_attr(not(unix), allow(dead_code))]
 pub const EXIT_PASS: i32 = 0;
+#[cfg_attr(not(unix), allow(dead_code))]
 pub const EXIT_FAILED: i32 = 1;
 pub const EXIT_UNREACHABLE: i32 = 2;
 

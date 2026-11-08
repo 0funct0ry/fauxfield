@@ -7,9 +7,9 @@ use gpui::{
 
 use crate::assets::BUFFER_FONT;
 use crate::layout::BottomTab;
-use crate::mock::TrafficRow;
 use crate::shell::Shell;
 use crate::theme::Theme;
+use crate::traffic::TrafficRow;
 use crate::ui::{ROW_H, TAB_BAR_H, icon};
 
 pub const TRAFFIC_ROW_H: f32 = 22.0;

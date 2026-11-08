@@ -85,6 +85,23 @@ async fn handle_line(api: &dyn ControlApi, line: &str) -> Value {
     }
 }
 
+/// Serve JSON-RPC lines on any duplex stream until it closes. Shared by the Unix listener
+/// and the Windows pipe accept loop.
+pub async fn handle_conn<S>(stream: S, api: Arc<dyn ControlApi>)
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+{
+    let (r, mut w) = tokio::io::split(stream);
+    let mut lines = BufReader::new(r).lines();
+    while let Ok(Some(line)) = lines.next_line().await {
+        let mut out = handle_line(api.as_ref(), &line).await.to_string();
+        out.push('\n');
+        if w.write_all(out.as_bytes()).await.is_err() {
+            break;
+        }
+    }
+}
+
 /// Accept loop over an already-bound listener (see [`crate::ipc::bind_unix`]).
 #[cfg(unix)]
 pub async fn serve(listener: tokio::net::UnixListener, api: Arc<dyn ControlApi>) {
@@ -92,23 +109,29 @@ pub async fn serve(listener: tokio::net::UnixListener, api: Arc<dyn ControlApi>)
         let Ok((stream, _)) = listener.accept().await else {
             continue;
         };
-        let api = api.clone();
-        tokio::spawn(async move {
-            let (r, mut w) = stream.into_split();
-            let mut lines = BufReader::new(r).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                let mut out = handle_line(api.as_ref(), &line).await.to_string();
-                out.push('\n');
-                if w.write_all(out.as_bytes()).await.is_err() {
-                    break;
-                }
-            }
-        });
+        tokio::spawn(handle_conn(stream, api.clone()));
     }
 }
 
-#[cfg(not(unix))]
-pub async fn serve(_listener: (), _api: Arc<dyn ControlApi>) {}
+/// Accept loop over a Windows named pipe created by [`crate::ipc::bind_pipe`].
+#[cfg(windows)]
+pub async fn serve(
+    first: tokio::net::windows::named_pipe::NamedPipeServer,
+    name: String,
+    api: Arc<dyn ControlApi>,
+) {
+    let mut server = first;
+    loop {
+        if server.connect().await.is_err() {
+            continue;
+        }
+        let Ok(next) = crate::ipc::next_pipe_instance(&name) else {
+            return;
+        };
+        let conn = std::mem::replace(&mut server, next);
+        tokio::spawn(handle_conn(conn, api.clone()));
+    }
+}
 
 /// Client implementing [`ControlApi`] over the control socket, one connection per call.
 #[derive(Clone)]
@@ -124,11 +147,32 @@ impl RemoteControl {
     }
 
     #[cfg(unix)]
+    async fn connect(&self) -> std::io::Result<tokio::net::UnixStream> {
+        tokio::net::UnixStream::connect(&self.socket).await
+    }
+
+    /// Open the named pipe, retrying ERROR_PIPE_BUSY (231) for up to 2 s.
+    #[cfg(windows)]
+    async fn connect(&self) -> std::io::Result<tokio::net::windows::named_pipe::NamedPipeClient> {
+        let start = std::time::Instant::now();
+        loop {
+            match tokio::net::windows::named_pipe::ClientOptions::new().open(&self.socket) {
+                Ok(c) => return Ok(c),
+                Err(e) if e.raw_os_error() == Some(231) && start.elapsed().as_secs() < 2 => {
+                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
+    #[cfg(any(unix, windows))]
     async fn call(&self, method: &str, params: Value) -> Result<Value, ControlError> {
-        let stream = tokio::net::UnixStream::connect(&self.socket)
+        let stream = self
+            .connect()
             .await
             .map_err(|e| ControlError::new("no_host", format!("cannot reach the host: {e}")))?;
-        let (r, mut w) = stream.into_split();
+        let (r, mut w) = tokio::io::split(stream);
         let req = json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params});
         w.write_all(format!("{req}\n").as_bytes())
             .await
@@ -149,11 +193,11 @@ impl RemoteControl {
         Ok(v["result"].clone())
     }
 
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     async fn call(&self, _method: &str, _params: Value) -> Result<Value, ControlError> {
         Err(ControlError::new(
             "no_host",
-            "the control socket needs a named pipe on Windows, which is not available yet",
+            "no control socket on this platform",
         ))
     }
 

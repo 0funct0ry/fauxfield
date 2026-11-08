@@ -42,7 +42,7 @@ pub fn start(opts: DevMcpOptions, window: WindowHandle<Shell>, cx: &mut App) {
     let bridge: Arc<dyn UiBridge> = Arc::new(bridge);
     let mut registry = core_registry(ServerFacts {
         transports: match transport {
-            TransportKind::Both => vec![TransportKind::Stdio, TransportKind::Unix],
+            TransportKind::Both => vec![TransportKind::Stdio, TransportKind::native_socket()],
             t => vec![t],
         },
         allowed: allow,
@@ -57,12 +57,13 @@ pub fn start(opts: DevMcpOptions, window: WindowHandle<Shell>, cx: &mut App) {
     // Server lifecycle and traffic tools drive the engine the window hosts (M3).
     fauxfield_mcp::control_tools::register_control_tools(
         &mut registry,
-        std::sync::Arc::new(|| {
-            CONTROL
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .clone()
-                .ok_or_else(|| "no workspace is open; call ui.open_workspace".to_string())
+        std::sync::Arc::new(|mode| {
+            let c = CONTROL.lock().unwrap_or_else(|p| p.into_inner()).clone();
+            match (c, mode) {
+                (Some(c), _) => Ok(Some(c)),
+                (None, fauxfield_mcp::control_tools::ControlMode::AttachOnly) => Ok(None),
+                (None, _) => Err("no workspace is open; call ui.open_workspace".to_string()),
+            }
         }),
     );
     let events = EventBuffer::default();
@@ -163,6 +164,7 @@ async fn feed_events(bridge: Arc<dyn UiBridge>, events: EventBuffer) {
     let mut last_toasts: Vec<Value> = Vec::new();
     let mut last_servers: Vec<Value> = Vec::new();
     let mut last_traffic_id = 0u64;
+    let mut last_workspace: Option<(Option<String>, String)> = None;
     loop {
         tokio::time::sleep(Duration::from_millis(100)).await;
         let Ok(state) = bridge
@@ -181,6 +183,37 @@ async fn feed_events(bridge: Arc<dyn UiBridge>, events: EventBuffer) {
                 "generation",
                 serde_json::json!({ "generation": generation }),
             );
+        }
+        // Workspace lifecycle: opened / closed / renamed, derived from ui.state.
+        let ws = (
+            state["workspace"]["root"].as_str().map(str::to_string),
+            state["workspace"]["name"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
+        );
+        if last_workspace.as_ref() != Some(&ws) {
+            if let Some(prev) = &last_workspace {
+                let kind = match (&prev.0, &ws.0) {
+                    (Some(a), Some(b)) if a == b => Some("renamed"),
+                    (Some(_), None) => Some("closed"),
+                    (None, Some(_)) => Some("opened"),
+                    (Some(_), Some(_)) => Some("opened"),
+                    (None, None) => None,
+                };
+                if let Some(kind) = kind {
+                    events.push(
+                        "workspace",
+                        serde_json::json!({ "event": kind, "name": ws.1, "root": ws.0 }),
+                    );
+                }
+            } else if ws.0.is_some() {
+                events.push(
+                    "workspace",
+                    serde_json::json!({ "event": "opened", "name": ws.1, "root": ws.0 }),
+                );
+            }
+            last_workspace = Some(ws);
         }
         let toasts = state["toasts"].as_array().cloned().unwrap_or_default();
         for t in &toasts {

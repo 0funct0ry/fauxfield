@@ -16,8 +16,22 @@ use crate::{
     registry::{Registry, ToolDef, ToolFuture},
 };
 
-/// Where the tools find the host: attach to a live one, ours, or none yet.
-pub type ControlProvider = Arc<dyn Fn() -> Result<Arc<dyn ControlApi>, String> + Send + Sync>;
+/// What a tool needs from the host (SPEC §20.13).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlMode {
+    /// Read-only: use a live host if there is one, never create one (`Ok(None)` otherwise).
+    AttachOnly,
+    /// Lifecycle tools: attach to a live host, or become the host. Always `Some`.
+    HostIfNeeded,
+}
+
+/// Where the tools find the host: attach to a live one, ours, or (attach-only) none.
+pub type ControlProvider =
+    Arc<dyn Fn(ControlMode) -> Result<Option<Arc<dyn ControlApi>>, String> + Send + Sync>;
+
+fn host(p: &ControlProvider) -> Result<Arc<dyn ControlApi>, String> {
+    p(ControlMode::HostIfNeeded)?.ok_or_else(|| "no host is available".to_string())
+}
 
 #[derive(Deserialize, JsonSchema)]
 struct OptServer {
@@ -81,7 +95,7 @@ fn lifecycle(r: &mut Registry, provider: &ControlProvider, name: &'static str, d
             let p = p.clone();
             Box::pin(async move {
                 let a = parse::<OptServer>(m)?;
-                let c = p()?;
+                let c = host(&p)?;
                 let servers = match name {
                     "start_server" => c.start(a.server).await,
                     "stop_server" => c.stop(a.server).await,
@@ -116,7 +130,7 @@ pub fn register_control_tools(r: &mut Registry, provider: ControlProvider) {
             let p = p.clone();
             Box::pin(async move {
                 let a = parse::<ServerRef>(m)?;
-                let servers = p()?.restart(a.server).await.map_err(fail)?;
+                let servers = host(&p)?.restart(a.server).await.map_err(fail)?;
                 Ok(json!({ "servers": servers }))
             })
         },
@@ -131,7 +145,7 @@ pub fn register_control_tools(r: &mut Registry, provider: ControlProvider) {
             let p = p.clone();
             Box::pin(async move {
                 let a = parse::<SendTest>(m)?;
-                let c = p()?;
+                let c = host(&p)?;
                 let resp = c
                     .send_test(
                         a.server,
@@ -162,7 +176,9 @@ pub fn register_control_tools(r: &mut Registry, provider: ControlProvider) {
             let p = p.clone();
             Box::pin(async move {
                 let a = parse::<GetTraffic>(m)?;
-                let c = p()?;
+                let Some(c) = p(ControlMode::AttachOnly)? else {
+                    return Ok(json!({ "count": 0, "traffic": [], "host": "not running" }));
+                };
                 let status = a.status.as_deref().map(parse_status_filter).transpose()?;
                 let filter = TrafficFilter {
                     server: a.server,

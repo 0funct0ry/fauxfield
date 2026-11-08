@@ -1,0 +1,10 @@
+# UI state fixture (M3.1): Welcome with three Recent workspaces, one whose folder is missing.
+steps:
+  - reset
+  - invoke: clear_recent
+  - command: {command: add_recent, path: /nonexistent/old-mocks}
+  - command: {command: add_recent, path: fixtures/empty-workspace}
+  - command: {command: add_recent, path: fixtures/example-workspace}
+  - command: {command: close_workspace}
+  - wait_for: {condition: {pointer: /view, equals: welcome}}
+  - wait_idle

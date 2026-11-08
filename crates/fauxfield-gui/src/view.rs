@@ -38,7 +38,14 @@ pub struct Server {
     pub host: String,
     pub port: u16,
     pub prefix: String,
+    pub enabled: bool,
+    /// Closest-routes hint on 404 (default true).
+    pub unmatched_hint: bool,
     pub running: bool,
+    /// `host:port` while running (engine status).
+    pub listen: Option<String>,
+    /// Last start error while failed (engine status).
+    pub error: Option<String>,
     pub folders: Vec<Folder>,
     pub routes: Vec<Route>,
 }
@@ -116,6 +123,11 @@ impl Workspace {
         self.environments.iter().find(|e| e.name == name)
     }
 
+    /// Servers that Run all starts (disabled ones are skipped).
+    pub fn enabled_count(&self) -> usize {
+        self.servers.iter().filter(|s| s.enabled).count()
+    }
+
     pub fn running_count(&self) -> usize {
         self.servers.iter().filter(|s| s.running).count()
     }
@@ -183,7 +195,11 @@ impl Workspace {
                     host: s.host.clone(),
                     port: s.port,
                     prefix: s.prefix.clone().unwrap_or_default(),
+                    enabled: s.enabled,
+                    unmatched_hint: s.unmatched_hint.unwrap_or(true),
                     running: false,
+                    listen: None,
+                    error: None,
                     folders: s
                         .folders
                         .iter()

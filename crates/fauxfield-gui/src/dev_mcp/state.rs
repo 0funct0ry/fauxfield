@@ -36,9 +36,11 @@ pub struct UiState {
     pub view: &'static str,
     /// Files whose external edit collides with unsaved edits (merge banner shown when non-empty).
     pub merge_conflicts: Vec<String>,
-    pub recent_workspaces: Vec<String>,
+    pub recent_workspaces: Vec<RecentState>,
     /// Open one-line prompt (rename, new item, field edit), if any.
     pub prompt: Option<String>,
+    /// Inline validation message of the open prompt, if any.
+    pub prompt_error: Option<String>,
     pub servers: Vec<ServerState>,
     /// Label of the button beside the toast (for example `Change port`), if any.
     pub toast_action: Option<String>,
@@ -61,6 +63,15 @@ pub struct ProblemState {
 pub struct WorkspaceState {
     pub name: String,
     pub path: Option<String>,
+    /// The open workspace folder; `None` in the Welcome view.
+    pub root: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct RecentState {
+    pub path: String,
+    pub name: String,
+    pub exists: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -124,7 +135,11 @@ pub struct LastRequest {
 pub struct ServerState {
     pub id: String,
     pub name: String,
+    pub host: String,
     pub port: u16,
+    pub prefix: String,
+    pub enabled: bool,
+    pub unmatched_hint: bool,
     pub status: &'static str,
     /// `host:port` while running.
     pub address: Option<String>,
@@ -177,6 +192,10 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
                 .as_ref()
                 .map(|_| shell.ws.root.display().to_string())
                 .or_else(|| workspace_path.map(str::to_string)),
+            root: shell
+                .store
+                .as_ref()
+                .map(|_| shell.ws.root.display().to_string()),
         },
         tabs: shell
             .tabs
@@ -221,6 +240,10 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
         environment_picker: picker(shell, PickerKind::Environment),
         modal: if shell.quit_confirm {
             Some("quit_confirm".to_string())
+        } else if shell.lc.method_menu.is_some() {
+            Some("method_menu".to_string())
+        } else if let Some(d) = shell.dialog_name() {
+            Some(d.to_string())
         } else {
             shell.menu.as_ref().map(|_| "row_menu".to_string())
         },
@@ -270,15 +293,20 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
         },
         merge_conflicts: shell.conflicts.clone(),
         recent_workspaces: shell
-            .recents
-            .iter()
-            .map(|p| p.display().to_string())
+            .recent_entries()
+            .into_iter()
+            .map(|r| RecentState {
+                path: r.path.display().to_string(),
+                name: r.name,
+                exists: r.exists,
+            })
             .collect(),
         prompt: shell
             .picker
             .as_ref()
             .filter(|p| p.kind == PickerKind::Prompt)
             .and_then(|_| shell.prompt.as_ref().map(|a| a.title().to_string())),
+        prompt_error: shell.lc.prompt_error.clone(),
         servers: shell
             .ws
             .servers
@@ -301,7 +329,11 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
                 ServerState {
                     id: s.id.clone(),
                     name: s.name.clone(),
+                    host: s.host.clone(),
                     port: s.port,
+                    prefix: s.prefix.clone(),
+                    enabled: s.enabled,
+                    unmatched_hint: s.unmatched_hint,
                     status,
                     address,
                     error,

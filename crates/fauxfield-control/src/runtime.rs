@@ -53,7 +53,13 @@ impl Host {
             .build()
             .map_err(|e| HostError::Other(format!("cannot start runtime: {e}")))?;
         let handle = rt.handle().clone();
-        Self::build(store, opts, Some(rt), handle)
+        let mut rt = Some(rt);
+        let r = Self::build(store, opts, &mut rt, handle);
+        if let Some(rt) = rt.take() {
+            // Failed (for example `Already`): never drop a runtime inside an async context.
+            rt.shutdown_background();
+        }
+        r
     }
 
     /// Host an already-open `store` on the caller's runtime (the GUI keeps its own store,
@@ -63,13 +69,13 @@ impl Host {
         handle: tokio::runtime::Handle,
         opts: HostOptions,
     ) -> Result<Host, HostError> {
-        Self::build(store, opts, None, handle)
+        Self::build(store, opts, &mut None, handle)
     }
 
     fn build(
         store: Store,
         opts: HostOptions,
-        rt: Option<tokio::runtime::Runtime>,
+        rt: &mut Option<tokio::runtime::Runtime>,
         handle: tokio::runtime::Handle,
     ) -> Result<Host, HostError> {
         let root = store.root();
@@ -83,6 +89,7 @@ impl Host {
             },
         );
         let control = Arc::new(LocalControl::new(engine.clone()));
+        #[allow(unused_mut)]
         let (mut lock, mut socket) = (None, None);
         if opts.publish {
             let path = control_socket_path(&root);
@@ -109,6 +116,13 @@ impl Host {
                 handle.spawn(serve(listener, control.clone()));
                 socket = Some(guard);
             }
+            #[cfg(windows)]
+            {
+                let name = path.to_string_lossy().to_string();
+                let _guard = handle.enter();
+                let first = crate::ipc::bind_pipe(&name).map_err(HostError::Other)?;
+                handle.spawn(serve(first, name, control.clone()));
+            }
         }
         attach_store(&engine, &store);
         let background = if opts.watch {
@@ -126,7 +140,7 @@ impl Host {
             _background: background,
             _socket: socket,
             _lock: lock,
-            rt,
+            rt: rt.take(),
             handle,
         })
     }

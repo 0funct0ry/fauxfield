@@ -63,3 +63,24 @@ Routes by edit distance:
 `start_server`, `stop_server`, `restart_server`, `send_test_request` and `get_traffic` are MCP tools.
 `fauxfield mcp` attaches to a live host, or becomes the host the first time a tool needs one, so an
 agent can read the Traffic of Servers you started in the app.
+
+## Enabled and disabled servers
+
+A server has `enabled = true` by default. Run all, `fauxfield run` and `start_server` without a
+`server` start enabled servers only. Starting a disabled server explicitly fails with "<name> is
+disabled. Enable it first." (exit code 1; the app offers **Enable and start**).
+
+## Server settings in the app
+
+The Server tab edits name, host, port, prefix, enabled and **Suggest closest routes on 404**
+(`unmatched_hint = false` omits `closest` from the 404 body). Changing the host or port of a running
+server restarts only its listener; changing the prefix swaps routes without a restart. A non-loopback
+host such as `0.0.0.0` makes the server reachable from your network.
+
+## Windows control socket
+
+On Windows the control socket is a named pipe `\\.\pipe\fauxfield-<hash>-<random>` created with
+`first_pipe_instance` and `reject_remote_clients`. The random part is the access token: it lives only
+in `.fauxfield/run/host.json`. Any local process that can read your workspace folder can connect.
+`fauxfield run` stops on Ctrl+C (there is no SIGTERM on Windows); `fauxfield stop` ends a headless host.
+`fauxfield mcp --transport pipe` serves MCP over a named pipe (`both` means stdio plus the pipe).

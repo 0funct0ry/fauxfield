@@ -25,6 +25,7 @@ const FILES: &[(&str, &[u8])] = embed![
     "icons/info.svg",
     "icons/layers.svg",
     "icons/lock.svg",
+    "icons/ellipsis-vertical.svg",
     "icons/minus.svg",
     "icons/palette.svg",
     "icons/pin.svg",

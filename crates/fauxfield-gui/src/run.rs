@@ -2,8 +2,6 @@
 //! Send test, live Traffic and Logs, Copy as cURL, and the quit confirmation. The workspace
 //! files stay authoritative; run state and traffic are runtime-only.
 
-use std::collections::HashSet;
-
 use fauxfield_control::{Host, HostError, HostOptions};
 use fauxfield_engine::{EngineError, EngineEvent, ServerStatus, TestRequest, to_curl};
 use gpui::{
@@ -12,21 +10,29 @@ use gpui::{
 };
 use tokio::sync::broadcast::error::TryRecvError;
 
-use crate::mock::TrafficRow;
 use crate::shell::Shell;
 use crate::theme::Theme;
+use crate::traffic::TrafficRow;
 use crate::ui::toolbar_button;
 
 /// Rows kept in the Traffic panel (SPEC §9: `max_rows`).
 pub const TRAFFIC_CAP: usize = 100_000;
 const LOG_CAP: usize = 2_000;
 
+/// What a toast's action button does.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ToastAction {
+    ChangePort(String),
+    CreateWorkspaceAt(std::path::PathBuf),
+    OpenWorkspaceAt(std::path::PathBuf),
+    EnableAndStart(String),
+}
+
 /// A button shown beside the status-bar message.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NoticeAction {
     pub label: &'static str,
-    /// Server the action applies to.
-    pub server_id: String,
+    pub action: ToastAction,
 }
 
 #[derive(Clone, Debug)]
@@ -97,15 +103,18 @@ impl Shell {
     /// Mirror the engine's statuses into the view's running flags.
     pub(crate) fn sync_running(&mut self) {
         let Some(h) = &self.host else { return };
-        let running: HashSet<String> = h
-            .engine()
-            .list()
-            .into_iter()
-            .filter(|s| matches!(s.status, ServerStatus::Running { .. }))
-            .map(|s| s.id)
-            .collect();
+        let list = h.engine().list();
         for s in &mut self.ws.servers {
-            s.running = running.contains(&s.id);
+            let st = list.iter().find(|x| x.id == s.id).map(|x| &x.status);
+            s.running = matches!(st, Some(ServerStatus::Running { .. }));
+            s.listen = match st {
+                Some(ServerStatus::Running { addr }) => Some(addr.to_string()),
+                _ => None,
+            };
+            s.error = match st {
+                Some(ServerStatus::Failed { error, .. }) => Some(error.clone()),
+                _ => None,
+            };
         }
     }
 
@@ -210,8 +219,38 @@ impl Shell {
         }
     }
 
+    /// Restart a server by id (tree menu).
+    pub fn restart_server_id(&mut self, id: &str, cx: &mut Context<Self>) {
+        if self.host.is_some() {
+            self.run_job(Job::Restart(id.to_string()), cx);
+        }
+    }
+
+    /// Start `id` once the engine has taken the freshly saved (enabled) definition.
+    pub(crate) fn start_server_after_reload(&mut self, id: &str, cx: &mut Context<Self>) {
+        let Some(host) = &self.host else { return };
+        let engine = host.engine().clone();
+        let id = id.to_string();
+        cx.spawn(async move |this, cx| {
+            let eid = id.clone();
+            cx.background_executor()
+                .spawn(async move {
+                    for _ in 0..50 {
+                        if engine.list().iter().any(|s| s.id == eid && s.enabled) {
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(20));
+                    }
+                })
+                .await;
+            this.update(cx, |this, cx| this.run_job(Job::Start(id), cx))
+                .ok();
+        })
+        .detach();
+    }
+
     pub fn run_all(&mut self, cx: &mut Context<Self>) {
-        let start = self.ws.running_count() < self.ws.servers.len();
+        let start = self.ws.running_count() < self.ws.enabled_count();
         if self.host.is_none() {
             for s in &mut self.ws.servers {
                 s.running = start;
@@ -281,7 +320,16 @@ impl Shell {
                             format!("Port {port} is already in use ({server})."),
                             Some(NoticeAction {
                                 label: "Change port",
-                                server_id: id,
+                                action: ToastAction::ChangePort(id),
+                            }),
+                            cx,
+                        ),
+                        EngineError::Disabled(_) => this.notify_action(
+                            "{} is disabled. Enable it first."
+                                .replace("{}", &name_of_server(this, &id)),
+                            Some(NoticeAction {
+                                label: "Enable and start",
+                                action: ToastAction::EnableAndStart(id),
                             }),
                             cx,
                         ),
@@ -403,7 +451,7 @@ impl Shell {
 
     // ---- quit confirmation -----------------------------------------------------------------
 
-    fn servers_running(&self) -> usize {
+    pub(crate) fn servers_running(&self) -> usize {
         self.host
             .as_ref()
             .map(|h| h.engine().running_count())
@@ -510,4 +558,12 @@ impl Shell {
             None
         )
     }
+}
+
+fn name_of_server(shell: &Shell, id: &str) -> String {
+    shell
+        .ws
+        .find_server(id)
+        .map(|s| s.name.clone())
+        .unwrap_or_else(|| id.to_string())
 }

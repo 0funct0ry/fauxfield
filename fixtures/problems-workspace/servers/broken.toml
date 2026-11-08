@@ -1,0 +1,27 @@
+schema = 1
+id = "srv_broken"
+name = "Broken API"
+host = "127.0.0.1"
+port = 4500
+
+[[routes]]
+id = "rte_badpath"
+name = "Bad path"
+method = "GET"
+path = "no-leading-slash"
+
+  [[routes.responses]]
+  id = "rsp_badpath"
+  status = 200
+  body = "{}"
+
+[[routes]]
+id = "rte_badstatus"
+name = "Bad status"
+method = "GET"
+path = "/status"
+
+  [[routes.responses]]
+  id = "rsp_badstatus"
+  status = 99
+  body = "{}"

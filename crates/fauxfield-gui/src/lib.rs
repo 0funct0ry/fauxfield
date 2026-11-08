@@ -1,5 +1,5 @@
 //! Fauxfield GPUI application: window shell, docks, tabs, Quick Search, Command Palette and
-//! themes, on mock data until M2. Only this crate and the `fauxfield` binary may depend on GPUI.
+//! themes, and the workspace views. Only this crate and the `fauxfield` binary may depend on GPUI.
 
 pub mod actions;
 pub mod assets;
@@ -11,7 +11,7 @@ pub mod dev_mcp;
 pub mod keymap;
 pub mod layout;
 pub mod left_dock;
-pub mod mock;
+pub mod lifecycle;
 pub mod overlay;
 pub mod run;
 pub mod search;
@@ -21,6 +21,7 @@ pub mod tabs;
 pub mod theme;
 pub mod theme_model;
 pub mod title_bar;
+pub mod traffic;
 pub mod tree;
 pub mod ui;
 pub mod view;
@@ -56,6 +57,24 @@ pub fn run_dev(workspace: Option<PathBuf>, opts: dev_mcp::DevMcpOptions) {
     });
 }
 
+/// Where Recent lives. dev-mcp builds use a scratch file so scenarios and fixtures that clear or
+/// fill Recent never touch the real one (`FAUXFIELD_RECENT` overrides the location).
+fn recent_file(dirs: Option<&directories::ProjectDirs>) -> Option<PathBuf> {
+    #[cfg(feature = "dev-mcp")]
+    {
+        let _ = dirs;
+        Some(
+            std::env::var_os("FAUXFIELD_RECENT")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| std::env::temp_dir().join("fauxfield-dev-recent.json")),
+        )
+    }
+    #[cfg(not(feature = "dev-mcp"))]
+    {
+        dirs.map(|d| d.data_dir().join("recent.json"))
+    }
+}
+
 fn launch(
     workspace: Option<PathBuf>,
     after_open: impl FnOnce(gpui::WindowHandle<Shell>, &mut App) + 'static,
@@ -70,7 +89,7 @@ fn launch(
                 layout_path: dirs.as_ref().map(|d| d.data_dir().join("layout.json")),
                 config_dir: dirs.as_ref().map(|d| d.config_dir().to_path_buf()),
                 workspace: workspace.clone(),
-                recent_path: dirs.as_ref().map(|d| d.data_dir().join("recent.json")),
+                recent_path: recent_file(dirs.as_ref()),
                 port_offset: 0,
             };
             cx.on_window_closed(|cx| {

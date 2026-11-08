@@ -1,0 +1,13 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "default_environment": "local",
+  "environments": [
+    "local"
+  ],
+  "name": "<name>",
+  "root": "<root>",
+  "servers": 1
+}

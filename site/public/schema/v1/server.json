@@ -210,6 +210,14 @@
       "minimum": 0,
       "type": "integer"
     },
+    "unmatched_hint": {
+      "default": null,
+      "description": "Add the closest-routes hint to 404 bodies (default true).",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
     "variables": {
       "additionalProperties": true,
       "default": {},

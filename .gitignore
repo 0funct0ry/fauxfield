@@ -60,6 +60,6 @@ internal-docs/
 /tmp/
 .cargo
 .fauxfield/
-environments/
-fauxfield.toml
-servers/
+/environments/
+/fauxfield.toml
+/servers/

@@ -45,9 +45,22 @@ actions!(
         Redo,
         OpenFolder,
         CreateWorkspace,
+        OpenFolderByPath,
+        CreateWorkspaceByPath,
+        CloseWorkspace,
+        RenameWorkspace,
+        ClearRecent,
+        ConfirmDialog,
+        CancelDialog,
+        ToastAction,
+        EditServerHost,
+        EditServerPrefix,
+        ToggleServerEnabled,
+        ToggleUnmatchedHint,
         MergeKeepMine,
         MergeLoadDisk,
         EditRouteMethod,
+        EditRouteMethodCustom,
         EditRoutePath,
         EditResponseStatus,
         EditResponseName,
@@ -145,9 +158,50 @@ pub static ACTIONS: &[ActionInfo] = &[
     row!("redo", "Edit: Redo", Redo),
     row!("open_folder", "Workspace: Open Folder…", OpenFolder),
     row!("create_workspace", "Workspace: Create…", CreateWorkspace),
+    row!(
+        "open_folder_by_path",
+        "Workspace: Open Folder by Path…",
+        OpenFolderByPath
+    ),
+    row!(
+        "create_workspace_by_path",
+        "Workspace: Create by Path…",
+        CreateWorkspaceByPath
+    ),
+    row!("close_workspace", "Workspace: Close", CloseWorkspace),
+    row!("rename_workspace", "Workspace: Rename…", RenameWorkspace),
+    row!("clear_recent", "Workspace: Clear Recent", ClearRecent),
+    row!("confirm_dialog", "Dialog: Confirm", ConfirmDialog),
+    row!("cancel_dialog", "Dialog: Cancel", CancelDialog),
+    row!("toast_action", "Toast: Run Action", ToastAction),
+    row!("edit_server_host", "Server: Change Host…", EditServerHost),
+    row!(
+        "edit_server_prefix",
+        "Server: Change Prefix…",
+        EditServerPrefix
+    ),
+    row!(
+        "toggle_server_enabled",
+        "Server: Enable / Disable",
+        ToggleServerEnabled
+    ),
+    row!(
+        "toggle_unmatched_hint",
+        "Server: Toggle 404 Closest-Routes Hint",
+        ToggleUnmatchedHint
+    ),
     row!("merge_keep_mine", "Merge: Keep Mine", MergeKeepMine),
     row!("merge_load_disk", "Merge: Load From Disk", MergeLoadDisk),
-    row!("edit_route_method", "Route: Edit Method…", EditRouteMethod),
+    row!(
+        "edit_route_method",
+        "Route: Change Method…",
+        EditRouteMethod
+    ),
+    row!(
+        "edit_route_method_custom",
+        "Route: Type Custom Method…",
+        EditRouteMethodCustom
+    ),
     row!("edit_route_path", "Route: Edit Path…", EditRoutePath),
     row!(
         "edit_response_status",

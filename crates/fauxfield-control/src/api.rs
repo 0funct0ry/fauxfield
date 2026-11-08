@@ -31,6 +31,7 @@ impl From<EngineError> for ControlError {
             EngineError::PortInUse { .. } => "port_in_use",
             EngineError::Bind { .. } => "bind",
             EngineError::NotRunning(_) => "not_running",
+            EngineError::Disabled(_) => "disabled",
             EngineError::Request(_) => "request",
         };
         ControlError::new(kind, e.to_string())

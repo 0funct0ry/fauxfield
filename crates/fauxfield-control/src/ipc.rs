@@ -62,3 +62,35 @@ mod unix {
         Ok((listener, guard))
     }
 }
+
+/// Placeholder so the host struct is the same on every platform: a pipe vanishes with its
+/// last handle, so there is nothing to clean up.
+#[cfg(not(unix))]
+pub struct SocketGuard;
+
+#[cfg(windows)]
+pub use windows::{bind_pipe, next_pipe_instance};
+
+/// Windows named pipes (SPEC §14, §20.13). No SECURITY_ATTRIBUTES (the workspace forbids
+/// unsafe): the unguessable random suffix in the pipe name is the capability, the first
+/// instance cannot be pre-created by a squatter, and remote clients are rejected.
+#[cfg(windows)]
+mod windows {
+    use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
+
+    /// Create the first instance of `name`; fails if the name is already taken.
+    pub fn bind_pipe(name: &str) -> Result<NamedPipeServer, String> {
+        ServerOptions::new()
+            .first_pipe_instance(true)
+            .reject_remote_clients(true)
+            .create(name)
+            .map_err(|e| format!("cannot create pipe {name}: {e}"))
+    }
+
+    /// A further instance for the next client.
+    pub fn next_pipe_instance(name: &str) -> std::io::Result<NamedPipeServer> {
+        ServerOptions::new()
+            .reject_remote_clients(true)
+            .create(name)
+    }
+}

@@ -89,6 +89,8 @@ pub enum EngineError {
     Bind { server: String, message: String },
     #[error("server `{0}` is not running")]
     NotRunning(String),
+    #[error("{0} is disabled. Enable it first.")]
+    Disabled(String),
     #[error("{0}")]
     Request(String),
 }
@@ -271,6 +273,10 @@ impl Engine {
     /// Start one server (by id, name or slug). Idempotent when already running.
     pub fn start(&self, key: &str) -> Result<SocketAddr, EngineError> {
         let (id, rt) = self.find(key)?;
+        if !rt.def.lock().unwrap().enabled {
+            let name = rt.def.lock().unwrap().name.clone();
+            return Err(EngineError::Disabled(name));
+        }
         if let Some(r) = rt.run.lock().unwrap().as_ref() {
             return Ok(r.addr);
         }
