@@ -1847,11 +1847,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "directories",
+ "fauxfield-mcp",
  "gpui",
  "nucleo-matcher",
+ "schemars",
  "serde",
  "serde_json",
  "tempfile",
+ "tokio",
  "toml 0.9.12+spec-1.1.0",
 ]
 

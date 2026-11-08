@@ -16,6 +16,8 @@ gui = ["dep:fauxfield-gui"]
 # Servers and CLI only: no GPUI in the dependency tree (verified by `make verify-headless`).
 headless = []
 runtime-shaders = ["fauxfield-gui/runtime-shaders"]
+# Hosts the MCP server inside the GUI (`--mcp-socket`, `--mcp-stdio`). Dev only; never in release.
+dev-mcp = ["gui", "fauxfield-gui/dev-mcp"]
 
 [dependencies]
 fauxfield-gui = { workspace = true, optional = true }

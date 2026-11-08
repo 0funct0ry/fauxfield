@@ -21,6 +21,17 @@ pub struct Cli {
     /// Workspace folder to open (default: the nearest ancestor containing fauxfield.toml).
     pub path: Option<PathBuf>,
 
+    /// Host the MCP server inside the app on a unix socket (dev-mcp builds only). Without a PATH
+    /// the default socket location is used.
+    #[cfg(feature = "dev-mcp")]
+    #[arg(long, value_name = "PATH", num_args = 0..=1)]
+    pub mcp_socket: Option<Option<PathBuf>>,
+
+    /// Host the MCP server inside the app on stdio; stdout is protocol-only (dev-mcp builds only).
+    #[cfg(feature = "dev-mcp")]
+    #[arg(long)]
+    pub mcp_stdio: bool,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -92,6 +103,11 @@ pub fn run() -> i32 {
             return code;
         }
     };
+    #[cfg(feature = "dev-mcp")]
+    if cli.command.is_none() && (cli.mcp_stdio || cli.mcp_socket.is_some()) {
+        let unix = cli.mcp_socket.is_some();
+        return open_dev(cli.path, cli.mcp_socket.flatten(), cli.mcp_stdio, unix);
+    }
     match cli.command {
         None => open(cli.path),
         Some(Command::Open { path }) => open(path),
@@ -171,6 +187,23 @@ fn check_path(path: &Option<PathBuf>) -> Result<(), i32> {
         }
         _ => Ok(()),
     }
+}
+
+#[cfg(feature = "dev-mcp")]
+fn open_dev(path: Option<PathBuf>, socket: Option<PathBuf>, stdio: bool, unix: bool) -> i32 {
+    if let Err(code) = check_path(&path) {
+        return code;
+    }
+    fauxfield_gui::run_dev(
+        path.clone(),
+        fauxfield_gui::dev_mcp::DevMcpOptions {
+            socket,
+            stdio,
+            unix,
+            workspace: path,
+        },
+    );
+    EXIT_OK
 }
 
 #[cfg(feature = "gui")]

@@ -68,3 +68,21 @@ fn mcp_help_is_stable() {
     assert_eq!(code, 0);
     insta::assert_snapshot!(out);
 }
+
+/// Release builds have no in-app MCP host and no `--mcp-*` flags (SPEC §11.4).
+#[cfg(not(feature = "dev-mcp"))]
+#[test]
+fn dev_mcp_flags_are_absent_without_the_feature() {
+    let (_, help, _) = run(&["--help"]);
+    assert!(!help.contains("--mcp-socket") && !help.contains("--mcp-stdio"));
+    let (code, _, err) = run(&["--mcp-stdio"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("--mcp-stdio"));
+}
+
+#[cfg(feature = "dev-mcp")]
+#[test]
+fn dev_mcp_flags_are_listed_with_the_feature() {
+    let (_, help, _) = run(&["--help"]);
+    assert!(help.contains("--mcp-socket") && help.contains("--mcp-stdio"));
+}

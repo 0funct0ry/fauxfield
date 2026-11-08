@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Added
+- M1.2 In-app MCP host (dev builds only): `dev-mcp` feature on `fauxfield-gui` and `fauxfield`,
+  `fauxfield --mcp-socket [PATH]` and `--mcp-stdio`, the `GuiBridge` into the GPUI thread (5 s
+  "ui thread busy" timeout), and the `ui.state`, `ui.open_workspace`, `ui.open_tab` and
+  `ui.capture_probe` tools. `make dev-mcp` / `build-dev-mcp`. Release builds contain none of it.
 - M1.1 MCP core: `fauxfield-mcp` (rmcp, no GPUI) with a class-filtered tool registry
   (read/write/execute/ui), `ping` and `server_info` tools, the `UiBridge` trait, stdio and unix
   socket transports (0600, stale-socket replacement, removed on exit), and `fauxfield mcp

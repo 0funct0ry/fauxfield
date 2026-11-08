@@ -14,6 +14,8 @@ workspace = true
 default = []
 # Compile Metal shaders at runtime so macOS builds work without the Xcode Metal toolchain.
 runtime-shaders = ["gpui/runtime_shaders"]
+# In-process MCP host for agent UI testing (SPEC §11.4). Never enabled in release builds.
+dev-mcp = ["dep:fauxfield-mcp", "dep:tokio", "dep:schemars"]
 
 [dependencies]
 gpui.workspace = true
@@ -23,6 +25,9 @@ serde_json.workspace = true
 toml = "0.9"
 directories = "6"
 nucleo-matcher = "0.3.1"
+fauxfield-mcp = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

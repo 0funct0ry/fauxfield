@@ -138,7 +138,7 @@ FEATURES := $(if $(_ws_features),--features $(_ws_features))
 # Usage: $(call pkg_features,<package>)
 pkg_features = $(if $(RUNTIME_SHADERS),$(if $(filter fauxfield fauxfield-gui,$(1)),--features runtime-shaders))
 
-# Feature list for the in-process MCP dev host (arrives in M1.2).
+# Feature list for the in-process MCP dev host (M1.2).
 DEV_MCP_FEATURES := dev-mcp$(if $(RUNTIME_SHADERS),$(comma)runtime-shaders)
 
 
@@ -236,8 +236,8 @@ build-headless: ## Build the binary without the GUI (no GPUI), debug
 build-headless-release: ## Build the binary without the GUI (no GPUI), release
 	$(CARGO) build -p $(BIN_PACKAGE) --no-default-features --features headless $(RELEASE) $(CARGO_OPTS)
 
-build-dev-mcp: ## (M1.2) Build the app with the in-process MCP host for agent/UI testing
-	$(call not_yet,M1.2,build-dev-mcp)
+build-dev-mcp: ## Build the app with the in-process MCP host for agent/UI testing (never release)
+	$(CARGO) build -p $(BIN_PACKAGE) --features $(DEV_MCP_FEATURES) $(CARGO_OPTS)
 
 check: ## Type-check everything without producing binaries (fast, debug)
 	$(CARGO) check --workspace --all-targets $(FEATURES) $(CARGO_OPTS)
@@ -260,8 +260,8 @@ run-release: ## Start the desktop app (release). ARGS are passed to the program
 
 run-dev-mcp: dev-mcp ## Alias of dev-mcp
 
-dev-mcp: ## (M1.2) Run the GUI with the dev-mcp feature and an MCP socket
-	$(call not_yet,M1.2,dev-mcp)
+dev-mcp: ## Run the GUI with the MCP host on a socket [MCP_SOCKET=<path>] [ARGS=<workspace>]
+	$(CARGO) run -p $(BIN_PACKAGE) --features $(DEV_MCP_FEATURES) $(CARGO_OPTS) -- $(ARGS) $(if $(MCP_SOCKET),--mcp-socket=$(MCP_SOCKET),--mcp-socket)
 
 
 ##@ Test
@@ -278,8 +278,8 @@ test-crate: ## Test one package: CRATE=<name> [ARGS=<filter>]
 	$(call require_var,CRATE)
 	$(CARGO) test -p $(CRATE) $(call pkg_features,$(CRATE)) $(CARGO_OPTS) $(if $(ARGS),-- $(ARGS))
 
-test-gui: ## Test only the GPUI crate (fauxfield-gui) [ARGS=<filter>]
-	$(CARGO) test -p fauxfield-gui $(call pkg_features,fauxfield-gui) $(CARGO_OPTS) $(if $(ARGS),-- $(ARGS))
+test-gui: ## Test only the GPUI crate (fauxfield-gui), with the dev-mcp host [ARGS=<filter>]
+	$(CARGO) test -p fauxfield-gui --features $(DEV_MCP_FEATURES) $(CARGO_OPTS) $(if $(ARGS),-- $(ARGS))
 
 nextest: ## Run the workspace tests with cargo-nextest (faster, nicer output)
 	$(call require_tool,cargo-nextest,cargo install cargo-nextest --locked)
