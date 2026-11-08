@@ -1,0 +1,5 @@
+# UI state fixture (M1.5): captured by `ui.screenshot {state: "environment-tab"}`. Environment tab for local.
+steps:
+  - reset
+  - open: {kind: environment, id: local}
+  - wait_idle

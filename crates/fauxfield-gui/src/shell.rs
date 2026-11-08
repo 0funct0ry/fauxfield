@@ -111,6 +111,10 @@ pub struct Shell {
     pub(crate) route_sub: HashMap<String, usize>,
     pub(crate) server_section: HashMap<String, usize>,
     pub(crate) reveal_secrets: bool,
+    /// Dev-only: render volatile text (Traffic time and duration) as fixed placeholders so
+    /// repeated screenshots compare equal.
+    #[cfg(feature = "dev-mcp")]
+    pub(crate) mask_volatile: bool,
     pub(crate) notice: Option<(u64, String)>,
     notice_gen: u64,
     pub(crate) resize: Option<Resize>,
@@ -211,6 +215,8 @@ impl Shell {
             route_sub: HashMap::new(),
             server_section: HashMap::new(),
             reveal_secrets: false,
+            #[cfg(feature = "dev-mcp")]
+            mask_volatile: false,
             notice: None,
             notice_gen: 0,
             resize: None,
@@ -619,7 +625,7 @@ impl Shell {
         }
     }
 
-    fn apply_theme(&mut self, name: &str, cx: &mut Context<Self>) {
+    pub(crate) fn apply_theme(&mut self, name: &str, cx: &mut Context<Self>) {
         if let Some(t) = Theme::named(name) {
             cx.set_global(t);
             cx.notify();

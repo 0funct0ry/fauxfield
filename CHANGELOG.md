@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Added
+- M1.5 Screenshots (dev builds): `ui.screenshot` (window or element crop, optional named or inline
+  `state`), `ui.screenshot_all` (states x themes x sizes, restores theme and size even when a cell
+  fails), `ui.set_theme` (not persisted) and `ui.resize`. A `Capture` trait picks macOS
+  `screencapture` or Linux `grim`/`import`, verifies size, flatness and permission, and reports the
+  tier. Nine state fixtures in `fixtures/ui-states/`; Traffic time and duration are masked while
+  capturing. The MCP server returns PNGs as image content blocks.
 - M1.4 Semantic UI tree (dev builds): `dev_id!` tags elements (compiled out without `dev-mcp`),
   `ui.tree`, `ui.find` and `ui.click_element` (role, label, bounds, visible, clipped, focused, z;
   virtualised lists report `total`). Clicks run the same `Shell` methods as the pointer handlers.

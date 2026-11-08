@@ -11,10 +11,12 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use super::capture::{self, WindowBounds};
 use super::handler::{OpenTabInput, OpenWorkspaceInput};
 use super::input::{
     ClickInput, CommandInput, InvokeActionInput, KeyInput, ScrollInput, TypeTextInput,
+};
+use super::screenshot::{
+    ResizeToolInput, ScreenshotAllInput, ScreenshotInput, screenshot, screenshot_all,
 };
 
 const POLL: Duration = Duration::from_millis(40);
@@ -36,7 +38,7 @@ pub struct WaitForInput {
     pub timeout_ms: Option<u64>,
 }
 
-async fn call(
+pub(super) async fn call(
     bridge: &Arc<dyn UiBridge>,
     method: &'static str,
     params: Value,
@@ -119,7 +121,10 @@ fn timeout(ms: Option<u64>) -> Duration {
 
 /// Polls from the tool layer so the UI thread never blocks: idle means two consecutive probes
 /// with the same generation and nothing pending (chord timer, resize drag).
-async fn wait_idle(bridge: &Arc<dyn UiBridge>, limit: Duration) -> Result<Value, String> {
+pub(super) async fn wait_idle(
+    bridge: &Arc<dyn UiBridge>,
+    limit: Duration,
+) -> Result<Value, String> {
     let start = Instant::now();
     let mut last: Option<u64> = None;
     loop {
@@ -144,7 +149,7 @@ async fn wait_idle(bridge: &Arc<dyn UiBridge>, limit: Duration) -> Result<Value,
     }
 }
 
-async fn wait_for(
+pub(super) async fn wait_for(
     bridge: &Arc<dyn UiBridge>,
     cond: &Condition,
     limit: Duration,
@@ -297,23 +302,59 @@ pub fn register_ui_tools(registry: &mut Registry, bridge: Arc<dyn UiBridge>) {
         },
     ));
 
-    let b = bridge;
-    registry.register(ToolDef::new::<NoInput>(
-        "ui.capture_probe",
-        "Prototype for M1.5: report the window bounds in screen coordinates and scale, and \
-         capture the window region with screencapture (macOS). Errors name the missing \
-         permission. Replaced by ui.screenshot in M1.5.",
+    input_tool::<super::handler::SetThemeInput>(
+        registry,
+        &bridge,
+        "ui.set_theme",
+        "Switch the theme (`one-dark` or `one-light`) without persisting it.",
+    );
+    let b = bridge.clone();
+    registry.register(ToolDef::new::<ResizeToolInput>(
+        "ui.resize",
+        "Resize the window: `default` (1280x800), `compact` (900x600), `min` or `WxH`. Waits \
+         until ui.state reports the new size.",
         ToolClass::Ui,
-        move |_: Map<String, Value>| {
-            let fut = forward(&b, "ui.window_bounds", Map::new());
+        move |args: Map<String, Value>| {
+            let b = b.clone();
             Box::pin(async move {
-                let v = fut.await.map_err(|e| e.to_string())?;
-                let bounds: WindowBounds = serde_json::from_value(v).map_err(|e| e.to_string())?;
-                // Let the window come to the front before capturing; run off the UI thread.
-                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-                tokio::task::spawn_blocking(move || capture::probe(bounds))
-                    .await
-                    .map_err(|e| e.to_string())?
+                let i: ResizeToolInput = serde_json::from_value(Value::Object(args))
+                    .map_err(|e| format!("bad arguments: {e}"))?;
+                super::screenshot::resize(&b, &i.size).await
+            })
+        },
+    ));
+    let b = bridge.clone();
+    registry.register(ToolDef::new::<ScreenshotInput>(
+        "ui.screenshot",
+        "Screenshot of the window or one element (`element`: id from ui.tree), optionally after \
+         running a `state`: a named state (route-tab, server-tab, environment-tab, traffic-10k, \
+         palette-open, quick-search-open, theme-selector-open, docks-collapsed, problems-open) or \
+         a list of steps (reset, open, invoke, key, type, command, set_theme, resize, wait_for, \
+         wait_idle). Returns the PNG plus ui.state, size, theme, scale and capture tier. Volatile \
+         text is masked. A missing permission or tool is reported, never a blank image. \
+         `capture: false` returns only ui.state.",
+        ToolClass::Ui,
+        move |args: Map<String, Value>| {
+            let b = b.clone();
+            Box::pin(async move {
+                let i: ScreenshotInput = serde_json::from_value(Value::Object(args))
+                    .map_err(|e| format!("bad arguments: {e}"))?;
+                screenshot(&b, super::capture::select().map(Arc::from), i).await
+            })
+        },
+    ));
+    let b = bridge;
+    registry.register(ToolDef::new::<ScreenshotAllInput>(
+        "ui.screenshot_all",
+        "Capture a matrix of named states x themes x sizes. Returns labelled cells and the \
+         images in cell order; theme and size are restored afterwards even if a cell fails.",
+        ToolClass::Ui,
+        move |args: Map<String, Value>| {
+            let b = b.clone();
+            Box::pin(async move {
+                let i: ScreenshotAllInput = serde_json::from_value(Value::Object(args))
+                    .map_err(|e| format!("bad arguments: {e}"))?;
+                screenshot_all(&b, super::capture::select().map(Arc::from), i).await
             })
         },
     ));
@@ -353,7 +394,10 @@ mod tests {
             "ui.state",
             "ui.open_workspace",
             "ui.open_tab",
-            "ui.capture_probe",
+            "ui.set_theme",
+            "ui.resize",
+            "ui.screenshot",
+            "ui.screenshot_all",
             "ui.list_actions",
             "ui.tree",
             "ui.find",

@@ -6,6 +6,7 @@ pub mod capture;
 pub mod handler;
 pub mod host;
 pub mod input;
+pub mod screenshot;
 pub mod state;
 pub mod tools;
 pub mod tree;

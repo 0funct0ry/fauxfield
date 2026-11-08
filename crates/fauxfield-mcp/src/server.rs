@@ -18,6 +18,27 @@ use crate::{
     registry::{CallError, Registry},
 };
 
+/// Tools that return pictures put them under a top-level `_images` array of
+/// `{ "data": <base64>, "mime": "image/png" }`. They leave the structured JSON and become MCP
+/// image content blocks, so the (large) base64 is not repeated as text.
+fn split_images(mut v: serde_json::Value) -> (serde_json::Value, Vec<(String, String)>) {
+    let Some(arr) = v.as_object_mut().and_then(|o| o.remove("_images")) else {
+        return (v, Vec::new());
+    };
+    let images = arr
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|i| {
+            Some((
+                i.get("data")?.as_str()?.to_owned(),
+                i.get("mime")?.as_str()?.to_owned(),
+            ))
+        })
+        .collect();
+    (v, images)
+}
+
 #[derive(Clone)]
 pub struct FauxfieldServer {
     registry: Arc<Registry>,
@@ -61,7 +82,16 @@ impl ServerHandler for FauxfieldServer {
     ) -> Result<CallToolResponse, McpError> {
         let args = request.arguments.unwrap_or_default();
         match self.registry.call(self.allowed, &request.name, args).await {
-            Ok(v) => Ok(CallToolResult::structured(v).into()),
+            Ok(v) => {
+                let (v, images) = split_images(v);
+                let mut result = CallToolResult::structured(v);
+                result.content.extend(
+                    images
+                        .into_iter()
+                        .map(|(data, mime)| ContentBlock::image(data, mime)),
+                );
+                Ok(result.into())
+            }
             Err(CallError::Tool(msg)) => {
                 Ok(CallToolResult::error(vec![ContentBlock::text(msg)]).into())
             }
@@ -77,5 +107,24 @@ impl ServerHandler for FauxfieldServer {
                 None,
             )),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_images;
+    use serde_json::json;
+
+    #[test]
+    fn images_leave_the_structured_json() {
+        let (v, imgs) = split_images(json!({
+            "ok": true,
+            "_images": [{ "data": "QUJD", "mime": "image/png" }],
+        }));
+        assert_eq!(v, json!({ "ok": true }));
+        assert_eq!(imgs, [("QUJD".to_owned(), "image/png".to_owned())]);
+        let (v, imgs) = split_images(json!({ "ok": 1 }));
+        assert_eq!(v, json!({ "ok": 1 }));
+        assert!(imgs.is_empty());
     }
 }

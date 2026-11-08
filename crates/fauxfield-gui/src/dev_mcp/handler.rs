@@ -41,6 +41,78 @@ pub struct OpenTabInput {
     pub id: String,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct SetThemeInput {
+    /// `one-dark` or `one-light` (the theme names also work). Not persisted.
+    pub name: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct ResizeInput {
+    /// `default` (1280x800), `compact` (900x600), `min`, or `WxH` such as `1000x700`.
+    pub size: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct MaskInput {
+    /// Render volatile text (Traffic timestamps and durations) as fixed placeholders.
+    pub on: bool,
+}
+
+/// Window size in points for a `ui.resize` preset or `WxH`.
+pub fn parse_size(s: &str) -> Result<(f32, f32), String> {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "default" => Ok((1280.0, 800.0)),
+        "compact" => Ok((900.0, 600.0)),
+        "min" => Ok((MIN_SIZE.0, MIN_SIZE.1)),
+        other => {
+            let (w, h) = other
+                .split_once('x')
+                .ok_or_else(|| format!("size {s:?} is not default, compact, min or WxH"))?;
+            let (w, h): (f32, f32) = (
+                w.parse().map_err(|_| format!("bad width in {s:?}"))?,
+                h.parse().map_err(|_| format!("bad height in {s:?}"))?,
+            );
+            if w < MIN_SIZE.0 || h < MIN_SIZE.1 {
+                return Err(format!(
+                    "{s:?} is below the minimum window size {}x{}",
+                    MIN_SIZE.0, MIN_SIZE.1
+                ));
+            }
+            Ok((w, h))
+        }
+    }
+}
+
+/// Matches `window_min_size` in `lib.rs`.
+const MIN_SIZE: (f32, f32) = (900.0, 600.0);
+
+fn theme_name(s: &str) -> Option<&'static str> {
+    match s.trim().to_ascii_lowercase().replace(' ', "-").as_str() {
+        "one-dark" => Some(crate::theme::DEFAULT_DARK),
+        "one-light" => Some(crate::theme::DEFAULT_LIGHT),
+        _ => None,
+    }
+}
+
+/// Puts the shell in a known baseline for state fixtures: no picker, no tabs, default docks,
+/// Traffic tab, no selection, no masking. Never writes the layout file.
+fn reset_view(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) {
+    if shell.picker.is_some() {
+        shell.close_picker(true, window, cx);
+    }
+    while !shell.tabs.is_empty() {
+        shell.tabs.close(0);
+    }
+    shell.layout.left_open = true;
+    shell.layout.right_open = false;
+    shell.layout.bottom_open = true;
+    shell.layout.bottom_tab = crate::layout::BottomTab::Traffic;
+    shell.traffic_selected = None;
+    shell.mask_volatile = false;
+    cx.notify();
+}
+
 fn args<T: for<'de> Deserialize<'de>>(params: &Value) -> Result<T, UiError> {
     serde_json::from_value(params.clone())
         .map_err(|e| UiError::Failed(format!("bad arguments: {e}")))
@@ -125,6 +197,33 @@ pub fn dispatch(
                 scale: window.scale_factor(),
             };
             Ok(serde_json::to_value(bounds).expect("bounds serialize"))
+        }
+        "ui.set_theme" => {
+            let i: SetThemeInput = args(&req.params)?;
+            let name = theme_name(&i.name).ok_or_else(|| {
+                UiError::Failed(format!(
+                    "unknown theme {:?}; use one-dark or one-light",
+                    i.name
+                ))
+            })?;
+            shell.apply_theme(name, cx);
+            Ok(json!({ "theme": name }))
+        }
+        "ui.resize" => {
+            let i: ResizeInput = args(&req.params)?;
+            let (w, h) = parse_size(&i.size).map_err(UiError::Failed)?;
+            window.resize(gpui::size(gpui::px(w), gpui::px(h)));
+            Ok(json!({ "width": w, "height": h }))
+        }
+        "ui.set_mask" => {
+            let i: MaskInput = args(&req.params)?;
+            shell.mask_volatile = i.on;
+            cx.notify();
+            Ok(json!({ "mask": i.on }))
+        }
+        "ui.reset_view" => {
+            reset_view(shell, window, cx);
+            Ok(json!({ "reset": true }))
         }
         other => Err(UiError::Failed(format!("unknown ui method {other:?}"))),
     }
@@ -574,5 +673,111 @@ mod tests {
         )
         .unwrap_err();
         assert!(e.to_string().contains("pointer injection"), "{e}");
+    }
+
+    #[test]
+    fn size_presets_and_limits() {
+        assert_eq!(parse_size("default"), Ok((1280.0, 800.0)));
+        assert_eq!(parse_size("compact"), Ok((900.0, 600.0)));
+        assert_eq!(parse_size("min"), Ok((900.0, 600.0)));
+        assert_eq!(parse_size("1000x700"), Ok((1000.0, 700.0)));
+        assert!(parse_size("100x100").unwrap_err().contains("minimum"));
+        assert!(parse_size("wide").is_err());
+    }
+
+    #[gpui::test]
+    fn set_theme_switches_without_persisting(cx: &mut TestAppContext) {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = dir.path().join("layout.json");
+        let (view, cx) = cx.add_window_view(|w, cx| {
+            Shell::new(
+                ShellOptions {
+                    layout_path: Some(layout.clone()),
+                    config_dir: None,
+                },
+                w,
+                cx,
+            )
+        });
+        cx.run_until_parked();
+        let mut h = HostState::default();
+        call(
+            &view,
+            cx,
+            &mut h,
+            "ui.set_theme",
+            json!({ "name": "one-light" }),
+        )
+        .unwrap();
+        assert_eq!(state(&view, cx, &mut h)["theme"], "One Light");
+        call(
+            &view,
+            cx,
+            &mut h,
+            "ui.set_theme",
+            json!({ "name": "One Dark" }),
+        )
+        .unwrap();
+        assert_eq!(state(&view, cx, &mut h)["theme"], "One Dark");
+        assert!(
+            !layout.exists(),
+            "ui.set_theme must not write the layout file"
+        );
+        let e = call(
+            &view,
+            cx,
+            &mut h,
+            "ui.set_theme",
+            json!({ "name": "solarized" }),
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("one-dark"), "{e}");
+    }
+
+    #[gpui::test]
+    fn resize_changes_the_reported_window_size(cx: &mut TestAppContext) {
+        let (view, cx) = setup(cx);
+        let mut h = HostState::default();
+        call(&view, cx, &mut h, "ui.resize", json!({ "size": "compact" })).unwrap();
+        cx.run_until_parked();
+        // The test platform updates the window bounds but not the viewport size; the real
+        // platform reports the new size in `ui.state` once its resize callback fires.
+        let b = call(&view, cx, &mut h, "ui.window_bounds", json!({})).unwrap();
+        assert_eq!(b["width"], 900.0);
+        assert_eq!(b["height"], 600.0);
+        let e = call(&view, cx, &mut h, "ui.resize", json!({ "size": "10x10" })).unwrap_err();
+        assert!(e.to_string().contains("minimum"), "{e}");
+    }
+
+    #[gpui::test]
+    fn reset_view_restores_the_baseline(cx: &mut TestAppContext) {
+        let (view, cx) = setup(cx);
+        let mut h = HostState::default();
+        call(
+            &view,
+            cx,
+            &mut h,
+            "ui.open_tab",
+            json!({ "kind": "route", "id": "rt_users_list" }),
+        )
+        .unwrap();
+        cx.simulate_keystrokes("secondary-shift-p");
+        call(&view, cx, &mut h, "ui.reset_view", json!({})).unwrap();
+        cx.run_until_parked();
+        let s = state(&view, cx, &mut h);
+        assert_eq!(s["tabs"].as_array().unwrap().len(), 0);
+        assert_eq!(s["command_palette"]["open"], false);
+        assert_eq!(s["docks"]["left"]["open"], true);
+        assert_eq!(s["bottom_tab"], "traffic");
+    }
+
+    #[gpui::test]
+    fn mask_flag_toggles(cx: &mut TestAppContext) {
+        let (view, cx) = setup(cx);
+        let mut h = HostState::default();
+        call(&view, cx, &mut h, "ui.set_mask", json!({ "on": true })).unwrap();
+        assert!(view.read_with(cx, |s, _| s.mask_volatile));
+        call(&view, cx, &mut h, "ui.set_mask", json!({ "on": false })).unwrap();
+        assert!(!view.read_with(cx, |s, _| s.mask_volatile));
     }
 }

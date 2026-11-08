@@ -1,0 +1,5 @@
+# UI state fixture (M1.5): captured by `ui.screenshot {state: "route-tab"}`. Route tab for GET /users on the example workspace.
+steps:
+  - reset
+  - open: {kind: route, id: rt_users_list}
+  - wait_idle

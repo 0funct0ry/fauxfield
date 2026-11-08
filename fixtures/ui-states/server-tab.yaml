@@ -1,0 +1,5 @@
+# UI state fixture (M1.5): captured by `ui.screenshot {state: "server-tab"}`. Server tab for the Users API.
+steps:
+  - reset
+  - open: {kind: server, id: srv_users}
+  - wait_idle

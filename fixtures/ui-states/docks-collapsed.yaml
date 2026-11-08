@@ -1,0 +1,7 @@
+# UI state fixture (M1.5): captured by `ui.screenshot {state: "docks-collapsed"}`. Left, right and bottom docks all closed.
+steps:
+  - reset
+  - command: {command: toggle_dock, dock: left}
+  - command: {command: toggle_dock, dock: bottom}
+  - open: {kind: route, id: rt_users_list}
+  - wait_idle

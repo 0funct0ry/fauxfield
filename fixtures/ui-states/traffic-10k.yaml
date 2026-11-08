@@ -1,0 +1,5 @@
+# UI state fixture (M1.5): captured by `ui.screenshot {state: "traffic-10k"}`. Traffic panel with the 10k generated rows, nothing selected.
+steps:
+  - reset
+  - invoke: show_traffic
+  - wait_idle

@@ -1,0 +1,6 @@
+# UI state fixture (M1.5): captured by `ui.screenshot {state: "theme-selector-open"}`. Theme selector open.
+steps:
+  - reset
+  - invoke: select_theme
+  - wait_for: {condition: {pointer: /theme_selector/open, equals: true}}
+  - wait_idle

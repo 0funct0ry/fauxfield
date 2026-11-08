@@ -1,0 +1,5 @@
+# UI state fixture (M1.5): captured by `ui.screenshot {state: "problems-open"}`. Bottom dock on the Problems tab.
+steps:
+  - reset
+  - invoke: show_problems
+  - wait_idle

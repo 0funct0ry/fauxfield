@@ -168,6 +168,10 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let selected = self.traffic_selected == Some(i);
+        #[cfg(feature = "dev-mcp")]
+        let this_mask = self.mask_volatile;
+        #[cfg(not(feature = "dev-mcp"))]
+        let this_mask = false;
         let (hover, sel) = (t.element_hover, t.element_selected);
         let cell = |w: f32, s: String| div().w(px(w)).flex_none().truncate().child(s);
         crate::dev_id!(
@@ -189,7 +193,10 @@ impl Shell {
                     this.layout.right_open = true;
                     cx.notify();
                 }))
-                .child(cell(COLS[0], r.time.clone()))
+                .child(cell(
+                    COLS[0],
+                    volatile(this_mask, r.time.clone(), "--:--:--.---")
+                ))
                 .child(cell(COLS[1], r.server.clone()))
                 .child(
                     div()
@@ -207,7 +214,10 @@ impl Shell {
                         .child(r.status.to_string()),
                 )
                 .child(cell(COLS[4], r.route.clone()))
-                .child(cell(COLS[5], format!("{:.1} ms", r.duration_ms)))
+                .child(cell(
+                    COLS[5],
+                    volatile(this_mask, format!("{:.1} ms", r.duration_ms), "-- ms")
+                ))
                 .child(cell(COLS[6], format!("{} B", r.size))),
             format!("traffic-row-{i}"),
             Row,
@@ -290,4 +300,9 @@ impl Shell {
             .children(self.logs.iter().map(|l| div().child(l.clone())))
             .into_any_element()
     }
+}
+
+/// Volatile text (timestamps, durations) shows a fixed placeholder while screenshots are taken.
+fn volatile(mask: bool, real: String, placeholder: &str) -> String {
+    if mask { placeholder.to_owned() } else { real }
 }
