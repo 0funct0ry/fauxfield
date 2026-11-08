@@ -1,0 +1,8 @@
+# Deliberately failing scenario: proves that a failed step reports expected, actual, ui.state and
+# a screenshot (`fauxfield mcp scenario` must exit 1). Never part of the passing set.
+name: broken-assertion
+size: default
+steps:
+  - command: {command: toggle_dock, dock: left}
+  - assert: {pointer: /docks/left/open, equals: true}
+  - key: escape

@@ -59,7 +59,10 @@ pub enum Command {
 }
 
 #[derive(clap::Args, Debug)]
+#[command(args_conflicts_with_subcommands = true)]
 pub struct McpArgs {
+    #[command(subcommand)]
+    pub action: Option<McpAction>,
     /// Workspace folder (used from M2 on; validated now).
     pub path: Option<PathBuf>,
     /// Transport: stdio, unix, both, or http (http arrives in M16).
@@ -79,6 +82,12 @@ pub struct McpArgs {
     /// Shorthand for --allow read.
     #[arg(long)]
     pub read_only: bool,
+}
+
+#[derive(clap::Subcommand, Debug)]
+pub enum McpAction {
+    /// Run a scenario file against a running dev-mcp app (exit 0 pass, 1 failed step, 2 unreachable).
+    Scenario(crate::scenario_cmd::ScenarioArgs),
 }
 
 fn parse_transport(s: &str) -> Result<fauxfield_mcp::TransportKind, String> {
@@ -129,6 +138,9 @@ pub fn run() -> i32 {
 }
 
 fn mcp(args: McpArgs) -> i32 {
+    if let Some(McpAction::Scenario(a)) = args.action {
+        return crate::scenario_cmd::run(a);
+    }
     use fauxfield_mcp::{AllowedClasses, McpSettings};
     if let Err(code) = check_path(&args.path) {
         return code;

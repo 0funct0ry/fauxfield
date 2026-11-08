@@ -1,0 +1,64 @@
+# M1.7 scenario for the M1 shell: docks, tabs, Command Palette, Quick Search, theme switching,
+# the 10k-row Traffic panel. Run: `ui.run_scenario {"name": "m01-shell"}` or
+# `fauxfield mcp scenario fixtures/scenarios/m01-shell.yaml --socket PATH`.
+name: m01-shell
+size: default
+steps:
+  # Docks
+  - command: {command: toggle_dock, dock: left}
+  - assert: {pointer: /docks/left/open, equals: false}
+  - command: {command: toggle_dock, dock: left}
+  - assert: {pointer: /docks/left/open, equals: true}
+  - command: {command: toggle_dock, dock: right}
+  - assert: {pointer: /docks/right/open, equals: true}
+  - command: {command: toggle_dock, dock: bottom}
+  - assert: {pointer: /docks/bottom/open, equals: false}
+  - command: {command: toggle_dock, dock: bottom}
+  - assert: {pointer: /docks/bottom/open, equals: true}
+  - command: {command: toggle_dock, dock: right}
+  - assert: {pointer: /docks/right/open, equals: false}
+
+  # Tabs: preview, then pin
+  - open: {kind: route, id: rt_users_list}
+  - assert: {pointer: /tabs/0/preview, equals: true}
+  - invoke: pin_tab
+  - assert: {pointer: /tabs/0/pinned, equals: true}
+  - assert: {pointer: /tabs/0/preview, equals: false}
+  - open: {kind: server, id: srv_users}
+  - assert: {pointer: /tabs/1/preview, equals: true}
+  - screenshot: {name: tabs}
+
+  # Command Palette
+  - key: secondary-shift-p
+  - assert: {pointer: /command_palette/open, equals: true}
+  - type_text: theme
+  - assert: {pointer: /command_palette/query, equals: theme}
+  - key: escape
+  - assert: {pointer: /command_palette/open, equals: false}
+
+  # Quick Search
+  - key: secondary-k
+  - wait_for_idle: {}
+  - assert: {pointer: /quick_search/open, equals: true}
+  - type_text: health
+  - key: enter
+  - assert: {pointer: /quick_search/open, equals: false}
+  - screenshot: {name: quick-search-result}
+
+  # Theme switching, with an audit checkpoint in each theme
+  - set_theme: one-light
+  - assert: {pointer: /theme, equals: One Light}
+  - audit: {themes: [one-light], states: [route-tab]}
+  - set_theme: one-dark
+  - assert: {pointer: /theme, equals: One Dark}
+  - audit: {themes: [one-dark], states: [route-tab]}
+
+  # Traffic with 10k rows
+  - state: traffic-10k
+  - assert: {pointer: /traffic/row_count, equals: 10000}
+  - find: {label: Traffic, role: table}
+  - assert_find: {pointer: /matches/0/total, equals: 10000}
+  - key: pagedown
+  - key: pagedown
+  - wait_for_idle: {}
+  - screenshot: {name: traffic}

@@ -1,0 +1,10 @@
+# CI gate: `ui.audit` over every state fixture in both themes at the default and minimum window
+# size must report no errors (warnings are allowed). Timing rule UX150 is not included.
+name: audit-all
+size: default
+steps:
+  - audit:
+      states: [all]
+      themes: [one-dark, one-light]
+      sizes: [default, min]
+      max_errors: 0

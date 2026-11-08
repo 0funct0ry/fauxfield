@@ -109,6 +109,43 @@ mod unix {
         assert!(!sock.exists(), "socket must be removed on clean exit");
     }
 
+    fn run_scenario(file: &Path, sock: &Path) -> std::process::Output {
+        std::process::Command::new(BIN)
+            .args([
+                "mcp",
+                "scenario",
+                file.to_str().unwrap(),
+                "--no-capture",
+                "--json",
+            ])
+            .args(["--socket", sock.to_str().unwrap()])
+            .output()
+            .unwrap()
+    }
+
+    /// `fauxfield mcp scenario`: exit 2 without an app, exit 1 when a step fails (the headless
+    /// server has no `ui.*` tools, so the first step fails).
+    #[tokio::test]
+    async fn scenario_command_exit_codes() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("s.yaml");
+        std::fs::write(&file, "name: s\nsteps:\n  - key: a\n").unwrap();
+        let sock = dir.path().join("s.sock");
+        assert_eq!(run_scenario(&file, &sock).status.code(), Some(2));
+        let mut child = spawn(&["--transport", "unix", "--socket", sock.to_str().unwrap()]);
+        wait_for(&sock).await;
+        let (file2, sock2) = (file.clone(), sock.clone());
+        let out = tokio::task::spawn_blocking(move || run_scenario(&file2, &sock2))
+            .await
+            .unwrap();
+        assert_eq!(out.status.code(), Some(1));
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(v["passed"], false);
+        assert_eq!(v["failure"]["index"], 1);
+        term(&child);
+        let _ = child.wait().await;
+    }
+
     #[tokio::test]
     async fn stale_socket_replaced_live_one_refused() {
         let dir = tempfile::tempdir().unwrap();

@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### Added
+- M1.7 Scenarios and the agent playbook (dev builds): YAML scenarios in `fixtures/scenarios/` with
+  `ui.run_scenario` (by name or inline; first failure reports expected, actual, `ui.state` and a
+  screenshot), `ui.record`, and `ui.events` (1024-entry replay buffer, `seq`, `gap`, `wait_ms`).
+  `fauxfield mcp scenario FILE --socket PATH [--out DIR] [--no-capture]` runs one from a shell
+  (exit 0 pass, 1 failed step, 2 unreachable). New scenarios `m01-shell`, `audit-all` and the
+  deliberately failing `broken-assertion`. `docs/agent-testing.md`, `make smoke`, `make smoke-ui`
+  and CI jobs `smoke-headless` and `smoke-ui`.
 - M1.6 UI audit (dev builds): `ui.audit` runs UX101, UX102, UX103, UX110, UX120, UX130, UX131,
   UX140 and (with `perf` or in `rules`) UX150 over `ui.tree`, theme token pairs, the actions table,
   the view table and the state fixtures; `themes`, `sizes` and `states` sweep a matrix and restore

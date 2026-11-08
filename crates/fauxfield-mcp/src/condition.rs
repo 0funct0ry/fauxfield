@@ -3,24 +3,24 @@
 //! scenario runner (M1.7) share it.
 
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 pub struct Condition {
     /// JSON pointer into `ui.state`, e.g. `/command_palette/open`.
     pub pointer: String,
     /// The value at the pointer equals this JSON value.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub equals: Option<Value>,
     /// A string contains this substring, or an array contains this element.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contains: Option<Value>,
     /// A string value matches this regular expression.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub matches: Option<String>,
     /// Invert the result.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub not: bool,
 }
 

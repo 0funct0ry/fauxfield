@@ -1,4 +1,4 @@
-# M1.4 scenario: operate the shell by element id (ui.find / ui.click_element). Runner: M1.7.
+# M1.4 scenario: operate the shell by element id (ui.find / ui.click_element). Run with ui.run_scenario.
 name: m014-tree
 size: default
 steps:

@@ -54,9 +54,13 @@ pub enum CallError {
     Tool(String),
 }
 
+/// Called after every successful tool call (used by `ui.record`).
+pub type Observer = Arc<dyn Fn(&str, &Map<String, Value>) + Send + Sync>;
+
 #[derive(Default, Clone)]
 pub struct Registry {
     tools: Vec<ToolDef>,
+    observer: Option<Observer>,
 }
 
 impl Registry {
@@ -67,6 +71,9 @@ impl Registry {
         debug_assert!(self.tools.iter().all(|t| t.name != tool.name));
         self.tools.push(tool);
         self
+    }
+    pub fn set_observer(&mut self, observer: Observer) {
+        self.observer = Some(observer);
     }
     /// Only tools whose class is allowed; the rest are invisible.
     pub fn list(&self, allowed: AllowedClasses) -> Vec<&ToolDef> {
@@ -90,6 +97,11 @@ impl Registry {
                 class: tool.class,
             });
         }
-        (tool.handler)(args).await.map_err(CallError::Tool)
+        let seen = self.observer.as_ref().map(|_| args.clone());
+        let out = (tool.handler)(args).await.map_err(CallError::Tool)?;
+        if let (Some(o), Some(a)) = (&self.observer, seen) {
+            o(name, &a);
+        }
+        Ok(out)
     }
 }

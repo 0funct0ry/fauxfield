@@ -285,11 +285,12 @@ nextest: ## Run the workspace tests with cargo-nextest (faster, nicer output)
 	$(call require_tool,cargo-nextest,cargo install cargo-nextest --locked)
 	$(CARGO) nextest run --workspace $(FEATURES) $(CARGO_OPTS) $(ARGS)
 
-smoke: ## (M1.7) Headless MCP smoke test (stdio + unix socket transports)
-	$(call not_yet,M1.7,smoke)
+smoke: ## Headless MCP smoke test: `fauxfield mcp` over stdio and the unix socket (no GPU, no display)
+	$(CARGO) build -p $(BIN_PACKAGE) --no-default-features --features headless $(CARGO_OPTS)
+	$(CARGO) test -p $(BIN_PACKAGE) --no-default-features --features headless --test mcp $(CARGO_OPTS)
 
-smoke-ui: ## (M1.7) Drive the running app with the shipped UI scenarios (needs a display)
-	$(call not_yet,M1.7,smoke-ui)
+smoke-ui: ## Run the UI scenarios against the dev-mcp app (needs a display) [SMOKE_ARGS=--no-capture]
+	RUNTIME_SHADERS_FEATURE=$(if $(RUNTIME_SHADERS),runtime-shaders) scripts/smoke-ui.sh $(SMOKE_ARGS)
 
 bench: ## (M4) Run all benchmarks (criterion; always release)
 	$(call not_yet,M4,bench)

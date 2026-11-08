@@ -1821,6 +1821,7 @@ name = "fauxfield"
 version = "0.1.0"
 dependencies = [
  "assert_cmd",
+ "base64",
  "clap",
  "clap_complete",
  "fauxfield-gui",
@@ -1866,11 +1867,13 @@ dependencies = [
 name = "fauxfield-mcp"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "regex",
  "rmcp",
  "schemars",
  "serde",
  "serde_json",
+ "serde_yaml_ng",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",

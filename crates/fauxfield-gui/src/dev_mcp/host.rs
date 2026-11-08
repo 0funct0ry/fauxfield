@@ -1,9 +1,15 @@
 //! Starts the MCP server on its own runtime and drains the bridge on the GPUI thread.
 
-use std::sync::Arc;
+use std::{
+    sync::{Arc, OnceLock},
+    time::Duration,
+};
 
 use fauxfield_mcp::{
-    AllowedClasses, McpConfig, ToolClass, TransportKind, UiBridge, UiRequest, serve_with,
+    AllowedClasses, McpConfig, ToolClass, TransportKind, UiBridge, UiRequest,
+    events::EventBuffer,
+    scenario::{self, Recorder, ScenarioEnv},
+    serve_with,
     tools::{ServerFacts, core_registry},
 };
 use gpui::{App, AppContext as _, WindowHandle};
@@ -43,6 +49,20 @@ pub fn start(opts: DevMcpOptions, window: WindowHandle<Shell>, cx: &mut App) {
         features: vec!["dev-mcp"],
     });
     register_ui_tools(&mut registry, bridge.clone());
+    let events = EventBuffer::default();
+    fauxfield_mcp::events::register(&mut registry, events.clone());
+    let recorder = Recorder::default();
+    registry.set_observer(recorder.observer());
+    let shared = Arc::new(OnceLock::new());
+    scenario::register(
+        &mut registry,
+        ScenarioEnv {
+            registry: shared.clone(),
+            dir: scenario::find_scenarios_dir(),
+            recorder,
+        },
+    );
+    let _ = shared.set(registry.clone());
 
     if transport.uses_unix() {
         let path = opts
@@ -51,7 +71,8 @@ pub fn start(opts: DevMcpOptions, window: WindowHandle<Shell>, cx: &mut App) {
             .unwrap_or_else(fauxfield_mcp::default_socket_path);
         eprintln!("fauxfield: MCP socket at {}", path.display());
     }
-    let quit_bridge = bridge;
+    let quit_bridge = bridge.clone();
+    let poll_bridge = bridge;
     let spawned = std::thread::Builder::new()
         .name("fauxfield-mcp".into())
         .spawn(move || {
@@ -67,6 +88,7 @@ pub fn start(opts: DevMcpOptions, window: WindowHandle<Shell>, cx: &mut App) {
                 }
             };
             rt.block_on(async move {
+                tokio::spawn(feed_events(poll_bridge, events));
                 if let Err(e) = serve_with(config, Some(registry)).await {
                     eprintln!("fauxfield: MCP server stopped: {e}");
                 }
@@ -116,4 +138,38 @@ pub fn start(opts: DevMcpOptions, window: WindowHandle<Shell>, cx: &mut App) {
         }
     })
     .detach();
+}
+
+/// Turns `ui.state` changes into `ui.events` entries. Runs in the tool layer: the UI thread only
+/// answers `ui.state`, so nothing here touches GPUI.
+async fn feed_events(bridge: Arc<dyn UiBridge>, events: EventBuffer) {
+    let mut last_generation = None;
+    let mut last_toasts: Vec<Value> = Vec::new();
+    loop {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let Ok(state) = bridge
+            .request(UiRequest {
+                method: "ui.state".into(),
+                params: Value::Null,
+            })
+            .await
+        else {
+            continue;
+        };
+        let generation = state["generation"].as_u64();
+        if generation != last_generation {
+            last_generation = generation;
+            events.push(
+                "generation",
+                serde_json::json!({ "generation": generation }),
+            );
+        }
+        let toasts = state["toasts"].as_array().cloned().unwrap_or_default();
+        for t in &toasts {
+            if !last_toasts.contains(t) {
+                events.push("toast", t.clone());
+            }
+        }
+        last_toasts = toasts;
+    }
 }

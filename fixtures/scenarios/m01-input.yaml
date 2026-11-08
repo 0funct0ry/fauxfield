@@ -1,5 +1,4 @@
-# Draft scenario for M1.3 (input tools). The runner arrives in M1.7; until then these are the
-# tool calls an agent makes, in order. Selectors use ui.state only (no element ids before M1.4).
+# Scenario for M1.3 (input tools): the tool calls an agent makes, in order. Selectors use ui.state only.
 name: m01-input
 size: default
 steps:
