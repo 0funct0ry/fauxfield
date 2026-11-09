@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 fauxfield-model.workspace = true
+fauxfield-engine.workspace = true
 serde_json.workspace = true
 
 [lints]

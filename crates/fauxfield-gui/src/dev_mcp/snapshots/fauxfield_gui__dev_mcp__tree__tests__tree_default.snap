@@ -3,7 +3,7 @@ source: crates/fauxfield-gui/src/dev_mcp/tree.rs
 expression: a
 ---
 {
-  "frame_nodes": 70,
+  "frame_nodes": 71,
   "elements": [
     {
       "id": "title-bar",
@@ -456,6 +456,31 @@ expression: a
       "parent": "row-srv_users"
     },
     {
+      "id": "tree-dice-srv_users",
+      "role": "text",
+      "label": "Output is random: set a fake_seed for deterministic data",
+      "enabled": true,
+      "visible": true,
+      "clipped": false,
+      "focused": false,
+      "z": 0,
+      "order": 18,
+      "bounds": {
+        "x": 178.0,
+        "y": 114.0,
+        "w": 12.0,
+        "h": 12.0
+      },
+      "meta": {
+        "interactive": false,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
+      "parent": "row-srv_users"
+    },
+    {
       "id": "dots-srv_users",
       "role": "button",
       "label": "Menu for Users API",
@@ -464,7 +489,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 18,
+      "order": 19,
       "bounds": {
         "x": 232.0,
         "y": 110.0,
@@ -489,7 +514,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 19,
+      "order": 20,
       "bounds": {
         "x": 0.0,
         "y": 132.0,
@@ -514,7 +539,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 20,
+      "order": 21,
       "bounds": {
         "x": 18.0,
         "y": 134.0,
@@ -539,7 +564,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 21,
+      "order": 22,
       "bounds": {
         "x": 232.0,
         "y": 134.0,
@@ -564,7 +589,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 22,
+      "order": 23,
       "bounds": {
         "x": 0.0,
         "y": 156.0,
@@ -589,7 +614,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 23,
+      "order": 24,
       "bounds": {
         "x": 232.0,
         "y": 158.0,
@@ -614,7 +639,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 24,
+      "order": 25,
       "bounds": {
         "x": 0.0,
         "y": 180.0,
@@ -639,7 +664,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 25,
+      "order": 26,
       "bounds": {
         "x": 232.0,
         "y": 182.0,
@@ -664,7 +689,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 26,
+      "order": 27,
       "bounds": {
         "x": 0.0,
         "y": 204.0,
@@ -689,7 +714,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 27,
+      "order": 28,
       "bounds": {
         "x": 232.0,
         "y": 206.0,
@@ -714,7 +739,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 28,
+      "order": 29,
       "bounds": {
         "x": 0.0,
         "y": 228.0,
@@ -739,7 +764,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 29,
+      "order": 30,
       "bounds": {
         "x": 232.0,
         "y": 230.0,
@@ -764,7 +789,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 30,
+      "order": 31,
       "bounds": {
         "x": 0.0,
         "y": 252.0,
@@ -789,7 +814,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 31,
+      "order": 32,
       "bounds": {
         "x": 232.0,
         "y": 254.0,
@@ -814,7 +839,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 32,
+      "order": 33,
       "bounds": {
         "x": 0.0,
         "y": 276.0,
@@ -839,7 +864,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 33,
+      "order": 34,
       "bounds": {
         "x": 232.0,
         "y": 278.0,
@@ -864,7 +889,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 34,
+      "order": 35,
       "bounds": {
         "x": 0.0,
         "y": 300.0,
@@ -889,7 +914,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 35,
+      "order": 36,
       "bounds": {
         "x": 6.0,
         "y": 302.0,
@@ -914,7 +939,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 36,
+      "order": 37,
       "bounds": {
         "x": 232.0,
         "y": 302.0,
@@ -939,7 +964,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 37,
+      "order": 38,
       "bounds": {
         "x": 0.0,
         "y": 324.0,
@@ -964,7 +989,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 38,
+      "order": 39,
       "bounds": {
         "x": 18.0,
         "y": 326.0,
@@ -989,7 +1014,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 39,
+      "order": 40,
       "bounds": {
         "x": 232.0,
         "y": 326.0,
@@ -1014,7 +1039,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 40,
+      "order": 41,
       "bounds": {
         "x": 0.0,
         "y": 348.0,
@@ -1039,7 +1064,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 41,
+      "order": 42,
       "bounds": {
         "x": 232.0,
         "y": 350.0,
@@ -1064,7 +1089,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 42,
+      "order": 43,
       "bounds": {
         "x": 0.0,
         "y": 372.0,
@@ -1089,7 +1114,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 43,
+      "order": 44,
       "bounds": {
         "x": 232.0,
         "y": 374.0,
@@ -1114,7 +1139,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 44,
+      "order": 45,
       "bounds": {
         "x": 0.0,
         "y": 396.0,
@@ -1139,7 +1164,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 45,
+      "order": 46,
       "bounds": {
         "x": 232.0,
         "y": 398.0,
@@ -1164,7 +1189,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 46,
+      "order": 47,
       "bounds": {
         "x": 261.0,
         "y": 26.0,
@@ -1189,7 +1214,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 47,
+      "order": 48,
       "bounds": {
         "x": 0.0,
         "y": 798.0,
@@ -1214,7 +1239,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 48,
+      "order": 49,
       "bounds": {
         "x": 6.0,
         "y": 799.5,
@@ -1239,7 +1264,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 49,
+      "order": 50,
       "bounds": {
         "x": 115.0,
         "y": 799.5,
@@ -1264,7 +1289,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 50,
+      "order": 51,
       "bounds": {
         "x": 207.0,
         "y": 799.5,
@@ -1289,7 +1314,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 51,
+      "order": 52,
       "bounds": {
         "x": 1894.0,
         "y": 801.5,
@@ -1314,7 +1339,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 52,
+      "order": 53,
       "bounds": {
         "x": 0.0,
         "y": 826.0,
@@ -1340,7 +1365,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 53,
+      "order": 54,
       "bounds": {
         "x": 0.0,
         "y": 850.0,
@@ -1365,7 +1390,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 54,
+      "order": 55,
       "bounds": {
         "x": 0.0,
         "y": 872.0,
@@ -1390,7 +1415,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 55,
+      "order": 56,
       "bounds": {
         "x": 0.0,
         "y": 894.0,
@@ -1415,7 +1440,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 56,
+      "order": 57,
       "bounds": {
         "x": 0.0,
         "y": 916.0,
@@ -1440,7 +1465,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 57,
+      "order": 58,
       "bounds": {
         "x": 0.0,
         "y": 938.0,
@@ -1465,7 +1490,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 58,
+      "order": 59,
       "bounds": {
         "x": 0.0,
         "y": 960.0,
@@ -1490,7 +1515,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 59,
+      "order": 60,
       "bounds": {
         "x": 0.0,
         "y": 982.0,
@@ -1515,7 +1540,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 60,
+      "order": 61,
       "bounds": {
         "x": 0.0,
         "y": 1004.0,
@@ -1540,7 +1565,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 61,
+      "order": 62,
       "bounds": {
         "x": 0.0,
         "y": 1026.0,
@@ -1565,7 +1590,7 @@ expression: a
       "clipped": true,
       "focused": false,
       "z": 0,
-      "order": 62,
+      "order": 63,
       "bounds": {
         "x": 0.0,
         "y": 1048.0,
@@ -1590,7 +1615,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 63,
+      "order": 64,
       "bounds": {
         "x": 0.0,
         "y": 1058.0,
@@ -1615,7 +1640,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 64,
+      "order": 65,
       "bounds": {
         "x": 6.0,
         "y": 1059.5,
@@ -1640,7 +1665,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 65,
+      "order": 66,
       "bounds": {
         "x": 36.0,
         "y": 1059.5,
@@ -1665,7 +1690,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 66,
+      "order": 67,
       "bounds": {
         "x": 66.0,
         "y": 1059.5,
@@ -1690,7 +1715,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 67,
+      "order": 68,
       "bounds": {
         "x": 226.0,
         "y": 1069.5,
@@ -1715,7 +1740,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 68,
+      "order": 69,
       "bounds": {
         "x": 1810.0,
         "y": 1059.5,
@@ -1740,7 +1765,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 69,
+      "order": 70,
       "bounds": {
         "x": 1878.0,
         "y": 1059.5,

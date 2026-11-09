@@ -423,6 +423,7 @@ impl Shell {
                 div().flex_1().min_h_0().child(match sub {
                     0 => self.render_responses(t, r, cx).into_any_element(),
                     1 => self.render_rules(t, r, cx),
+                    2 => self.render_route_headers(t, r, cx),
                     5 => self.render_route_settings(t, s, r, cx).into_any_element(),
                     n => div()
                         .p(px(16.))
@@ -1017,6 +1018,19 @@ impl Shell {
                     .border_color(t.border_variant)
                     .child(status_dot(t, s.running))
                     .child(div().text_size(px(14.)).child(s.name.clone()))
+                    .when(s.random_output(), |d| {
+                        d.child(crate::dev_id!(
+                            div()
+                                .id("server-dice")
+                                .flex_none()
+                                .tooltip(crate::ui::tooltip(crate::view::RANDOM_OUTPUT_TIP.into()))
+                                .child(icon("dice", 14., t.modified)),
+                            "server-dice",
+                            Text,
+                            crate::view::RANDOM_OUTPUT_TIP,
+                            None
+                        ))
+                    })
                     .when(!s.enabled, |d| {
                         d.child(
                             div()
@@ -1575,9 +1589,9 @@ impl Shell {
             .into_any_element()
     }
 
-    pub(crate) fn render_right_dock(&self, t: &Theme, _cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_right_dock(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let body: AnyElement = match self.traffic_selected.and_then(|i| self.traffic.get(i)) {
-            Some(r) if r.rec.is_some() => self.render_inspector_detail(t, r, _cx),
+            Some(r) if r.rec.is_some() => self.render_inspector_detail(t, r, cx),
             Some(r) => {
                 let kv = |k: &str, v: String| {
                     div()
@@ -1626,6 +1640,90 @@ impl Shell {
                     .child("INSPECTOR"),
             )
             .child(body)
+            .children(self.render_seed_section(t, cx))
+    }
+
+    /// Inspector Seed section for the selected Server (SPEC §8.3): `fake_seed` input and the
+    /// Deterministic / Random toggle.
+    fn render_seed_section(&self, t: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let s = &self.ws.servers[self.current_server()?];
+        let (sid_d, sid_r) = (s.id.clone(), s.id.clone());
+        let seed = s.fake_seed;
+        let seg = |id: &'static str, label: &'static str, on: bool| {
+            div()
+                .id(id)
+                .h(px(22.))
+                .px(px(10.))
+                .flex()
+                .items_center()
+                .rounded(px(4.))
+                .cursor_pointer()
+                .text_size(px(12.))
+                .when(on, |d| d.bg(t.element_selected).text_color(t.text))
+                .when(!on, |d| {
+                    d.text_color(t.text_muted).hover(|s| s.bg(t.element_hover))
+                })
+                .child(label)
+        };
+        Some(
+            div()
+                .p(px(10.))
+                .flex()
+                .flex_col()
+                .gap(px(6.))
+                .border_t_1()
+                .border_color(t.border_variant)
+                .child(section_heading(t, "Seed"))
+                .child(crate::dev_id!(
+                    div()
+                        .id("seed-mode")
+                        .flex()
+                        .flex_row()
+                        .gap(px(2.))
+                        .child(crate::dev_id!(
+                            seg("seed-mode-deterministic", "Deterministic", seed.is_some())
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.set_seed_mode(&sid_d, true, cx)
+                                })),
+                            "seed-mode-deterministic",
+                            Button,
+                            "Deterministic",
+                            Press(format!("seed-mode:{}:1", s.id))
+                        ))
+                        .child(crate::dev_id!(
+                            seg("seed-mode-random", "Random", seed.is_none()).on_click(
+                                cx.listener(move |this, _, _, cx| {
+                                    this.set_seed_mode(&sid_r, false, cx)
+                                })
+                            ),
+                            "seed-mode-random",
+                            Button,
+                            "Random",
+                            Press(format!("seed-mode:{}:0", s.id))
+                        )),
+                    "seed-mode",
+                    Panel,
+                    "Seed mode",
+                    None
+                ))
+                .child(self.inline_field(
+                    t,
+                    "seed-value".into(),
+                    crate::response_pane::InlineTarget::Seed(s.id.clone()),
+                    &seed.map(|n| n.to_string()).unwrap_or_default(),
+                    "fake_seed (random)",
+                    160.,
+                    true,
+                    cx,
+                ))
+                .child(
+                    div()
+                        .text_size(px(11.))
+                        .text_color(t.text_muted)
+                        .child("Same seed, same fake data on every request."),
+                )
+                .into_any_element(),
+        )
     }
 }
 

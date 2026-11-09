@@ -471,3 +471,53 @@ fn rules_reorder_and_presets_round_trip() {
     s.delete_rule(&a, 0).unwrap();
     assert!(s.set_response_mode(&rte, "bogus").is_err());
 }
+
+#[test]
+fn route_headers_seed_and_template_round_trip() {
+    let (_d, s) = ws();
+    let srv = s.create_server("Tpl API", 3010).unwrap();
+    let rte = s.create_route(&srv, None, "get", "/t").unwrap();
+    let rsp = s.create_response(&rte).unwrap();
+    s.set_route_header(&rte, "X-Id", Some("{{ uuid() }}"))
+        .unwrap();
+    s.set_route_header(&rte, "X-Tmp", Some("1")).unwrap();
+    s.set_route_header(&rte, "X-Tmp", None).unwrap();
+    s.set_fake_seed(&srv, Some(42)).unwrap();
+    s.set_response_template(&rsp, false).unwrap();
+    let snap = s.snapshot();
+    let sv = snap
+        .servers
+        .iter()
+        .find(|(_, x)| x.id == srv)
+        .unwrap()
+        .1
+        .clone();
+    assert_eq!(sv.fake_seed, Some(42));
+    let r = &sv.routes[0];
+    assert_eq!(r.headers.len(), 1);
+    assert_eq!(r.headers["X-Id"], "{{ uuid() }}");
+    assert_eq!(
+        r.responses.iter().find(|x| x.id == rsp).unwrap().template,
+        Some(false)
+    );
+    s.set_fake_seed(&srv, None).unwrap();
+    s.set_response_template(&rsp, true).unwrap();
+    let sv = s
+        .snapshot()
+        .servers
+        .iter()
+        .find(|(_, x)| x.id == srv)
+        .unwrap()
+        .1
+        .clone();
+    assert_eq!(sv.fake_seed, None);
+    assert_eq!(
+        sv.routes[0]
+            .responses
+            .iter()
+            .find(|x| x.id == rsp)
+            .unwrap()
+            .template,
+        None
+    );
+}

@@ -479,6 +479,13 @@ impl Shell {
                 let (rid, i) = (id.clone(), need()?);
                 self.store_op(cx, |s| s.delete_rule(&rid, i));
             }
+            "resp-template" => self.toggle_response_template(&id, cx),
+            "seed-mode" => self.set_seed_mode(&id, need()? == 1, cx),
+            "route-header-add" => {
+                let at = self.ws.find_route(&id).map_or(0, |(_, r)| r.headers.len());
+                self.begin_route_header_cell(&id, at, crate::header_catalog::Col::Key, window, cx);
+            }
+            "route-header-remove" => self.remove_route_header_row(&id, need()?, cx),
             "sample-cancel" => self.close_sample_dialog(cx),
             "sample-save" => self.save_sample(false, window, cx),
             "sample-send" => self.save_sample(true, window, cx),

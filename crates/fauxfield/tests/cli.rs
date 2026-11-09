@@ -319,3 +319,66 @@ fn response_add_and_set_default_are_stable() {
     let (code, _, _) = run(&["response", "set-default", "rsp_nope", "-w", p]);
     assert_eq!(code, 2);
 }
+
+#[test]
+fn render_is_stable_and_seed_deterministic() {
+    let dir = workspace();
+    let p = dir.path().to_str().unwrap();
+    let (_, out, _) = run(&[
+        "route",
+        "add",
+        "example-api",
+        "get",
+        "/r",
+        "-w",
+        p,
+        "--json",
+    ]);
+    let route = serde_json::from_str::<serde_json::Value>(&out).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (code, out, _) = run(&[
+        "response",
+        "add",
+        &route,
+        "--status",
+        "200",
+        "--body",
+        "{{ request.method }} {{ fake(kind='name') }}",
+        "-w",
+        p,
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    let rsp = serde_json::from_str::<serde_json::Value>(&out).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let args = [
+        "render",
+        "example-api",
+        &route,
+        "--response",
+        &rsp,
+        "--seed",
+        "5",
+        "-w",
+        p,
+        "--json",
+    ];
+    let (code, out, _) = run(&args);
+    assert_eq!(code, 0, "{out}");
+    let mut v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let again: serde_json::Value = serde_json::from_str(&run(&args).1).unwrap();
+    assert_eq!(v["body"], again["body"]);
+    assert!(v["body"].as_str().unwrap().starts_with("GET "));
+    v["body"] = "GET <name>".into();
+    v["route"] = "<route>".into();
+    v["response"] = "<response>".into();
+    v["render_ms"] = 0.into();
+    v["server"] = "<server>".into();
+    snap_json(Some("render"), &v);
+    let (code, _, _) = run(&["render", "example-api", "rte_nope", "-w", p]);
+    assert_eq!(code, 2);
+}

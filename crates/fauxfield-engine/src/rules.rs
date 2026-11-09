@@ -104,6 +104,7 @@ pub(crate) struct Ctx<'a> {
     pub body: &'a [u8],
     pub call: u64,
     pub root: &'a Path,
+    pub tpl: Option<crate::render::TplEnv>,
     body_parsed: OnceCell<Body>,
 }
 
@@ -139,6 +140,7 @@ impl<'a> Ctx<'a> {
             body,
             call,
             root,
+            tpl: None,
             body_parsed: OnceCell::new(),
         }
     }
@@ -359,12 +361,25 @@ fn eval_rule(r: &Rule, c: &Ctx, cc: &Compiled) -> (bool, Option<String>) {
     (raw != r.negate, actual)
 }
 
+/// Render a string rule value that contains Tera syntax (SPEC §5.5, M6).
+fn resolved(r: &Rule, c: &Ctx) -> Rule {
+    let mut r = r.clone();
+    if let (Some(env), Some(toml::Value::String(s))) = (&c.tpl, &r.value)
+        && s.contains("{{")
+        && let Ok(out) = env.render(c.root, s)
+    {
+        r.value = Some(toml::Value::String(out));
+    }
+    r
+}
+
 fn eval_response(resp: &Response, c: &Ctx, cc: &Compiled) -> ResponseTrace {
     let or = resp.rules_logic.as_deref() == Some("or");
     let rules: Vec<RuleTrace> = resp
         .rules
         .iter()
         .map(|r| {
+            let r = &resolved(r, c);
             let (passed, mut actual) = eval_rule(r, c, cc);
             let key = r.key.as_deref().unwrap_or("").to_ascii_lowercase();
             if actual.is_some()

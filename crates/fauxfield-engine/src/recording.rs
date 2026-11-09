@@ -48,6 +48,9 @@ pub struct Recording {
     pub response_body: String,
     pub timing: Timing,
     pub truncated: bool,
+    /// Template or file error that turned this response into a 500 (shown in Traffic).
+    #[serde(default)]
+    pub error: Option<String>,
     /// `mock` for real clients, `test` for Send test.
     pub source: String,
 }
@@ -134,6 +137,7 @@ mod tests {
             response_body: String::new(),
             timing: Timing::default(),
             truncated: false,
+            error: None,
             source: "mock".into(),
         };
         let c = to_curl(&rec, "http://127.0.0.1:1");

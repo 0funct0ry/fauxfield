@@ -87,3 +87,30 @@ fauxfield response add <route-id> --name Teapot --status 418 --json
 fauxfield response add <route-id> --preset 401
 fauxfield response set-default <response-id>
 ```
+
+## Templating
+
+Response bodies, `body_file` contents, header values, Route `headers` and string rule values are
+[Tera](https://keats.github.io/tera/) templates unless the Response sets `template = false`.
+
+```toml
+[routes.headers]
+x-request-id = "{{ uuid() }}"
+
+[[routes.responses]]
+id = "rsp_list"
+content_type = "application/json"
+body = """
+[{% for _ in repeat(n=20) %}{"name": "{{ fake(kind='name') }}", "email": "{{ fake(kind='internet.email') }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+"""
+```
+
+Set `fake_seed = 42` on the Server for identical output across runs (the RNG derives from the seed,
+the Route ID and the call number); without it the output is random and the tree shows a dice icon.
+A Route header is added to every Response; a Response header of the same name wins. Syntax errors are
+underlined in the editor, a preview renders against the sample request, and a failing template returns
+500 with the error in Traffic. See [Template functions and fake kinds](/reference/template-functions/).
+
+```bash
+fauxfield render users-api <route-id> --seed 42 --json
+```

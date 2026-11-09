@@ -171,6 +171,7 @@ impl Shell {
         }
         st["sample_requests"][&d.route] = d.sample.to_json();
         let _ = fauxfield_store::save_ui_state(&root, &st);
+        self.preview_samples.remove(&d.route);
         self.close_sample_dialog(cx);
         if send {
             self.send_test(cx);

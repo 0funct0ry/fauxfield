@@ -44,7 +44,7 @@ path = "/users/:id"
   content_type = "application/json"
   body = '''{
   "id": "{{ request.params.id }}",
-  "name": "{{ fake(kind='name.full') }}",
+  "name": "{{ fake(kind='name') }}",
   "email": "{{ fake(kind='internet.email') }}"
 }'''
 

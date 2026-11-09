@@ -19,6 +19,8 @@ pub enum Tok {
     Heading,
     /// A `{{var}}` reference; the span covers the braces.
     Var,
+    /// A Tera `{% ... %}` statement.
+    Stmt,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -117,7 +119,7 @@ impl Highlighter {
     }
 }
 
-/// `{{ name }}` references on lines within `visible`.
+/// Tera spans on lines within `visible`: `{{ expr }}` (Var), `{% stmt %}` (Stmt), `{# note #}` (Comment).
 pub fn var_spans(text: &str, visible: &Range<usize>) -> Vec<Span> {
     let start = text[..visible.start.min(text.len())]
         .rfind('\n')
@@ -125,18 +127,30 @@ pub fn var_spans(text: &str, visible: &Range<usize>) -> Vec<Span> {
     let end = visible.end.min(text.len());
     let mut out = Vec::new();
     let mut i = start;
-    while let Some(o) = text[i..end.max(i)].find("{{") {
+    while i < end {
+        let Some(o) = text[i..end].find('{') else {
+            break;
+        };
         let s = i + o;
-        let Some(c) = text[s..].find("}}") else { break };
-        if text[s..s + c].contains('\n') {
+        let (close, tok) = match text[s..].get(..2) {
+            Some("{{") => ("}}", Tok::Var),
+            Some("{%") => ("%}", Tok::Stmt),
+            Some("{#") => ("#}", Tok::Comment),
+            _ => {
+                i = s + 1;
+                continue;
+            }
+        };
+        let Some(c) = text[s + 2..].find(close) else {
+            break;
+        };
+        let e = s + 2 + c + 2;
+        if tok != Tok::Comment && text[s..e].contains('\n') && tok == Tok::Var {
             i = s + 2;
             continue;
         }
-        out.push(Span {
-            range: s..s + c + 2,
-            tok: Tok::Var,
-        });
-        i = s + c + 2;
+        out.push(Span { range: s..e, tok });
+        i = e;
     }
     out
 }

@@ -554,6 +554,7 @@ mod tests {
 
     fn resp() -> Response {
         Response {
+            template: true,
             id: "rsp_1".into(),
             name: "OK".into(),
             description: String::new(),

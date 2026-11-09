@@ -76,6 +76,8 @@ pub enum Command {
         #[command(subcommand)]
         action: crate::workspace_cmd::ResponseAction,
     },
+    /// Render a Response template against a sample request, without running a server.
+    Render(crate::workspace_cmd::RenderArgs),
     /// Serve a workspace headless: become the host and run its servers until stopped.
     Run(crate::host_cmd::RunArgs),
     /// Show the running host and its servers (exit code 4 when no host is running).
@@ -183,6 +185,7 @@ pub fn run() -> i32 {
         Some(Command::Server { action }) => crate::workspace_cmd::server(action),
         Some(Command::Route { action }) => crate::workspace_cmd::route(action),
         Some(Command::Response { action }) => crate::workspace_cmd::response(action),
+        Some(Command::Render(a)) => crate::workspace_cmd::render(a),
         Some(Command::Run(a)) => crate::host_cmd::run(a),
         Some(Command::Status(a)) => crate::host_cmd::status(a),
         Some(Command::Stop(a)) => crate::host_cmd::stop(a),

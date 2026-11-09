@@ -45,6 +45,10 @@ struct UpdateServer {
     prefix: Option<String>,
     /// Add the closest-routes hint to 404 bodies (default true).
     unmatched_hint: Option<bool>,
+    /// Seed for fake data and random template functions; 0 or omitted keeps it, `clear_seed` removes it.
+    fake_seed: Option<u64>,
+    /// Remove the seed (output becomes random).
+    clear_seed: Option<bool>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -74,6 +78,8 @@ struct ResponseSpec {
     description: Option<String>,
     /// Skip this Response during selection.
     disabled: Option<bool>,
+    /// `false` sends body, body_file and header values verbatim (default true: Tera).
+    template: Option<bool>,
     /// `and` (default) or `or`.
     rules_logic: Option<String>,
     /// Replaces all rules of the Response when given. Fields: target, key, op, value, negate.
@@ -99,7 +105,31 @@ struct UpsertRoute {
     priority: Option<i32>,
     /// `rules` (default), `sequential`, `random` or `disabled`.
     response_mode: Option<String>,
+    /// Route headers (values are templated); set or replace by name.
+    headers: Option<std::collections::BTreeMap<String, String>>,
     responses: Option<Vec<ResponseSpec>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct RenderTemplate {
+    /// Route ID (`rte_…`) whose Response is rendered.
+    route: Option<String>,
+    /// Response ID; default: the Route's default or first Response.
+    response: Option<String>,
+    /// A raw template string to render instead of a Response (needs `route` or `server` for context).
+    template: Option<String>,
+    /// Server (ID, name or slug) providing variables and `fake_seed` when no `route` is given.
+    server: Option<String>,
+    /// Sample request method (default: the Route's method).
+    method: Option<String>,
+    /// Sample request path and query (default: the Route path).
+    url: Option<String>,
+    /// Sample request headers.
+    headers: Option<std::collections::BTreeMap<String, String>>,
+    /// Sample request body.
+    body: Option<String>,
+    /// Override the Server's `fake_seed` for this render.
+    seed: Option<u64>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -216,6 +246,9 @@ fn apply_response(store: &Store, id: &str, r: &ResponseSpec) -> Result<(), Strin
     }
     if let Some(v) = r.disabled {
         store.set_response_disabled(id, v).map_err(e)?;
+    }
+    if let Some(v) = r.template {
+        store.set_response_template(id, v).map_err(e)?;
     }
     if let Some(v) = &r.rules_logic {
         store.set_rules_logic(id, v).map_err(e)?;
@@ -359,6 +392,11 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                 if let Some(v) = a.unmatched_hint {
                     s.set_bool(&t, "unmatched_hint", v).map_err(e)?;
                 }
+                if a.clear_seed == Some(true) {
+                    s.set_fake_seed(&srv.id, None).map_err(e)?;
+                } else if let Some(v) = a.fake_seed {
+                    s.set_fake_seed(&srv.id, Some(v)).map_err(e)?;
+                }
                 s.flush().map_err(e)?;
                 Ok(json!({ "id": srv.id }))
             });
@@ -461,6 +499,9 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                         s.set_route_priority(&rid, v).map_err(e)?;
                     }
                 }
+                for (k, v) in a.headers.iter().flatten() {
+                    s.set_route_header(&rid, k, Some(v)).map_err(e)?;
+                }
                 if let Some(v) = &a.name {
                     s.set_str(&t, "name", Some(v)).map_err(e)?;
                 }
@@ -488,6 +529,78 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                 s.flush().map_err(e)?;
                 let (srv, r) = find_route(&s, &rid)?;
                 Ok(route_json(&srv, &r))
+            });
+            Box::pin(async move { out })
+        },
+    ));
+    let p = provider.clone();
+    r.register(ToolDef::new::<RenderTemplate>(
+        "render_template",
+        "Render a Tera template string, or a Route's Response, against a sample request (no server needs to run). Returns status, headers, body, render time and any error.",
+        ToolClass::Read,
+        move |m| {
+            let Some(s) = p() else { return no_workspace() };
+            let out = parse::<RenderTemplate>(m).and_then(|a| {
+                let (srv, route) = match (&a.route, &a.server) {
+                    (Some(r), _) => find_route(&s, r)?,
+                    (None, Some(q)) => {
+                        let (_, srv) = find_server(&s, q)?;
+                        let route = fauxfield_model::parse_server("id=\"x\"\nname=\"x\"\nport=1\n[[routes]]\nid=\"r\"\npath=\"/\"")
+                            .map_err(e)?
+                            .routes
+                            .remove(0);
+                        (srv, route)
+                    }
+                    _ => return Err("give `route` or `server`".into()),
+                };
+                let mut srv = srv;
+                if a.seed.is_some() {
+                    srv.fake_seed = a.seed;
+                }
+                let resp = match (&a.template, &a.response) {
+                    (Some(t), _) => {
+                        let mut r = fauxfield_model::parse_server(
+                            "id=\"x\"\nname=\"x\"\nport=1\n[[routes]]\nid=\"r\"\npath=\"/\"\n[[routes.responses]]\nid=\"s\"",
+                        )
+                        .map_err(e)?
+                        .routes
+                        .remove(0)
+                        .responses
+                        .remove(0);
+                        r.body = Some(t.clone());
+                        r
+                    }
+                    (None, Some(id)) => route
+                        .responses
+                        .iter()
+                        .find(|r| r.id == *id)
+                        .cloned()
+                        .ok_or_else(|| format!("response `{id}` not found"))?,
+                    (None, None) => route
+                        .responses
+                        .iter()
+                        .find(|r| r.default)
+                        .or(route.responses.first())
+                        .cloned()
+                        .ok_or("route has no responses")?,
+                };
+                let url = a.url.clone().unwrap_or_else(|| route.path.clone());
+                let sample = fauxfield_engine::SampleRequest {
+                    method: a.method.clone().unwrap_or_else(|| route.method.clone()),
+                    url,
+                    headers: a.headers.clone().unwrap_or_default().into_iter().collect(),
+                    body: a.body.clone().unwrap_or_default(),
+                };
+                let p = fauxfield_engine::preview(&s.root(), &srv, &route, &resp, &sample, None);
+                Ok(json!({
+                    "status": p.status,
+                    "headers": p.headers,
+                    "body": p.body,
+                    "render_ms": p.render_ms,
+                    "error": p.error,
+                    "json_error": p.json_error,
+                    "deterministic": !p.nondeterministic,
+                }))
             });
             Box::pin(async move { out })
         },

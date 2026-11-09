@@ -58,6 +58,17 @@ pub enum InlineTarget {
         response: String,
         row: usize,
     },
+    /// Key / Value cell of Route header row `row`; `row == rows.len()` is a new row.
+    RouteHeaderKey {
+        route: String,
+        row: usize,
+    },
+    RouteHeaderValue {
+        route: String,
+        row: usize,
+    },
+    /// The Server's `fake_seed` (Inspector); digits only.
+    Seed(String),
 }
 
 impl InlineTarget {
@@ -149,7 +160,42 @@ impl Shell {
         if self.inline.take().is_some() {
             // Esc on a header row that was never given a value drops it.
             self.pending_header = None;
+            self.pending_route_header = None;
             cx.notify();
+        }
+    }
+
+    pub(crate) fn toggle_response_template(&mut self, id: &str, cx: &mut Context<Self>) {
+        let Some(on) = self.response_by_id(id).map(|r| r.template) else {
+            return;
+        };
+        self.store_op(cx, |s| s.set_response_template(id, !on));
+    }
+
+    /// Inspector Seed toggle: Deterministic picks seed 1 when none is set, Random clears it.
+    pub(crate) fn set_seed_mode(
+        &mut self,
+        server: &str,
+        deterministic: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(cur) = self
+            .ws
+            .servers
+            .iter()
+            .find(|s| s.id == server)
+            .map(|s| s.fake_seed)
+        else {
+            return;
+        };
+        match (deterministic, cur) {
+            (true, None) => {
+                self.store_op(cx, |s| s.set_fake_seed(server, Some(1)));
+            }
+            (false, Some(_)) => {
+                self.store_op(cx, |s| s.set_fake_seed(server, None));
+            }
+            _ => {}
         }
     }
 
@@ -240,6 +286,19 @@ impl Shell {
             InlineTarget::HeaderValue { response, row } => {
                 self.commit_header_value(&response, row, &edit.buf.text, nav, window, cx)
             }
+            InlineTarget::RouteHeaderKey { route, row } => {
+                self.commit_route_header_key(&route, row, &edit.buf.text, nav, window, cx)
+            }
+            InlineTarget::RouteHeaderValue { route, row } => {
+                self.commit_route_header_value(&route, row, &edit.buf.text, nav, window, cx)
+            }
+            InlineTarget::Seed(server) => match v.parse::<u64>() {
+                Ok(n) => {
+                    self.store_op(cx, |s| s.set_fake_seed(&server, Some(n)));
+                }
+                Err(_) if v.is_empty() => {}
+                Err(_) => self.notify("A seed is a whole number.".into(), cx),
+            },
         }
         cx.notify();
     }
@@ -256,11 +315,11 @@ impl Shell {
         let is_header = self.inline.as_ref().is_some_and(|i| i.target.is_header());
         let is_key_cell = matches!(
             self.inline.as_ref().map(|i| &i.target),
-            Some(InlineTarget::HeaderKey { .. })
+            Some(InlineTarget::HeaderKey { .. } | InlineTarget::RouteHeaderKey { .. })
         );
         let numeric = matches!(
             self.inline.as_ref().map(|i| &i.target),
-            Some(InlineTarget::Status(_) | InlineTarget::Delay(_))
+            Some(InlineTarget::Status(_) | InlineTarget::Delay(_) | InlineTarget::Seed(_))
         );
         match key {
             "escape" => {
@@ -420,11 +479,19 @@ impl Shell {
             .is_some_and(|b| b.response == response);
         let st = self.editor_settings.clone();
         let lang = Language::detect(&resp.content_type, &resp.body);
+        let vars = if self.body_editors.contains_key(response) {
+            Vec::new()
+        } else {
+            self.variable_names_for(response)
+        };
         let ed = match self.body_editors.get(response) {
             Some(e) => e.clone(),
             None => {
                 let ed = cx.new(|cx| {
                     CodeEditor::new(lang, cx)
+                        .completion_provider(crate::code_editor::tera_ctx::TeraCompletions {
+                            variables: vars,
+                        })
                         .read_only(true)
                         .format_paste(true)
                         .placeholder(
@@ -493,6 +560,7 @@ impl Shell {
                 e.set_language(lang, cx);
             });
         }
+        self.sync_tera_diagnostics(response, cx);
         cx.notify();
     }
 
@@ -901,6 +969,38 @@ impl Shell {
                             cx,
                         ),
                     ))
+                    .child(field("Template", {
+                        let (rid, on) = (resp.id.clone(), resp.template);
+                        crate::dev_id!(
+                            div()
+                                .id("resp-template")
+                                .w(px(70.))
+                                .h(px(26.))
+                                .px(px(8.))
+                                .flex()
+                                .items_center()
+                                .rounded(px(4.))
+                                .border_1()
+                                .border_color(t.border_variant)
+                                .cursor_pointer()
+                                .hover(|s| s.border_color(t.border))
+                                .text_size(px(12.))
+                                .text_color(if on { t.text } else { t.text_muted })
+                                .tooltip(crate::ui::tooltip(
+                                    "Tera renders {{ }} and {% %} in the body and headers; Off sends them verbatim"
+                                        .into()
+                                ))
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.toggle_response_template(&rid, cx)
+                                }))
+                                .child(if on { "Tera" } else { "Off" }),
+                            "resp-template",
+                            Button,
+                            if on { "Tera" } else { "Off" },
+                            Press(format!("resp-template:{}", resp.id))
+                        )
+                        .into_any_element()
+                    }))
                     .child(field(
                         "Description",
                         self.inline_field(
@@ -1087,6 +1187,7 @@ impl Shell {
             } else {
                 self.render_body_editor(t, resp, cx).into_any_element()
             })
+            .child(self.render_preview_pane(t, &resp.id, cx))
     }
 
     fn render_body_file(
@@ -1154,10 +1255,21 @@ impl Shell {
             .as_ref()
             .map(|e| (e.read(cx).text().to_string(), e.read(cx).lang()))
             .unwrap_or((String::new(), Language::Plain));
-        let verdict: Option<(bool, String)> = format::validate(lang, &text).map(|r| match r {
-            Ok(()) => (true, "Valid JSON".to_string()),
-            Err(e) => (false, e.to_string()),
-        });
+        // A templated JSON body is not JSON until it is rendered: the Preview judges it.
+        let templated = resp.template && (text.contains("{{") || text.contains("{%"));
+        let verdict: Option<(bool, String)> = format::validate(lang, &text)
+            .filter(|_| !templated)
+            .map(|r| match r {
+                Ok(()) => (true, "Valid JSON".to_string()),
+                Err(e) => (false, e.to_string()),
+            });
+        let tera_err = resp
+            .template
+            .then(|| {
+                ed.as_ref()
+                    .and_then(|e| e.read(cx).diagnostics().first().map(|d| d.1.clone()))
+            })
+            .flatten();
         let rid = resp.id.clone();
         div()
             .flex_1()
@@ -1216,6 +1328,20 @@ impl Shell {
                             "body-validity",
                             Text,
                             msg,
+                            None
+                        )
+                    }))
+                    .children(tera_err.map(|m| {
+                        crate::dev_id!(
+                            div()
+                                .id("body-tera-error")
+                                .flex_1()
+                                .truncate()
+                                .text_color(t.deleted)
+                                .child(format!("✗ Template: {m}")),
+                            "body-tera-error",
+                            Text,
+                            m,
                             None
                         )
                     }))

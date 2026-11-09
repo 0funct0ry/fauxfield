@@ -372,3 +372,79 @@ fn disabled_mode_makes_the_route_unmatched() {
         404
     );
 }
+
+fn tpl_server(port: u16, seed: Option<u64>) -> fauxfield_model::Server {
+    let seed = seed.map(|s| format!("fake_seed = {s}")).unwrap_or_default();
+    parse_server(&format!(
+        r#"
+id = "srv_t"
+name = "T"
+port = {port}
+{seed}
+[[routes]]
+id = "rte_l"
+method = "GET"
+path = "/users/:id"
+[routes.headers]
+x-route = "r-{{{{ request.params.id }}}}"
+x-both = "route"
+[[routes.responses]]
+id = "rsp_1"
+content_type = "application/json"
+body = '[{{% for _ in repeat(n=20) %}}{{"name":"{{{{ fake(kind="name") }}}}","id":"{{{{ uuid() }}}}"}}{{% if not loop.last %}},{{% endif %}}{{% endfor %}}]'
+[routes.responses.headers]
+x-both = "response"
+[[routes]]
+id = "rte_v"
+method = "GET"
+path = "/verbatim"
+[[routes.responses]]
+id = "rsp_v"
+template = false
+body = "{{{{ not rendered }}}}"
+[[routes]]
+id = "rte_bad"
+method = "GET"
+path = "/bad"
+[[routes.responses]]
+id = "rsp_b"
+body = "{{{{ oops("
+"#
+    ))
+    .unwrap()
+}
+
+#[test]
+fn templates_render_seeded_data_route_headers_and_errors() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(&rt, dir.path());
+    let port = free_port();
+    e.apply(vec![tpl_server(port, Some(7))]);
+    e.start("srv_t").unwrap();
+    let get = |p: &str| rt.block_on(e.send_test("srv_t", &req("GET", p))).unwrap();
+    let a = get("/users/9");
+    assert_eq!(a.status, 200);
+    let h = |r: &fauxfield_engine::TestResponse, n: &str| {
+        r.headers
+            .iter()
+            .find(|(k, _)| k == n)
+            .map(|(_, v)| v.clone())
+    };
+    assert_eq!(h(&a, "x-route").as_deref(), Some("r-9"));
+    assert_eq!(h(&a, "x-both").as_deref(), Some("response"));
+    let v: serde_json::Value = serde_json::from_str(&a.body).unwrap();
+    assert_eq!(v.as_array().unwrap().len(), 20);
+    // Same seed + same request counter after a state reset => identical output.
+    e.reset_state();
+    assert_eq!(get("/users/9").body, a.body);
+    assert_eq!(get("/verbatim").body, "{{ not rendered }}");
+    let bad = get("/bad");
+    assert_eq!(bad.status, 500);
+    let t = e.traffic(&TrafficFilter::default());
+    assert!(t.iter().any(|r| r.error.is_some()));
+    // Unseeded: different.
+    e.apply(vec![tpl_server(port, None)]);
+    let b = get("/users/9");
+    assert_ne!(b.body, a.body);
+}

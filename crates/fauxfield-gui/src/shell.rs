@@ -342,6 +342,19 @@ pub struct Shell {
     pub(crate) field_drag: bool,
     /// A header row whose key was typed but whose value is not written yet: (response, key).
     pub(crate) pending_header: Option<(String, String)>,
+    /// Same for a Route header: (route, key).
+    pub(crate) pending_route_header: Option<(String, String)>,
+    /// Live Tera preview of the selected Response (M6): debounce epoch, the last result and
+    /// the id of the Response it is for, plus per-Response collapsed state.
+    pub(crate) preview_epoch: u64,
+    pub(crate) preview: Option<(String, fauxfield_engine::Preview)>,
+    pub(crate) preview_closed: bool,
+    /// Hash of everything the preview depends on, as of the last scheduled render.
+    pub(crate) preview_key: u64,
+    /// Saved sample request per Route (read from ui.json once).
+    pub(crate) preview_samples: HashMap<String, crate::sample::Sample>,
+    /// (editor revision, template flag) the body editor's diagnostics were computed for.
+    pub(crate) body_diag: HashMap<String, (u64, bool)>,
     /// Response pane sub-tab per Response (0 Body, 1 Headers); runtime-only.
     pub(crate) resp_sub: HashMap<String, usize>,
     pub(crate) lc: crate::lifecycle::Lifecycle,
@@ -531,6 +544,13 @@ impl Shell {
             popup_bounds: Default::default(),
             field_drag: false,
             pending_header: None,
+            pending_route_header: None,
+            preview_epoch: 0,
+            preview: None,
+            preview_closed: false,
+            preview_key: 0,
+            preview_samples: HashMap::new(),
+            body_diag: HashMap::new(),
             resp_sub: HashMap::new(),
             lc: Default::default(),
             menu_style: crate::menu::menu_style(),
@@ -638,6 +658,9 @@ impl Shell {
             .map(|s| s.id.clone())
             .collect();
         self.ws = Workspace::from_snapshot(&snap);
+        // Variables, seeds and headers may have changed: render the preview again.
+        self.preview_key = 0;
+        self.preview_samples.clear();
         self.apply_start_collapsed();
         for s in &mut self.ws.servers {
             s.running = running.contains(&s.id);
@@ -2643,6 +2666,8 @@ impl Render for Shell {
         self.sync_menus(window, cx);
         if let Some(rid) = self.current_response_id() {
             self.ensure_body_editor(&rid, cx);
+            self.sync_tera_diagnostics(&rid, cx);
+            self.ensure_preview(&rid, cx);
         }
         self.ensure_traffic_editors(cx);
         #[cfg(feature = "dev-mcp")]

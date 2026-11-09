@@ -1005,6 +1005,58 @@ impl Store {
         })
     }
 
+    /// Set (or with `None`, remove) one Route header (`[routes.headers]`, SPEC §5.5).
+    pub fn set_route_header(
+        &self,
+        route_id: &str,
+        name: &str,
+        val: Option<&str>,
+    ) -> Result<(), StoreError> {
+        let target = Target::Route(route_id.into());
+        let file = self
+            .file_of(&target)
+            .ok_or_else(|| StoreError::NotFound(route_id.into()))?;
+        self.edit(&file, |d| {
+            let t = resolve(d, &target).ok_or_else(|| StoreError::NotFound(route_id.into()))?;
+            match val {
+                Some(v) => {
+                    if t.get("headers").is_none() {
+                        t["headers"] = Item::Table(Table::new());
+                    }
+                    t["headers"][name] = value(v);
+                }
+                None => {
+                    if let Some(h) = t.get_mut("headers").and_then(Item::as_table_mut) {
+                        h.remove(name);
+                        if h.is_empty() {
+                            t.remove("headers");
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// Set (or with `None`, remove) the Server's `fake_seed` (SPEC §8.3).
+    pub fn set_fake_seed(&self, server_id: &str, seed: Option<u64>) -> Result<(), StoreError> {
+        self.set_int(
+            &Target::Server(server_id.into()),
+            "fake_seed",
+            seed.map(|s| s as i64),
+        )
+    }
+
+    /// Set whether a Response is rendered as a template (`template = false` sends it verbatim).
+    pub fn set_response_template(&self, response_id: &str, on: bool) -> Result<(), StoreError> {
+        let t = Target::Response(response_id.into());
+        if on {
+            self.set_item(&t, "template", None)
+        } else {
+            self.set_bool(&t, "template", false)
+        }
+    }
+
     /// Make one response the default of its route.
     /// Rename a header keeping its position, value and comments. Fails if `new` exists
     /// (case-insensitively) or `old` is missing.

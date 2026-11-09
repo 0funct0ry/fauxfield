@@ -1741,3 +1741,102 @@ fn edit_sample_request_action_opens_the_dialog(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(read(&view, cx, |s| s.sample_dialog.is_some()));
 }
+
+#[gpui::test]
+fn templating_preview_route_headers_seed_and_dice(cx: &mut TestAppContext) {
+    use crate::header_catalog::Col;
+    use crate::response_pane::InlineTarget as I;
+    let (view, cx) = setup(cx, None);
+    view.update(cx, |s, cx| {
+        s.open_tab("rt_users_get", TabKind::Route, "Get user", false);
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let key = |view: &Entity<Shell>, cx: &mut VisualTestContext, k: &str, ch: Option<&str>| {
+        let mut ks = gpui::Keystroke::parse(k).unwrap();
+        ks.key_char = ch.map(String::from);
+        let ev = gpui::KeyDownEvent {
+            keystroke: ks,
+            is_held: false,
+        };
+        view.update_in(cx, |s, w, cx| s.on_field_key(&ev, w, cx));
+    };
+    let typed = |view: &Entity<Shell>, cx: &mut VisualTestContext, text: &str| {
+        for c in text.chars() {
+            let c = c.to_string();
+            key(view, cx, &c, Some(&c));
+        }
+    };
+
+    // The example body uses fake() with no seed: the dice shows. The preview renders it.
+    let (rid, random) = read(&view, cx, |s| {
+        (
+            s.current_response_id().unwrap(),
+            s.ws.servers[0].random_output(),
+        )
+    });
+    assert!(random);
+    view.update(cx, |s, cx| s.compute_preview(&rid, cx));
+    let (status, err, jerr) = read(&view, cx, |s| {
+        let p = &s.preview.as_ref().unwrap().1;
+        (p.status, p.error.clone(), p.json_error.clone())
+    });
+    assert_eq!((status, err, jerr), (200, None, None));
+    assert!(read(&view, cx, |s| s
+        .body_editors
+        .contains_key(&format!("{rid}#preview"))));
+
+    // Template off: the Response is verbatim, so the dice goes away.
+    view.update(cx, |s, cx| {
+        s.store_op(cx, |st| st.set_response_template(&rid, false));
+    });
+    assert!(!read(&view, cx, |s| s.ws.servers[0].random_output()));
+    view.update(cx, |s, cx| {
+        s.store_op(cx, |st| st.set_response_template(&rid, true));
+    });
+    assert!(read(&view, cx, |s| s.ws.servers[0].random_output()));
+
+    // Route headers: add one through the cells; a bad template is reported inline.
+    view.update_in(cx, |s, w, cx| {
+        s.begin_route_header_cell("rt_users_get", 0, Col::Key, w, cx)
+    });
+    typed(&view, cx, "x-req");
+    key(&view, cx, "tab", None);
+    assert_eq!(
+        read(&view, cx, |s| s.inline.as_ref().map(|i| i.target.clone())),
+        Some(I::RouteHeaderValue {
+            route: "rt_users_get".into(),
+            row: 0
+        })
+    );
+    typed(&view, cx, "{{ uuid() }}");
+    key(&view, cx, "enter", None);
+    assert_eq!(
+        read(&view, cx, |s| s
+            .ws
+            .find_route("rt_users_get")
+            .unwrap()
+            .1
+            .headers
+            .clone()),
+        vec![("x-req".to_string(), "{{ uuid() }}".to_string())]
+    );
+    view.update(cx, |s, cx| s.remove_route_header_row("rt_users_get", 0, cx));
+    assert!(read(&view, cx, |s| s
+        .ws
+        .find_route("rt_users_get")
+        .unwrap()
+        .1
+        .headers
+        .is_empty()));
+
+    // Seed: a number in the Inspector field sets fake_seed, which removes the dice.
+    let sid = read(&view, cx, |s| s.ws.servers[0].id.clone());
+    view.update_in(cx, |s, w, cx| {
+        s.begin_inline(I::Seed(sid.clone()), "", true, w, cx)
+    });
+    typed(&view, cx, "42");
+    key(&view, cx, "enter", None);
+    assert_eq!(read(&view, cx, |s| s.ws.servers[0].fake_seed), Some(42));
+    assert!(!read(&view, cx, |s| s.ws.servers[0].random_output()));
+}

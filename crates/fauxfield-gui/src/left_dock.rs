@@ -425,9 +425,31 @@ impl Shell {
                         div()
                             .flex()
                             .flex_row()
+                            .items_center()
                             .gap(px(4.))
                             .text_size(px(11.))
                             .text_color(t.text_muted)
+                            .when(
+                                self.ws
+                                    .servers
+                                    .iter()
+                                    .any(|s| s.id == r.id && s.random_output()),
+                                |d| {
+                                    d.child(crate::dev_id!(
+                                        div()
+                                            .id(crate::ui::eid(format!("dice-{}", r.id)))
+                                            .flex_none()
+                                            .tooltip(crate::ui::tooltip(
+                                                crate::view::RANDOM_OUTPUT_TIP.into()
+                                            ))
+                                            .child(icon("dice", 12., t.modified)),
+                                        format!("tree-dice-{}", r.id),
+                                        Text,
+                                        crate::view::RANDOM_OUTPUT_TIP,
+                                        None
+                                    ))
+                                },
+                            )
                             .when(!enabled, |d| {
                                 d.child(crate::dev_id!(
                                     div()

@@ -67,6 +67,7 @@ fn tok_color(t: &Theme, k: Tok) -> Colour {
         Tok::Tag => t.syntax_type,
         Tok::Heading => t.syntax_keyword,
         Tok::Var => t.syntax_function,
+        Tok::Stmt => t.syntax_keyword,
     }
 }
 
@@ -342,7 +343,8 @@ impl Element for EditorElement {
                     let mut underline = false;
                     if s.tok == Tok::Var {
                         let name = var_name(&text[s.range.clone()]);
-                        let ok = ed.var_check.as_ref().is_none_or(|f| f(name));
+                        let ok = super::tera_ctx::is_builtin(name)
+                            || ed.var_check.as_ref().is_none_or(|f| f(name));
                         if !ok {
                             color = t.deleted;
                             underline = true;
@@ -408,6 +410,42 @@ impl Element for EditorElement {
                                         color: Some(run.color),
                                         thickness: px(1.),
                                         wavy: false,
+                                    });
+                                }
+                                split.push(rr);
+                            }
+                        }
+                    }
+                    runs = split;
+                }
+                // Diagnostics: wavy underline in the error colour.
+                for (dr, _) in ed.diagnostics.iter() {
+                    if dr.start >= row.end.max(row.start + 1)
+                        || dr.end <= row.start && dr.start != row.start
+                    {
+                        continue;
+                    }
+                    let a = dr.start.clamp(row.start, row.end) - row.start;
+                    let b = dr.end.clamp(row.start, row.end) - row.start;
+                    let (da, db) = (map[a], map[b.max(a)]);
+                    if db <= da {
+                        continue;
+                    }
+                    let mut acc = 0;
+                    let mut split: Vec<TextRun> = Vec::new();
+                    for run in runs.drain(..) {
+                        let (rs, re) = (acc, acc + run.len);
+                        acc = re;
+                        let cuts = [rs, da.clamp(rs, re), db.clamp(rs, re), re];
+                        for w in cuts.windows(2) {
+                            if w[1] > w[0] {
+                                let mut rr = run.clone();
+                                rr.len = w[1] - w[0];
+                                if w[0] >= da && w[1] <= db {
+                                    rr.underline = Some(UnderlineStyle {
+                                        color: Some(t.deleted),
+                                        thickness: px(1.),
+                                        wavy: true,
                                     });
                                 }
                                 split.push(rr);
@@ -491,7 +529,7 @@ impl Element for EditorElement {
                     Bounds::new(
                         point(
                             x0 + bounds.size.width - px(6.),
-                            y0 + px(top.clamp(0.0, h - thumb)),
+                            y0 + px(top.clamp(0.0, (h - thumb).max(0.0))),
                         ),
                         size(px(4.), px(thumb)),
                     ),

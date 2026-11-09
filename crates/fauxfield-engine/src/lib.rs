@@ -4,8 +4,10 @@
 mod engine;
 mod problem;
 mod recording;
+pub mod render;
 mod router;
 mod rules;
+pub mod template;
 mod testreq;
 mod time;
 
@@ -14,6 +16,7 @@ pub use engine::{
     parse_status_filter,
 };
 pub use recording::{Recording, Timing, to_curl};
+pub use render::{Preview, SampleRequest, preview};
 pub use router::{Match, RouteTable};
 pub use rules::{ResponseTrace, RuleTrace, Trace};
 pub use testreq::{TestRequest, TestResponse};

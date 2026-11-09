@@ -1,0 +1,51 @@
+# M6 scenario: Tera templating. The example Get user body uses fake(); check the live preview,
+# the dice icon, the Template toggle, a Route header and the Inspector seed.
+# Needs the example workspace as the launch workspace (scripts/smoke-ui.sh copies it).
+name: m06-templating
+size: default
+steps:
+  - state: [reset]
+  - open: {kind: route, id: rt_users_get}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/responses/0/template, equals: true}
+  # No seed and a fake() body: random output, dice icon shown.
+  - assert: {pointer: /servers/0/random_output, equals: true}
+  - assert_find: {text: Output is random, ids: [tree-dice-srv_users]}
+  # The preview renders after the debounce.
+  - wait_for: {condition: {pointer: /route/preview/status, equals: 200}}
+  - assert: {pointer: /route/preview/ok, equals: true}
+  - assert_find: {text: Preview, ids: [preview-pane]}
+  # Template off: the body is sent verbatim and the Response says so.
+  - click_element: {id: resp-template}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/responses/0/template, equals: false}
+  - assert: {pointer: /servers/0/random_output, equals: false}
+  - click_element: {id: resp-template}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/responses/0/template, equals: true}
+  # A Route header with a templated value.
+  - click_element: {id: subtab-rt_users_get-Headers}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/sub_tab, equals: 2}
+  - click_element: {id: route-header-add}
+  - wait_for_idle: {}
+  - type_text: X-Request-Id
+  - key: tab
+  - type_text: "{{ uuid() }}"
+  - key: enter
+  - wait_for_idle: {}
+  - assert: {pointer: /route/headers/0/0, equals: X-Request-Id}
+  - assert: {pointer: /route/headers/0/1, equals: "{{ uuid() }}"}
+  # Seed (Inspector, right dock): Deterministic picks 1, the dice icon goes away; Random clears it again.
+  - invoke: toggle_right_dock
+  - wait_for_idle: {}
+  - click_element: {id: seed-mode-deterministic}
+  - wait_for_idle: {}
+  - assert: {pointer: /servers/0/fake_seed, equals: 1}
+  - assert: {pointer: /servers/0/random_output, equals: false}
+  - click_element: {id: seed-mode-random}
+  - wait_for_idle: {}
+  - assert: {pointer: /servers/0/random_output, equals: true}
+  - audit:
+      themes: [one-dark, one-light]
+      max_errors: 0

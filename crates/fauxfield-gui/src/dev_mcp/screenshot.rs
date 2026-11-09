@@ -78,6 +78,7 @@ macro_rules! fixtures {
 
 fixtures!(
     "route-tab",
+    "response-body-editor",
     "server-tab",
     "environment-tab",
     "traffic-10k",

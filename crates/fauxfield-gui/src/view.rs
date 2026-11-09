@@ -19,6 +19,8 @@ pub struct Response {
     /// Workspace-relative file served as the body instead of `body`.
     pub body_file: Option<String>,
     pub headers: Vec<(String, String)>,
+    /// Rendered with Tera (default); false sends body, file and headers verbatim.
+    pub template: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -28,6 +30,8 @@ pub struct Route {
     pub path: String,
     pub name: String,
     pub responses: Vec<Response>,
+    /// Route headers (values templated), in file order.
+    pub headers: Vec<(String, String)>,
     /// `match` as written in the file (`None` = inferred).
     pub match_explicit: Option<String>,
     /// Effective mode: exact, param or regex.
@@ -63,6 +67,8 @@ pub struct Server {
     /// Closest-routes hint on 404 (default true).
     pub unmatched_hint: bool,
     pub strict_slash: bool,
+    /// Seed for fake data (SPEC §8.3); `None` means random output.
+    pub fake_seed: Option<u64>,
     pub running: bool,
     /// `host:port` while running (engine status).
     pub listen: Option<String>,
@@ -111,7 +117,23 @@ pub struct Workspace {
     pub datasets: Vec<String>,
 }
 
+/// Tooltip of the dice icon (SPEC §8.3).
+pub const RANDOM_OUTPUT_TIP: &str = "Output is random: set a fake_seed for deterministic data";
+
 impl Server {
+    /// True when the Server has no `fake_seed` and a templated body, Response header or Route
+    /// header uses a random function (shows the dice icon).
+    pub fn random_output(&self) -> bool {
+        use fauxfield_engine::template::is_nondeterministic as nd;
+        self.fake_seed.is_none()
+            && self.all_routes().any(|r| {
+                r.headers.iter().any(|(_, v)| nd(v))
+                    || r.responses.iter().any(|x| {
+                        x.template && (nd(&x.body) || x.headers.iter().any(|(_, v)| nd(v)))
+                    })
+            })
+    }
+
     pub fn all_routes(&self) -> impl Iterator<Item = &Route> {
         self.folders
             .iter()
@@ -219,12 +241,18 @@ impl Workspace {
                     delay_ms: x.delay_ms.unwrap_or(0) as u32,
                     body: x.body.clone().unwrap_or_default(),
                     body_file: x.body_file.clone(),
+                    template: x.template.unwrap_or(true),
                     headers: x
                         .headers
                         .iter()
                         .map(|(k, v)| (k.clone(), v.clone()))
                         .collect(),
                 })
+                .collect(),
+            headers: r
+                .headers
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
         };
         let mut datasets = vec![];
@@ -252,6 +280,7 @@ impl Workspace {
                     enabled: s.enabled,
                     unmatched_hint: s.unmatched_hint.unwrap_or(true),
                     strict_slash: s.strict_slash.unwrap_or(false),
+                    fake_seed: s.fake_seed,
                     running: false,
                     listen: None,
                     error: None,

@@ -2,12 +2,22 @@
   "$defs": {
     "Folder": {
       "properties": {
+        "collapsed": {
+          "default": false,
+          "description": "true: starts collapsed in the tree.",
+          "type": "boolean"
+        },
         "docs": {
           "default": null,
           "type": [
             "string",
             "null"
           ]
+        },
+        "enabled": {
+          "default": true,
+          "description": "false: every Route inside is skipped by the matcher (default true).",
+          "type": "boolean"
         },
         "id": {
           "type": "string"
@@ -58,11 +68,25 @@
             "null"
           ]
         },
+        "description": {
+          "default": null,
+          "description": "Optional one-line note shown under the name (SPEC §5.5). Not sent.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "disabled": {
+          "default": false,
+          "description": "true: skipped by response selection (SPEC §5.3).",
+          "type": "boolean"
+        },
         "headers": {
           "additionalProperties": {
             "type": "string"
           },
           "default": {},
+          "description": "In file order (rows of the Response headers editor keep the order they were written in).",
           "type": "object"
         },
         "id": {
@@ -75,12 +99,35 @@
             "null"
           ]
         },
+        "rules": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Rule"
+          },
+          "type": "array"
+        },
+        "rules_logic": {
+          "default": null,
+          "description": "`and` (default) or `or` (SPEC §5.4).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "status": {
           "default": 200,
           "format": "uint16",
           "maximum": 65535,
           "minimum": 0,
           "type": "integer"
+        },
+        "template": {
+          "default": null,
+          "description": "false: body, body_file and header values are sent verbatim (default true).",
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       },
       "required": [
@@ -103,6 +150,14 @@
             "string",
             "null"
           ]
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Route headers (values templated); a Response header of the same name wins (SPEC §5.5).",
+          "type": "object"
         },
         "id": {
           "type": "string"
@@ -132,6 +187,15 @@
         "path": {
           "type": "string"
         },
+        "priority": {
+          "default": null,
+          "description": "Higher wins; default 0.",
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "response_mode": {
           "default": null,
           "type": [
@@ -152,6 +216,36 @@
         "path"
       ],
       "type": "object"
+    },
+    "Rule": {
+      "description": "One condition of a Response (SPEC §5.4). Values are plain strings, numbers or arrays until M6.",
+      "properties": {
+        "key": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "negate": {
+          "default": false,
+          "type": "boolean"
+        },
+        "op": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "value": {
+          "default": null
+        }
+      },
+      "required": [
+        "target",
+        "op"
+      ],
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -166,6 +260,16 @@
     "enabled": {
       "default": true,
       "type": "boolean"
+    },
+    "fake_seed": {
+      "default": null,
+      "description": "Seed for fake data and random functions; unset means random (SPEC §8.3).",
+      "format": "uint64",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
     },
     "folders": {
       "default": [],
@@ -209,6 +313,14 @@
       "format": "uint32",
       "minimum": 0,
       "type": "integer"
+    },
+    "strict_slash": {
+      "default": null,
+      "description": "true: `/users` and `/users/` are different paths (SPEC §5.2).",
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "unmatched_hint": {
       "default": null,

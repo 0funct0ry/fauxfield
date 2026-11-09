@@ -3,6 +3,18 @@
 ## Unreleased
 
 ### Added
+- M6 Tera templating and fake data: Response bodies, `body_file` (path and contents), header values,
+  Route headers and string rule values render with Tera (`template = false` sends verbatim); context
+  `request`, `vars`, `env`, `server`, `data`, `state`; functions `fake`, `uuid`, `ulid`, `now`,
+  `random_int`, `random_float`, `pick`, `weighted`, `seq`, `repeat`, `jsonpath`, `hmac_sha256`, `jwt`,
+  `lorem`, `file` and filters `json`, `pretty_json`, `base64_encode`/`decode`, `url_encode`, `slugify`,
+  `sha256`, `pad`, `money`; 23 dotted `fake` kinds on the `fake` crate. Server `fake_seed` makes output
+  reproducible per (seed, route, call). Compiled-template cache, 50 ms budget, 10 MiB cap, workspace-confined
+  `file()`. Template errors return 500 problem+json and are recorded in Traffic (`error`). New Route
+  `headers` (Response header of the same name wins). Editor: Tera highlighting, inline syntax
+  diagnostics, context/function/filter/fake-kind autocomplete. `fauxfield render` CLI, MCP
+  `render_template`, `fake_seed`/`template`/route `headers` on the MCP write tools, and a generated
+  template reference page (`cargo xtask template-docs`).
 - M5 Multiple and conditional responses: `response_mode` (`rules`, `sequential`, `random`,
   `disabled`), per-Response `rules` (targets header, query, cookie, param, body, method, path, ip,
   count; ops eq, ne, contains, starts_with, ends_with, regex, exists, absent, gt, gte, lt, lte, in,

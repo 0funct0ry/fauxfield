@@ -63,7 +63,25 @@ pub struct RouteState {
     pub sub_tab: usize,
     pub selected_response: usize,
     pub sample_dialog: bool,
+    /// Route headers in file order (M6).
+    pub headers: Vec<(String, String)>,
     pub responses: Vec<ResponseState>,
+    /// Preview of the selected Response (M6); absent until it has rendered.
+    pub preview: Option<PreviewState>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct PreviewState {
+    pub response_id: String,
+    pub status: u16,
+    pub render_ms: f64,
+    pub error: Option<String>,
+    pub json_error: Option<String>,
+    /// No render error and no JSON error.
+    pub ok: bool,
+    pub nondeterministic: bool,
+    /// Length of the rendered body (the text is in the `<id>#preview` editor).
+    pub body_len: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -78,6 +96,8 @@ pub struct ResponseState {
     pub rules: usize,
     /// Rules that fail validation (shown inline in the Rules sub-tab).
     pub invalid_rules: usize,
+    /// Rendered with Tera (M6).
+    pub template: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -146,11 +166,11 @@ fn editors_state(shell: &Shell, cx: &App) -> Vec<EditorState> {
             out.push(editor_state(format!("file:{rid}"), e, cx));
         }
     }
-    if let Some(eds) = &shell.traffic_editors {
-        if shell.traffic_selected.is_some() {
-            out.push(editor_state("traffic:request".into(), &eds[0], cx));
-            out.push(editor_state("traffic:response".into(), &eds[1], cx));
-        }
+    if let Some(eds) = &shell.traffic_editors
+        && shell.traffic_selected.is_some()
+    {
+        out.push(editor_state("traffic:request".into(), &eds[0], cx));
+        out.push(editor_state("traffic:response".into(), &eds[1], cx));
     }
     out
 }
@@ -407,6 +427,10 @@ pub struct ServerState {
     pub prefix: String,
     pub enabled: bool,
     pub unmatched_hint: bool,
+    /// Seed for fake data; absent means random output (M6).
+    pub fake_seed: Option<u64>,
+    /// The dice icon is shown: no seed and a template uses a random function (M6).
+    pub random_output: bool,
     pub status: &'static str,
     /// `host:port` while running.
     pub address: Option<String>,
@@ -635,6 +659,8 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
                     prefix: s.prefix.clone(),
                     enabled: s.enabled,
                     unmatched_hint: s.unmatched_hint,
+                    fake_seed: s.fake_seed,
+                    random_output: s.random_output(),
                     status,
                     address,
                     error,
@@ -682,6 +708,17 @@ fn route_state(shell: &Shell) -> Option<RouteState> {
         sub_tab: shell.route_sub.get(&r.id).copied().unwrap_or(0),
         selected_response: shell.resp_sel.get(&r.id).copied().unwrap_or(0),
         sample_dialog: shell.sample_dialog.is_some(),
+        headers: r.headers.clone(),
+        preview: shell.preview.as_ref().map(|(id, p)| PreviewState {
+            response_id: id.clone(),
+            status: p.status,
+            render_ms: p.render_ms,
+            error: p.error.clone(),
+            json_error: p.json_error.clone(),
+            ok: p.error.is_none() && p.json_error.is_none(),
+            nondeterministic: p.nondeterministic,
+            body_len: p.body.len(),
+        }),
         responses: r
             .responses
             .iter()
@@ -694,6 +731,7 @@ fn route_state(shell: &Shell) -> Option<RouteState> {
                 disabled: x.disabled,
                 rules_logic: x.rules_logic.clone(),
                 rules: x.rules.len(),
+                template: x.template,
                 invalid_rules: x
                     .rules
                     .iter()

@@ -12,6 +12,7 @@ pub mod highlight;
 pub mod language_config;
 pub mod ops;
 pub mod settings;
+pub mod tera_ctx;
 
 pub use entity::{CodeEditor, EditorEvent, VarCheck};
 pub use language_config::Language;

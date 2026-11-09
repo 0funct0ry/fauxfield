@@ -106,6 +106,8 @@ pub struct CodeEditor {
     pub(crate) provider: Option<Box<dyn CompletionProvider>>,
     pub(crate) comp: Option<CompState>,
     pub(crate) var_check: Option<VarCheck>,
+    /// Inline diagnostics (byte range, message), set by the owner (Tera syntax errors, M6).
+    pub(crate) diagnostics: Vec<(Range<usize>, String)>,
     pub(crate) read_only_ranges: Vec<Range<usize>>,
     pub(crate) goto: Option<String>,
     pub(crate) last_error: Option<format::FormatError>,
@@ -152,6 +154,7 @@ impl CodeEditor {
             provider: None,
             comp: None,
             var_check: None,
+            diagnostics: Vec::new(),
             read_only_ranges: Vec::new(),
             goto: None,
             last_error: None,
@@ -306,6 +309,16 @@ impl CodeEditor {
     }
     pub fn text(&self) -> &str {
         self.buf.text()
+    }
+    /// Replace the inline diagnostics; repaints only when they changed.
+    pub fn set_diagnostics(&mut self, d: Vec<(Range<usize>, String)>, cx: &mut Context<Self>) {
+        if self.diagnostics != d {
+            self.diagnostics = d;
+            cx.notify();
+        }
+    }
+    pub fn diagnostics(&self) -> &[(Range<usize>, String)] {
+        &self.diagnostics
     }
     pub fn revision(&self) -> u64 {
         self.buf.revision()

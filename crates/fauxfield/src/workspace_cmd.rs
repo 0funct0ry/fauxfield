@@ -556,3 +556,116 @@ pub fn workspace(action: WorkspaceAction) -> i32 {
         }
     }
 }
+
+#[derive(clap::Args, Debug)]
+pub struct RenderArgs {
+    /// Server ID, name or file slug.
+    pub server: String,
+    /// Route ID.
+    pub route: String,
+    /// Response ID (default: the Route's default or first Response).
+    #[arg(long)]
+    pub response: Option<String>,
+    /// Sample request method (default: the Route's method).
+    #[arg(long)]
+    pub method: Option<String>,
+    /// Sample request path and query, relative to the Server prefix (default: the Route path).
+    #[arg(long)]
+    pub url: Option<String>,
+    /// Sample request header `Name: value` (repeatable).
+    #[arg(short = 'H', long = "header", value_name = "NAME:VALUE")]
+    pub headers: Vec<String>,
+    /// Sample request body.
+    #[arg(long, default_value = "")]
+    pub body: String,
+    /// Override the Server's fake_seed for this render.
+    #[arg(long)]
+    pub seed: Option<u64>,
+    #[command(flatten)]
+    pub ws: WsArgs,
+}
+
+pub fn render(a: RenderArgs) -> i32 {
+    let store = match open_store(&a.ws) {
+        Ok(s) => s,
+        Err(c) => return c,
+    };
+    let snap = store.snapshot();
+    let slug = |f: &str| {
+        Path::new(f)
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    let Some((_, server)) = snap
+        .servers
+        .iter()
+        .find(|(f, s)| s.id == a.server || s.name == a.server || slug(f) == a.server)
+    else {
+        eprintln!("error: not found: server `{}`", a.server);
+        return EXIT_USAGE;
+    };
+    let Some(route) = server.routes.iter().find(|r| r.id == a.route) else {
+        eprintln!("error: not found: route `{}`", a.route);
+        return EXIT_USAGE;
+    };
+    let resp = match &a.response {
+        Some(id) => route.responses.iter().find(|r| r.id == *id),
+        None => route
+            .responses
+            .iter()
+            .find(|r| r.default)
+            .or(route.responses.first()),
+    };
+    let Some(resp) = resp else {
+        eprintln!("error: not found: response in route `{}`", route.id);
+        return EXIT_USAGE;
+    };
+    let mut server = server.clone();
+    if a.seed.is_some() {
+        server.fake_seed = a.seed;
+    }
+    let headers = a
+        .headers
+        .iter()
+        .filter_map(|h| h.split_once(':'))
+        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+        .collect();
+    let url = a.url.clone().unwrap_or_else(|| {
+        format!(
+            "{}{}",
+            server.prefix.clone().unwrap_or_default(),
+            route.path.replace(['{', '}'], "")
+        )
+    });
+    let sample = fauxfield_engine::SampleRequest {
+        method: a.method.clone().unwrap_or_else(|| route.method.clone()),
+        url,
+        headers,
+        body: a.body.clone(),
+    };
+    let p = fauxfield_engine::preview(&store.root(), &server, route, resp, &sample, None);
+    if a.ws.json {
+        print_json(&serde_json::json!({
+            "server": server.id,
+            "route": route.id,
+            "response": resp.id,
+            "status": p.status,
+            "headers": p.headers.iter().map(|(k, v)| serde_json::json!([k, v])).collect::<Vec<_>>(),
+            "body": p.body,
+            "render_ms": p.render_ms,
+            "error": p.error,
+            "json_error": p.json_error,
+            "deterministic": !p.nondeterministic,
+        }));
+    } else {
+        for (k, v) in &p.headers {
+            eprintln!("{k}: {v}");
+        }
+        println!("{}", p.body);
+        if let Some(e) = &p.error {
+            eprintln!("error: {e}");
+        }
+    }
+    if p.error.is_some() { EXIT_USAGE } else { 0 }
+}

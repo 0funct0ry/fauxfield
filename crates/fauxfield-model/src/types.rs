@@ -76,6 +76,9 @@ pub struct Server {
     pub strict_slash: Option<bool>,
     #[serde(default)]
     pub docs: Option<String>,
+    /// Seed for fake data and random functions; unset means random (SPEC §8.3).
+    #[serde(default)]
+    pub fake_seed: Option<u64>,
     #[serde(default)]
     #[schemars(with = "BTreeMap<String, serde_json::Value>")]
     pub variables: BTreeMap<String, toml::Value>,
@@ -126,6 +129,10 @@ pub struct Route {
     pub response_mode: Option<String>,
     #[serde(default)]
     pub docs: Option<String>,
+    /// Route headers (values templated); a Response header of the same name wins (SPEC §5.5).
+    #[serde(default)]
+    #[schemars(with = "BTreeMap<String, String>")]
+    pub headers: indexmap::IndexMap<String, String>,
     #[serde(default)]
     pub responses: Vec<Response>,
     #[serde(flatten)]
@@ -159,6 +166,9 @@ pub struct Response {
     pub body: Option<String>,
     #[serde(default)]
     pub body_file: Option<String>,
+    /// false: body, body_file and header values are sent verbatim (default true).
+    #[serde(default)]
+    pub template: Option<bool>,
     #[serde(default)]
     pub delay_ms: Option<u64>,
     /// In file order (rows of the Response headers editor keep the order they were written in).

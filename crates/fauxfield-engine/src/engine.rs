@@ -135,6 +135,7 @@ struct ServerRt {
     status: Mutex<ServerStatus>,
     counters: crate::rules::Counters,
     compiled: crate::rules::Compiled,
+    seq: crate::template::Sequences,
 }
 
 struct Inner {
@@ -243,6 +244,7 @@ impl Engine {
                             status: Mutex::new(ServerStatus::Stopped),
                             counters: Default::default(),
                             compiled: Default::default(),
+                            seq: Default::default(),
                         }),
                     ));
                 }
@@ -421,6 +423,7 @@ impl Engine {
     pub fn reset_state(&self) {
         for (_, rt) in self.inner.servers.lock().unwrap().iter() {
             rt.counters.reset();
+            rt.seq.lock().unwrap().clear();
         }
     }
 
@@ -552,7 +555,7 @@ async fn serve(
     let _ = tokio::time::timeout(DRAIN, graceful.shutdown()).await;
 }
 
-fn json_response(
+pub(crate) fn json_response(
     status: u16,
     body: serde_json::Value,
     ct: &str,
@@ -615,6 +618,7 @@ async fn handle(
     let mut delay_ms = 0;
     let mut trace = None;
     let mut chosen: (String, String) = Default::default();
+    let mut render_error: Option<String> = None;
     let (route_id, (status, headers, bytes)) = match &route {
         None => {
             let closest = table.closest(&method, &path);
@@ -633,7 +637,26 @@ async fn handle(
                 .iter()
                 .map(|(k, v)| (k.to_ascii_lowercase(), v.clone()))
                 .collect();
-            let ctx = crate::rules::Ctx::new(
+            let server_def = rt.def.lock().unwrap().clone();
+            let req_id = engine.inner.seq.load(Ordering::Relaxed);
+            let tpl = crate::render::TplEnv {
+                context: crate::render::context(
+                    &server_def,
+                    &method,
+                    &url,
+                    &lc_headers,
+                    &params,
+                    Some(&ip),
+                    &body,
+                    req_id,
+                    call,
+                ),
+                seed: server_def.fake_seed,
+                route_id: r.id.clone(),
+                counter: call,
+                seq: Some(rt.seq.clone()),
+            };
+            let mut ctx = crate::rules::Ctx::new(
                 &method,
                 &url,
                 &lc_headers,
@@ -643,6 +666,7 @@ async fn handle(
                 call,
                 &engine.inner.cfg.root,
             );
+            ctx.tpl = Some(tpl.clone());
             let (picked, t) = crate::rules::select(r, &ctx, &rt.compiled);
             trace = Some(t);
             let out = match picked {
@@ -653,7 +677,12 @@ async fn handle(
                     if delay_ms > 0 {
                         tokio::time::sleep(Duration::from_millis(delay_ms)).await;
                     }
-                    build_response(&engine.inner.cfg.root, resp, &path)
+                    {
+                        let out =
+                            crate::render::build(&engine.inner.cfg.root, r, resp, &tpl, &path);
+                        render_error = out.error;
+                        (out.status, out.headers, out.body)
+                    }
                 }
             };
             (r.id.clone(), out)
@@ -694,6 +723,7 @@ async fn handle(
                 total_ms: started.elapsed().as_millis() as u64,
             },
             truncated: req_cut || resp_cut,
+            error: render_error,
             source: if is_test { "test" } else { "mock" }.into(),
         },
     );
@@ -706,44 +736,6 @@ async fn handle(
     b.body(Full::new(bytes)).unwrap_or_else(|_| {
         HyperResponse::new(Full::new(Bytes::from_static(b"invalid response headers")))
     })
-}
-
-fn build_response(
-    root: &std::path::Path,
-    resp: &fauxfield_model::Response,
-    path: &str,
-) -> (u16, Vec<(String, String)>, Bytes) {
-    let mut headers: Vec<(String, String)> = resp
-        .headers
-        .iter()
-        .map(|(k, v)| (k.to_ascii_lowercase(), v.clone()))
-        .collect();
-    let body: Bytes = if let Some(file) = &resp.body_file {
-        match read_confined(root, file) {
-            Ok(b) => Bytes::from(b),
-            Err(e) => {
-                return json_response(
-                    500,
-                    problem::server_error(&format!("body_file `{file}`: {e}"), path),
-                    "application/problem+json",
-                );
-            }
-        }
-    } else {
-        Bytes::from(resp.body.clone().unwrap_or_default())
-    };
-    if let Some(ct) = &resp.content_type {
-        headers.retain(|(k, _)| k != "content-type");
-        headers.push(("content-type".into(), ct.clone()));
-    } else if !body.is_empty() && !headers.iter().any(|(k, _)| k == "content-type") {
-        headers.push(("content-type".into(), "text/plain; charset=utf-8".into()));
-    }
-    let status = if (100..=599).contains(&resp.status) {
-        resp.status
-    } else {
-        500
-    };
-    (status, headers, body)
 }
 
 pub(crate) fn read_confined(root: &std::path::Path, file: &str) -> Result<Vec<u8>, String> {

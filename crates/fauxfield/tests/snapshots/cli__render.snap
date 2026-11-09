@@ -1,0 +1,21 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "body": "GET <name>",
+  "deterministic": true,
+  "error": null,
+  "headers": [
+    [
+      "content-type",
+      "text/plain; charset=utf-8"
+    ]
+  ],
+  "json_error": null,
+  "render_ms": 0,
+  "response": "<response>",
+  "route": "<route>",
+  "server": "<server>",
+  "status": 200
+}
