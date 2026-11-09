@@ -236,3 +236,42 @@ fn workspace_info_and_rename_are_stable() {
             .contains("My Mocks")
     );
 }
+
+#[test]
+fn route_add_variants_are_stable() {
+    let dir = workspace();
+    let p = dir.path().to_str().unwrap();
+    let add = |args: &[&str]| {
+        let mut a = vec!["route", "add", "example-api"];
+        a.extend_from_slice(args);
+        a.extend_from_slice(&["-w", p, "--json"]);
+        run(&a)
+    };
+    let (code, out, _) = add(&["get", "/users/:id", "--name", "User"]);
+    assert_eq!(code, 0, "{out}");
+    let mut v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    v["id"] = "<id>".into();
+    v["server"] = "<srv>".into();
+    snap_json(Some("route_add_param"), &v);
+    let (code, out, _) = add(&[
+        "any",
+        "^/v[0-9]+/x$",
+        "--match",
+        "regex",
+        "--priority",
+        "-2",
+    ]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["match"], "regex");
+    assert_eq!(v["priority"], -2);
+    let (code, _, err) = add(&["get", "/x", "--folder", "nope"]);
+    assert_eq!((code, err.contains("unknown folder")), (2, true));
+    let (code, _, err) = add(&["get", "/a/*x/b"]);
+    assert_eq!((code, err.contains("last segment")), (3, true));
+    // duplicate pattern: succeeds with a shadow warning
+    let (code, out, _) = add(&["get", "/users/:id"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["warnings"][0]["code"], "W051");
+}

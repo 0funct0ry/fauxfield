@@ -363,15 +363,17 @@ fn creating_renaming_and_deleting_edits_the_files(cx: &mut TestAppContext) {
         s.run_action_id("edit_response_status", w, cx)
     });
     cx.run_until_parked();
-    for _ in 0..3 {
-        view.update(cx, |s, cx| s.picker_backspace(cx));
-    }
-    type_prompt(&view, cx, "418");
+    // The status is an inline field now: type over the selected value and commit.
+    view.update_in(cx, |s, w, cx| {
+        s.inline.as_mut().unwrap().buf = crate::editor::TextBuf::new("418");
+        s.commit_inline(crate::response_pane::Nav::Stay, w, cx);
+    });
     assert_eq!(
         read(&view, cx, |s| s.ws.find_route(&rid).unwrap().1.responses[0]
             .status),
         418
     );
+    cx.run_until_parked(); // renders, so the Edit menu knows there is something to undo
     view.update_in(cx, |s, w, cx| s.run_action_id("undo", w, cx));
     assert_eq!(
         read(&view, cx, |s| s.ws.find_route(&rid).unwrap().1.responses[0]
@@ -1189,4 +1191,383 @@ fn sidebar_tabs_switch_reveal_and_guard_hidden_rows(cx: &mut TestAppContext) {
         s.activate_tab(0, cx);
     });
     assert_eq!(read(&view, cx, |s| s.sidebar_tab), SidebarTab::Environments);
+}
+
+#[gpui::test]
+fn moves_drops_and_folder_flags_edit_the_files(cx: &mut TestAppContext) {
+    use crate::tree::MenuAct;
+    let (view, cx) = setup(cx, None);
+    let order = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
+        read(view, cx, |s| {
+            let u = s.ws.find_server("srv_users").unwrap();
+            (
+                u.folders[0]
+                    .routes
+                    .iter()
+                    .map(|r| r.id.clone())
+                    .collect::<Vec<_>>(),
+                u.routes.iter().map(|r| r.id.clone()).collect::<Vec<_>>(),
+            )
+        })
+    };
+    let (inside, _) = order(&view, cx);
+    assert!(inside.len() >= 2);
+    // Alt+Down moves the first route after the second.
+    view.update(cx, |s, cx| s.move_row(&inside[0], 1, cx));
+    let (after, _) = order(&view, cx);
+    assert_eq!((&after[0], &after[1]), (&inside[1], &inside[0]));
+    // Dropping a route on its Server row moves it to the root.
+    view.update(cx, |s, cx| s.drop_row(&inside[0], "srv_users", cx));
+    let (folder, root) = order(&view, cx);
+    assert!(!folder.contains(&inside[0]) && root.last() == Some(&inside[0]));
+    // Dropping it on the Folder row puts it back; cross-server drops do nothing.
+    view.update(cx, |s, cx| s.drop_row(&inside[0], "fld_users", cx));
+    assert!(order(&view, cx).0.contains(&inside[0]));
+    view.update(cx, |s, cx| s.drop_row(&inside[0], "srv_payments", cx));
+    assert!(order(&view, cx).0.contains(&inside[0]));
+    // Folder flags: disable all routes and start collapsed are written, defaults are removed.
+    view.update_in(cx, |s, w, cx| {
+        s.open_menu("fld_users", 0.0, 0.0, cx);
+        s.run_menu(MenuAct::FolderToggleEnabled, w, cx);
+        s.open_menu("fld_users", 0.0, 0.0, cx);
+        s.run_menu(MenuAct::FolderToggleCollapsed, w, cx);
+    });
+    let (en, col) = read(&view, cx, |s| {
+        let f = &s.ws.find_server("srv_users").unwrap().folders[0];
+        (f.enabled, f.collapsed)
+    });
+    assert!(!en && col);
+    // Delete with routes removes them.
+    view.update_in(cx, |s, w, cx| {
+        s.open_menu("fld_users", 0.0, 0.0, cx);
+        s.run_menu(MenuAct::DeleteWithRoutes, w, cx);
+    });
+    assert!(read(&view, cx, |s| {
+        s.ws.find_server("srv_users").unwrap().folders.is_empty()
+            && s.ws.find_route(&inside[0]).is_none()
+    }));
+}
+
+#[gpui::test]
+fn response_menu_body_editor_and_headers(cx: &mut TestAppContext) {
+    use crate::tree::MenuAct;
+    let (view, cx) = setup(cx, None);
+    let resp = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
+        read(view, cx, |s| {
+            s.ws.find_route("rt_users_get")
+                .unwrap()
+                .1
+                .responses
+                .iter()
+                .map(|r| (r.id.clone(), r.default, r.name.clone()))
+                .collect::<Vec<_>>()
+        })
+    };
+    let before = resp(&view, cx);
+    assert!(before[0].1 && !before[1].1);
+    // Set as default, rename through the menu's prompt, then delete.
+    view.update_in(cx, |s, w, cx| {
+        s.open_response_menu("rsp_users_get_2", 0.0, 0.0, cx);
+        s.run_menu(MenuAct::SetDefaultResponse, w, cx);
+    });
+    assert!(!resp(&view, cx)[0].1 && resp(&view, cx)[1].1);
+    view.update_in(cx, |s, w, cx| {
+        s.open_response_menu("rsp_users_get_2", 0.0, 0.0, cx);
+        s.run_menu(MenuAct::Rename, w, cx);
+    });
+    view.update(cx, |s, cx| s.edit_select_all(cx));
+    type_prompt(&view, cx, "Gone");
+    assert_eq!(resp(&view, cx)[1].2, "Gone");
+    view.update_in(cx, |s, w, cx| {
+        s.open_response_menu("rsp_users_get_1", 0.0, 0.0, cx);
+        s.run_menu(MenuAct::Delete, w, cx);
+    });
+    assert_eq!(resp(&view, cx).len(), 1);
+
+    // Inline fields: status code and delay.
+    use crate::response_pane::{InlineTarget as I, Nav};
+    let r = "rsp_users_get_2".to_string();
+    let type_field = |view: &Entity<Shell>, cx: &mut VisualTestContext, t: I, text: &str| {
+        view.update_in(cx, |s, w, cx| {
+            s.begin_inline(t, "", false, w, cx);
+            s.inline.as_mut().unwrap().buf = crate::editor::TextBuf::new(text);
+            s.commit_inline(Nav::Stay, w, cx);
+        });
+    };
+    type_field(&view, cx, I::Status(r.clone()), "503");
+    type_field(&view, cx, I::Delay(r.clone()), "250");
+    type_field(&view, cx, I::Status(r.clone()), "42"); // rejected
+    let x = read(&view, cx, |s| s.find_response(&r).unwrap().2);
+    assert_eq!((x.status, x.delay_ms), (503, 250));
+    // Body from a file, then back to inline.
+    view.update_in(cx, |s, w, cx| s.set_body_file_mode(&r, true, w, cx));
+    view.update_in(cx, |s, w, cx| {
+        s.inline.as_mut().unwrap().buf = crate::editor::TextBuf::new("bodies/user.json");
+        s.commit_inline(Nav::Stay, w, cx);
+    });
+    assert_eq!(
+        read(&view, cx, |s| s.find_response(&r).unwrap().2.body_file),
+        Some("bodies/user.json".to_string())
+    );
+    view.update_in(cx, |s, w, cx| s.set_body_file_mode(&r, false, w, cx));
+    assert_eq!(
+        read(&view, cx, |s| s.find_response(&r).unwrap().2.body_file),
+        None
+    );
+
+    // Body editor: edit, commit, JSON auto content type, format.
+    let new = view.update(cx, |s, cx| {
+        let id = s
+            .store
+            .as_ref()
+            .unwrap()
+            .create_response("rt_users_get")
+            .unwrap();
+        s.reload(cx);
+        id
+    });
+    view.update_in(cx, |s, w, cx| {
+        s.begin_body_edit(&new, w, cx);
+        s.body_edit.as_mut().unwrap().buf = crate::editor::TextBuf::new("{\"a\":[1,2]}");
+        s.commit_body_edit(cx);
+    });
+    let (body, ct) = read(&view, cx, |s| {
+        let x = s.find_response(&new).unwrap().2;
+        (x.body, x.content_type)
+    });
+    assert_eq!(
+        (body.as_str(), ct.as_str()),
+        ("{\"a\":[1,2]}", "application/json")
+    );
+    view.update(cx, |s, cx| s.format_body(&new, cx));
+    assert!(read(&view, cx, |s| s
+        .find_response(&new)
+        .unwrap()
+        .2
+        .body
+        .contains("\n  \"a\"")));
+}
+
+#[gpui::test]
+fn prompt_input_supports_caret_selection_and_clipboard(cx: &mut TestAppContext) {
+    use crate::shell::PromptAction;
+    let (view, cx) = setup(cx, None);
+    let q = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
+        read(view, cx, |s| s.picker.as_ref().map(|p| p.query.clone())).unwrap()
+    };
+    view.update_in(cx, |s, w, cx| {
+        s.begin_prompt(PromptAction::RenameWorkspace, "", w, cx)
+    });
+    cx.run_until_parked();
+    cx.simulate_input("abc");
+    cx.simulate_keystrokes("left left");
+    cx.simulate_input("x");
+    assert_eq!(q(&view, cx), "axbc");
+    cx.simulate_keystrokes("shift-end");
+    cx.simulate_input("Z");
+    assert_eq!(q(&view, cx), "axZ");
+    cx.simulate_keystrokes("home delete");
+    assert_eq!(q(&view, cx), "xZ");
+    cx.simulate_keystrokes("shift-right");
+    cx.simulate_keystrokes("backspace");
+    assert_eq!(q(&view, cx), "Z");
+    // Select all, copy, cut, paste.
+    cx.simulate_keystrokes("secondary-a secondary-c secondary-x");
+    assert_eq!(q(&view, cx), "");
+    cx.simulate_keystrokes("secondary-v secondary-v");
+    assert_eq!(q(&view, cx), "ZZ");
+    cx.simulate_keystrokes("secondary-a");
+    cx.simulate_input("q");
+    assert_eq!(q(&view, cx), "q");
+}
+
+#[gpui::test]
+fn body_editor_helps_typing_and_formats_on_paste_and_save(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    let new = view.update(cx, |s, cx| {
+        let id = s
+            .store
+            .as_ref()
+            .unwrap()
+            .create_response("rt_users_get")
+            .unwrap();
+        s.reload(cx);
+        id
+    });
+    let key = |view: &Entity<Shell>, cx: &mut VisualTestContext, k: &str, ch: Option<&str>| {
+        let mut ks = gpui::Keystroke::parse(k).unwrap();
+        ks.key_char = ch.map(String::from);
+        let ev = gpui::KeyDownEvent {
+            keystroke: ks,
+            is_held: false,
+        };
+        view.update(cx, |s, cx| s.on_body_key(&ev, cx));
+    };
+    let text = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
+        read(view, cx, |s| s.body_edit.as_ref().unwrap().buf.text.clone())
+    };
+    view.update_in(cx, |s, w, cx| s.begin_body_edit(&new, w, cx));
+    // `{` Enter `"a"` `:` ` 1`: brackets and quotes close, Enter indents.
+    key(&view, cx, "{", Some("{"));
+    key(&view, cx, "enter", None);
+    key(&view, cx, "\"", Some("\""));
+    key(&view, cx, "a", Some("a"));
+    key(&view, cx, "\"", Some("\""));
+    assert_eq!(text(&view, cx), "{\n  \"a\"\n}");
+    // Backspace through the pair, then paste over a fully selected body formats valid JSON.
+    view.update(cx, |s, cx| {
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string("{\"k\":[1,2]}".into()));
+        s.edit_select_all(cx);
+        s.edit_paste(cx);
+    });
+    assert_eq!(text(&view, cx), "{\n  \"k\": [\n    1,\n    2\n  ]\n}");
+    // Format on save rewrites a compact body when the body is committed.
+    view.update(cx, |s, cx| {
+        s.layout.format_on_save = true;
+        s.body_edit.as_mut().unwrap().buf = crate::editor::TextBuf::new("{\"x\":1}");
+        s.commit_body_edit(cx);
+    });
+    assert_eq!(
+        read(&view, cx, |s| s.find_response(&new).unwrap().2.body),
+        "{\n  \"x\": 1\n}"
+    );
+}
+
+#[gpui::test]
+fn headers_table_edits_completes_and_navigates(cx: &mut TestAppContext) {
+    use crate::header_catalog::Col;
+    use crate::response_pane::InlineTarget as I;
+    let (view, cx) = setup(cx, None);
+    let r = view.update(cx, |s, cx| {
+        let id = s
+            .store
+            .as_ref()
+            .unwrap()
+            .create_response("rt_users_get")
+            .unwrap();
+        s.reload(cx);
+        id
+    });
+    let key = |view: &Entity<Shell>, cx: &mut VisualTestContext, k: &str, ch: Option<&str>| {
+        let mut ks = gpui::Keystroke::parse(k).unwrap();
+        ks.key_char = ch.map(String::from);
+        let ev = gpui::KeyDownEvent {
+            keystroke: ks,
+            is_held: false,
+        };
+        view.update_in(cx, |s, w, cx| s.on_field_key(&ev, w, cx));
+    };
+    let typed = |view: &Entity<Shell>, cx: &mut VisualTestContext, text: &str| {
+        for c in text.chars() {
+            let c = c.to_string();
+            key(view, cx, &c, Some(&c));
+        }
+    };
+    let headers = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
+        read(view, cx, |s| {
+            let x = s.find_response(&r).unwrap().2;
+            (x.content_type, x.headers)
+        })
+    };
+    let active = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
+        read(view, cx, |s| s.inline.as_ref().map(|i| i.target.clone()))
+    };
+    let hdr = |k: &str, v: &str| (k.to_string(), v.to_string());
+
+    // Key completion: "content-ty" offers Content-Type first; Enter accepts it and moves to
+    // the value, whose completions are the MIME types; "json" + Enter accepts application/json.
+    view.update_in(cx, |s, w, cx| s.begin_header_cell(&r, 0, Col::Key, w, cx));
+    typed(&view, cx, "content-ty");
+    assert_eq!(
+        read(&view, cx, |s| s.inline_suggestions()[0].label),
+        "Content-Type"
+    );
+    key(&view, cx, "enter", None);
+    assert_eq!(
+        active(&view, cx),
+        Some(I::HeaderValue {
+            response: r.clone(),
+            row: 0
+        })
+    );
+    assert!(read(&view, cx, |s| s.pending_header.is_some()));
+    assert!(read(&view, cx, |s| {
+        s.inline_suggestions()
+            .iter()
+            .any(|x| x.label == "text/html")
+    }));
+    typed(&view, cx, "json");
+    // "json" is only a substring of the types: Down chooses one explicitly.
+    key(&view, cx, "down", None);
+    key(&view, cx, "enter", None);
+    assert_eq!(headers(&view, cx).0, "application/json");
+    assert_eq!(active(&view, cx), None);
+
+    // Tab walks Key -> Value -> next row's Key and opens new rows as it goes.
+    view.update_in(cx, |s, w, cx| s.begin_header_cell(&r, 1, Col::Key, w, cx));
+    typed(&view, cx, "x-a");
+    key(&view, cx, "tab", None);
+    typed(&view, cx, "1");
+    key(&view, cx, "tab", None);
+    assert_eq!(
+        active(&view, cx),
+        Some(I::HeaderKey {
+            response: r.clone(),
+            row: 2
+        })
+    );
+    typed(&view, cx, "x-b");
+    key(&view, cx, "tab", None);
+    typed(&view, cx, "2");
+    key(&view, cx, "shift-tab", None);
+    assert_eq!(
+        active(&view, cx),
+        Some(I::HeaderKey {
+            response: r.clone(),
+            row: 2
+        })
+    );
+    key(&view, cx, "escape", None);
+    assert_eq!(
+        headers(&view, cx),
+        (
+            "application/json".into(),
+            vec![hdr("x-a", "1"), hdr("x-b", "2")].into_iter().collect()
+        )
+    );
+
+    // Renaming keeps the row in place; a duplicate name is refused.
+    view.update_in(cx, |s, w, cx| s.begin_header_cell(&r, 1, Col::Key, w, cx));
+    typed(&view, cx, "x-first");
+    key(&view, cx, "enter", None);
+    key(&view, cx, "escape", None);
+    let order = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
+        headers(view, cx).1.into_iter().collect::<Vec<_>>()
+    };
+    assert_eq!(order(&view, cx), vec![hdr("x-first", "1"), hdr("x-b", "2")]);
+    view.update_in(cx, |s, w, cx| s.begin_header_cell(&r, 2, Col::Key, w, cx));
+    typed(&view, cx, "X-FIRST");
+    key(&view, cx, "enter", None);
+    assert_eq!(order(&view, cx), vec![hdr("x-first", "1"), hdr("x-b", "2")]);
+
+    // Escape closes the popup first and only then cancels; Backspace edits the text.
+    view.update_in(cx, |s, w, cx| s.begin_header_cell(&r, 3, Col::Key, w, cx));
+    typed(&view, cx, "cac");
+    assert!(read(&view, cx, |s| !s.inline_suggestions().is_empty()));
+    key(&view, cx, "escape", None);
+    assert!(read(&view, cx, |s| s.inline.is_some()
+        && s.inline_suggestions().is_empty()));
+    // Editing the text reopens the popup, so it takes two Escapes again.
+    key(&view, cx, "backspace", None);
+    assert!(read(&view, cx, |s| !s.inline_suggestions().is_empty()));
+    key(&view, cx, "escape", None);
+    key(&view, cx, "escape", None);
+    assert_eq!(active(&view, cx), None);
+    assert_eq!(order(&view, cx).len(), 2);
+
+    // Removing rows: Content-Type clears the field, others the header.
+    view.update(cx, |s, cx| s.remove_header_row(&r, 0, cx));
+    assert_eq!(headers(&view, cx).0, "");
+    view.update(cx, |s, cx| s.remove_header_row(&r, 0, cx));
+    assert_eq!(order(&view, cx), vec![hdr("x-b", "2")]);
 }

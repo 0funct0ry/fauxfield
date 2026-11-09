@@ -13,7 +13,7 @@ pub use engine::{
     parse_status_filter,
 };
 pub use recording::{Recording, Timing, to_curl};
-pub use router::RouteTable;
+pub use router::{Match, RouteTable};
 pub use testreq::{TestRequest, TestResponse};
 
 /// Current time as RFC 3339 UTC (for `host.json` and log lines).

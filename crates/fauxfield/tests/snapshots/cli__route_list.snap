@@ -1,6 +1,6 @@
 ---
 source: crates/fauxfield/tests/cli.rs
-expression: redact(out)
+expression: v
 ---
 {
   "routes": [
@@ -8,11 +8,14 @@ expression: redact(out)
       "folder": null,
       "id": "<rte-id>",
       "kind": "http",
+      "match": null,
       "method": "GET",
       "name": "Health",
       "path": "/health",
+      "priority": 0,
       "responses": 1,
-      "server": "<srv-id>"
+      "server": "<srv-id>",
+      "shadowed_by": null
     }
   ]
 }

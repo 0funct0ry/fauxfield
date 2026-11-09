@@ -7,7 +7,7 @@ use fauxfield_model::Severity;
 use fauxfield_store::{Store, discover, init_workspace};
 use serde_json::json;
 
-use crate::cli::{EXIT_OK, EXIT_RUNTIME, EXIT_VALIDATION};
+use crate::cli::{EXIT_OK, EXIT_RUNTIME, EXIT_USAGE, EXIT_VALIDATION};
 
 #[derive(clap::Args, Debug)]
 pub struct WsArgs {
@@ -45,6 +45,29 @@ pub enum RouteAction {
         /// Only Routes of this Server (ID, name, or file slug).
         #[arg(long)]
         server: Option<String>,
+        #[command(flatten)]
+        ws: WsArgs,
+    },
+    /// Add a Route to a Server file (a running host hot-reloads).
+    Add {
+        /// Server (ID, name, or file slug).
+        server: String,
+        /// HTTP method (case-insensitive) or ANY.
+        method: String,
+        /// Path or pattern (`/users/:id`, `/files/*rest`, or a regex with --match regex).
+        path: String,
+        /// Match mode; omitted means inferred and nothing is written.
+        #[arg(long = "match", value_name = "MODE", value_parser = ["exact", "param", "regex"])]
+        match_mode: Option<String>,
+        /// Folder (ID or unique name).
+        #[arg(long)]
+        folder: Option<String>,
+        /// Route name.
+        #[arg(long)]
+        name: Option<String>,
+        /// Priority (higher wins; default 0).
+        #[arg(long, allow_hyphen_values = true)]
+        priority: Option<i32>,
         #[command(flatten)]
         ws: WsArgs,
     },
@@ -170,7 +193,10 @@ pub fn server(action: ServerAction) -> i32 {
 }
 
 pub fn route(action: RouteAction) -> i32 {
-    let RouteAction::List { server, ws } = action;
+    let (server, ws) = match action {
+        RouteAction::List { server, ws } => (server, ws),
+        RouteAction::Add { .. } => return route_add(action),
+    };
     let store = match open_store(&ws) {
         Ok(s) => s,
         Err(c) => return c,
@@ -191,13 +217,18 @@ pub fn route(action: RouteAction) -> i32 {
         {
             continue;
         }
+        let shadows = fauxfield_model::pattern::shadowed_routes(s);
         for r in &s.routes {
+            let shadowed_by = shadows
+                .iter()
+                .find(|x| x.route == r.id)
+                .map(|x| x.by.clone());
             let folder = r
                 .folder
                 .as_ref()
                 .and_then(|id| s.folders.iter().find(|f| &f.id == id))
                 .map(|f| f.name.clone());
-            rows.push(json!({ "id": r.id, "server": s.id, "folder": folder, "kind": r.kind, "method": r.method, "path": r.path, "name": r.name, "responses": r.responses.len() }));
+            rows.push(json!({ "id": r.id, "server": s.id, "folder": folder, "kind": r.kind, "method": r.method, "path": r.path, "name": r.name, "responses": r.responses.len(), "match": r.match_mode, "priority": r.priority.unwrap_or(0), "shadowed_by": shadowed_by }));
         }
     }
     if ws.json {
@@ -212,6 +243,113 @@ pub fn route(action: RouteAction) -> i32 {
                 r["method"].as_str().unwrap(),
                 r["path"].as_str().unwrap(),
                 r["responses"]
+            );
+        }
+    }
+    EXIT_OK
+}
+
+fn route_add(action: RouteAction) -> i32 {
+    let RouteAction::Add {
+        server,
+        method,
+        path,
+        match_mode,
+        folder,
+        name,
+        priority,
+        ws,
+    } = action
+    else {
+        return EXIT_USAGE;
+    };
+    let store = match open_store(&ws) {
+        Ok(s) => s,
+        Err(c) => return c,
+    };
+    let usage = |m: String| {
+        eprintln!("error: {m}");
+        EXIT_USAGE
+    };
+    let snap = store.snapshot();
+    let slug = |f: &str| {
+        Path::new(f)
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    let Some((file, srv)) = snap
+        .servers
+        .iter()
+        .find(|(f, s)| s.id == server || s.name == server || slug(f) == server)
+    else {
+        return usage(format!("unknown server `{server}`"));
+    };
+    let method = method.to_ascii_uppercase();
+    if ![
+        "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "ANY",
+    ]
+    .contains(&method.as_str())
+    {
+        return usage(format!("unknown method `{method}`"));
+    }
+    let folder_id = match &folder {
+        None => None,
+        Some(q) => {
+            let by_id: Vec<_> = srv.folders.iter().filter(|f| &f.id == q).collect();
+            let hits = if by_id.is_empty() {
+                srv.folders.iter().filter(|f| &f.name == q).collect()
+            } else {
+                by_id
+            };
+            match hits.as_slice() {
+                [f] => Some(f.id.clone()),
+                [] => return usage(format!("unknown folder `{q}`")),
+                _ => return usage(format!("folder name `{q}` is ambiguous; use its ID")),
+            }
+        }
+    };
+    let _ = file;
+    let opts = fauxfield_store::RouteOpts {
+        match_mode: match_mode.clone(),
+        name,
+        priority,
+    };
+    let id = match store.create_route_with(&srv.id, folder_id.as_deref(), &method, &path, &opts) {
+        Ok(id) => id,
+        Err(fauxfield_store::StoreError::Invalid(m)) => {
+            eprintln!("error[E033]: {m}");
+            return EXIT_VALIDATION;
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            return EXIT_RUNTIME;
+        }
+    };
+    if let Err(e) = store.flush() {
+        eprintln!("error: {e}");
+        return EXIT_RUNTIME;
+    }
+    let after = store.snapshot();
+    let warnings: Vec<_> = after
+        .diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Warning && d.path == format!("routes[{id}]"))
+        .map(|d| json!({ "code": d.code, "message": d.message }))
+        .collect();
+    if ws.json {
+        print_json(&json!({
+            "id": id, "server": srv.id, "method": method, "path": path,
+            "match": match_mode, "folder": folder_id,
+            "priority": priority.unwrap_or(0), "warnings": warnings,
+        }));
+    } else {
+        println!("Added {id}  {method} {path}");
+        for w in &warnings {
+            eprintln!(
+                "warning[{}]: {}",
+                w["code"].as_str().unwrap(),
+                w["message"].as_str().unwrap()
             );
         }
     }

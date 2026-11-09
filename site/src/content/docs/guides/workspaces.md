@@ -48,6 +48,9 @@ a problem to open its Route or Server. The server file JSON Schema is published 
 | E020 | Port already used by another enabled Server |
 | E030 | Route names an unknown Folder |
 | E031, E032 | Bad Route path or method |
+| E033, E034, E035 | Bad param pattern, unknown `match` value, bad regex |
+| W051 | Route is never reached: shadowed by an earlier-winning Route |
+| W052 | `match = "exact"` on a path that looks like a param pattern |
 | E040, E041, E042 | Bad status, both `body` and `body_file`, `body_file` outside the Workspace |
 
 ## Listing

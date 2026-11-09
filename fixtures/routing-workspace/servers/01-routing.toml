@@ -1,0 +1,88 @@
+# Routing fixture (M4): folders, params, wildcard, regex, priority, ANY, a shadowed route.
+schema = 1
+id = "srv_routing"
+name = "Routing API"
+port = 4030
+
+[[folders]]
+id = "fld_users"
+name = "Users"
+
+[[folders]]
+id = "fld_off"
+name = "Disabled"
+enabled = false
+
+[[routes]]
+id = "rt_user"
+folder = "fld_users"
+method = "GET"
+path = "/users/:id"
+  [[routes.responses]]
+  id = "rsp_user"
+  default = true
+  status = 200
+  body = '{"id":"{{ request.params.id }}"}'
+
+[[routes]]
+id = "rt_me"
+folder = "fld_users"
+method = "GET"
+path = "/users/me"
+priority = 5
+  [[routes.responses]]
+  id = "rsp_me"
+  default = true
+  status = 200
+  body = '{"me":true}'
+
+[[routes]]
+id = "rt_files"
+method = "GET"
+path = "/files/*rest"
+  [[routes.responses]]
+  id = "rsp_files"
+  default = true
+  status = 200
+  body = "file"
+
+[[routes]]
+id = "rt_orders"
+method = "GET"
+path = '^/v[0-9]+/orders/(?P<id>\d+)$'
+match = "regex"
+  [[routes.responses]]
+  id = "rsp_orders"
+  default = true
+  status = 200
+  body = "order"
+
+[[routes]]
+id = "rt_any"
+method = "ANY"
+path = "/ping"
+  [[routes.responses]]
+  id = "rsp_any"
+  default = true
+  status = 200
+  body = "pong"
+
+[[routes]]
+id = "rt_shadowed"
+method = "GET"
+path = "/ping"
+  [[routes.responses]]
+  id = "rsp_shadowed"
+  default = true
+  status = 200
+  body = "never"
+
+[[routes]]
+id = "rt_off"
+folder = "fld_off"
+method = "GET"
+path = "/off"
+  [[routes.responses]]
+  id = "rsp_off"
+  default = true
+  status = 200

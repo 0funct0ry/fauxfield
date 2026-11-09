@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 pub enum TabKind {
     Route,
     Server,
+    Folder,
     Environment,
 }
 

@@ -25,6 +25,12 @@ pub struct Recording {
     pub server: String,
     /// Route ID, or `unmatched`.
     pub route: String,
+    /// Captured path params in pattern order (secret-named values masked).
+    #[serde(default)]
+    pub params: Vec<(String, String)>,
+    /// `GET /users/:id`; empty when unmatched.
+    #[serde(default)]
+    pub route_pattern: String,
     pub method: String,
     pub url: String,
     pub request_headers: Vec<(String, String)>,
@@ -106,6 +112,8 @@ mod tests {
             server_id: "s".into(),
             server: "s".into(),
             route: "r".into(),
+            params: vec![],
+            route_pattern: String::new(),
             method: "POST".into(),
             url: "/a?b=1".into(),
             request_headers: vec![("host".into(), "x".into()), ("x-a".into(), "it's".into())],

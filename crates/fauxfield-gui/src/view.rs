@@ -10,6 +10,8 @@ pub struct Response {
     pub content_type: String,
     pub delay_ms: u32,
     pub body: String,
+    /// Workspace-relative file served as the body instead of `body`.
+    pub body_file: Option<String>,
     pub headers: Vec<(String, String)>,
 }
 
@@ -20,12 +22,23 @@ pub struct Route {
     pub path: String,
     pub name: String,
     pub responses: Vec<Response>,
+    /// `match` as written in the file (`None` = inferred).
+    pub match_explicit: Option<String>,
+    /// Effective mode: exact, param or regex.
+    pub match_mode: String,
+    pub priority: i32,
+    /// Winning Route ID when this Route is fully shadowed.
+    pub shadowed_by: Option<String>,
+    /// Pattern error (E033/E034/E035) when the pattern is invalid.
+    pub pattern_error: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Folder {
     pub id: String,
     pub name: String,
+    pub enabled: bool,
+    pub collapsed: bool,
     pub routes: Vec<Route>,
 }
 
@@ -41,6 +54,7 @@ pub struct Server {
     pub enabled: bool,
     /// Closest-routes hint on 404 (default true).
     pub unmatched_hint: bool,
+    pub strict_slash: bool,
     pub running: bool,
     /// `host:port` while running (engine status).
     pub listen: Option<String>,
@@ -115,6 +129,12 @@ impl Workspace {
             .find_map(|s| s.all_routes().find(|r| r.id == id).map(|r| (s, r)))
     }
 
+    pub fn find_folder(&self, id: &str) -> Option<(&Server, &Folder)> {
+        self.servers
+            .iter()
+            .find_map(|s| s.folders.iter().find(|f| f.id == id).map(|f| (s, f)))
+    }
+
     pub fn find_server(&self, id: &str) -> Option<&Server> {
         self.servers.iter().find(|s| s.id == id)
     }
@@ -149,7 +169,24 @@ impl Workspace {
     /// Build the view from a store snapshot. Servers never run before M3, so `running` is false.
     pub fn from_snapshot(snap: &fauxfield_store::Snapshot) -> Workspace {
         use fauxfield_model as m;
-        let route = |r: &m::Route| Route {
+        let route = |r: &m::Route, shadows: &[m::pattern::Shadow], strict: bool| Route {
+            match_explicit: r.match_mode.clone(),
+            match_mode: match m::pattern::parse_mode(r.match_mode.as_deref()) {
+                Ok(Some(x)) => x,
+                _ => m::pattern::infer_mode(&r.path),
+            }
+            .label()
+            .to_string(),
+            priority: r.priority.unwrap_or(0),
+            shadowed_by: shadows
+                .iter()
+                .find(|x| x.route == r.id)
+                .map(|x| x.by.clone()),
+            pattern_error: if r.kind == "http" {
+                m::pattern::Pattern::parse(&r.path, r.match_mode.as_deref(), strict).err()
+            } else {
+                None
+            },
             id: r.id.clone(),
             method: r.method.clone(),
             path: r.path.clone(),
@@ -168,6 +205,7 @@ impl Workspace {
                     content_type: x.content_type.clone().unwrap_or_default(),
                     delay_ms: x.delay_ms.unwrap_or(0) as u32,
                     body: x.body.clone().unwrap_or_default(),
+                    body_file: x.body_file.clone(),
                     headers: x
                         .headers
                         .iter()
@@ -181,6 +219,9 @@ impl Workspace {
             .servers
             .iter()
             .map(|(file, s)| {
+                let shadows = m::pattern::shadowed_routes(s);
+                let strict = s.strict_slash.unwrap_or(false);
+                let route = |r: &m::Route| route(r, &shadows, strict);
                 if let Some(toml::Value::Array(a)) = s.extra.get("datasets") {
                     for d in a {
                         if let Some(n) = d.get("name").and_then(|n| n.as_str()) {
@@ -197,6 +238,7 @@ impl Workspace {
                     prefix: s.prefix.clone().unwrap_or_default(),
                     enabled: s.enabled,
                     unmatched_hint: s.unmatched_hint.unwrap_or(true),
+                    strict_slash: s.strict_slash.unwrap_or(false),
                     running: false,
                     listen: None,
                     error: None,
@@ -206,6 +248,8 @@ impl Workspace {
                         .map(|f| Folder {
                             id: f.id.clone(),
                             name: f.name.clone(),
+                            enabled: f.enabled,
+                            collapsed: f.collapsed,
                             routes: s
                                 .routes
                                 .iter()

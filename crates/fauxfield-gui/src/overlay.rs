@@ -48,7 +48,8 @@ impl Shell {
         #[cfg(feature = "dev-mcp")]
         crate::dev_mcp::tree::Registry::set_total(cx, "picker-items", n);
         let query = p.query.clone();
-        let all_selected = p.all_selected;
+        let (cursor, sel) = (p.cursor.min(query.len()), p.selection());
+        let bounds = self.picker_bounds.clone();
         div()
             .id("picker-backdrop")
             .absolute()
@@ -92,17 +93,70 @@ impl Shell {
                             .border_color(t.border_variant)
                             .child(icon("search", 14., t.icon_muted))
                             .child(crate::dev_id_z!(
-                                if query.is_empty() {
+                                {
+                                    let (pre_end, sel_end) = match sel {
+                                        Some((a, z)) => (a, z),
+                                        None => (cursor, cursor),
+                                    };
+                                    let caret =
+                                        || div().w(px(1.5)).h(px(16.)).flex_none().bg(t.accent);
                                     div()
+                                        .id("picker-input-field")
+                                        .relative()
                                         .flex_1()
-                                        .truncate()
-                                        .text_color(t.text_placeholder)
-                                        .child(placeholder(kind))
-                                } else {
-                                    div()
-                                        .flex_1()
-                                        .when(all_selected, |d| d.bg(t.element_selected))
-                                        .child(format!("{query}▏"))
+                                        .h_full()
+                                        .flex()
+                                        .flex_row()
+                                        .items_center()
+                                        .overflow_hidden()
+                                        .whitespace_nowrap()
+                                        .cursor_text()
+                                        .on_mouse_down(
+                                            MouseButton::Left,
+                                            cx.listener(
+                                                |this, ev: &gpui::MouseDownEvent, w, cx| {
+                                                    this.picker_mouse_down(ev, w, cx);
+                                                    cx.stop_propagation();
+                                                },
+                                            ),
+                                        )
+                                        .on_mouse_move(cx.listener(
+                                            |this, ev: &gpui::MouseMoveEvent, w, cx| {
+                                                this.picker_mouse_move(ev, w, cx)
+                                            },
+                                        ))
+                                        .on_mouse_up(
+                                            MouseButton::Left,
+                                            cx.listener(|this, _, _, _| this.picker_drag = false),
+                                        )
+                                        .child(
+                                            gpui::canvas(
+                                                move |b, _, _| bounds.set(Some(b)),
+                                                |_, _, _, _| {},
+                                            )
+                                            .absolute()
+                                            .size_full(),
+                                        )
+                                        .when(query.is_empty(), |d| {
+                                            d.child(caret()).child(
+                                                div()
+                                                    .ml(px(4.))
+                                                    .text_color(t.text_placeholder)
+                                                    .child(placeholder(kind)),
+                                            )
+                                        })
+                                        .when(!query.is_empty(), |d| {
+                                            d.child(div().child(query[..pre_end].to_string()))
+                                                .when(sel.is_none(), |d| d.child(caret()))
+                                                .when(sel.is_some(), |d| {
+                                                    d.child(
+                                                        div().bg(t.element_selected).child(
+                                                            query[pre_end..sel_end].to_string(),
+                                                        ),
+                                                    )
+                                                })
+                                                .child(div().child(query[sel_end..].to_string()))
+                                        })
                                 },
                                 1,
                                 "picker-input",

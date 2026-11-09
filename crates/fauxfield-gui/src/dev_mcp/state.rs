@@ -336,6 +336,7 @@ fn tab_dirty(shell: &Shell, kind: TabKind, id: &str) -> bool {
         TabKind::Environment => return false,
         TabKind::Server => shell.ws.find_server(id).map(|s| s.file.clone()),
         TabKind::Route => shell.ws.find_route(id).map(|(s, _)| s.file.clone()),
+        TabKind::Folder => shell.ws.find_folder(id).map(|(s, _)| s.file.clone()),
     };
     file.is_some_and(|f| store.is_dirty(&f))
 }

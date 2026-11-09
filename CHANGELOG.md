@@ -3,6 +3,21 @@
 ## Unreleased
 
 ### Added
+- Response pane in the Route tab: Status Code (editable), Status (reason phrase, read-only),
+  Delay, then Body and Headers sub-tabs. Body: Inline editor with mouse cursor placement and
+  selection, JSON/YAML/XML/HTML highlighting, JSON validate and Format, `{{ }}` spans marked;
+  File source (`body_file`, workspace-relative, live preview); Dataset shown disabled until M8.
+  Headers: key/value table with header-name autocomplete; Content-Type edits the Response's
+  `content_type`. Response rows have a menu (Set as default, Rename, Duplicate, Delete).
+- M4 Route matching and folders: param (`:id`, `{id}`, `*rest`) and regex Routes with named-group
+  params, `ANY`, `priority`, `strict_slash`; a compiled matcher (hash map, segment trie, regex set;
+  p99 under 1 µs at 1,000 Routes, bench `matcher`); shadowing analysis (W051) and diagnostics
+  E033/E034/E035/W052; Folder `enabled`/`collapsed`; store ops `move_route`, `move_folder`,
+  `delete_folder(with_routes)` and single-key setters; tree: warning icons, route counts, disabled
+  Folders, drag and drop, Alt+Up/Down, Folder menu and Folder tab; Route header Match chip and
+  Settings sub-tab (match mode, priority, test a path); Traffic detail shows matched route and
+  params; `fauxfield route add`, `route list --json` gains `match`, `priority`, `shadowed_by`; MCP
+  `match_path`; fixture `fixtures/routing-workspace`.
 - M3.3 Tabbed sidebar: the left dock has an icon-only tab strip (Servers, Environments, Datasets)
   under the workspace header, one list at a time, with the count in the panel title. Actions
   `Sidebar: Show Servers/Environments/Datasets` (Cmd/Ctrl+Alt+1..3), View > Sidebar submenu with

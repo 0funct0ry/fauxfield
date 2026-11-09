@@ -1,0 +1,14 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "folder": null,
+  "id": "<id>",
+  "match": null,
+  "method": "GET",
+  "path": "/users/:id",
+  "priority": 0,
+  "server": "<srv>",
+  "warnings": []
+}

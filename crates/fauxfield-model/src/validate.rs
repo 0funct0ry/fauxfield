@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::pattern::{self, MatchMode};
 use crate::{Diagnostic, SCHEMA_VERSION, Server};
 
 const METHODS: &[&str] = &[
@@ -91,7 +92,47 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                 ));
             }
             if r.kind == "http" {
-                if !r.path.starts_with('/') {
+                let strict = s.strict_slash.unwrap_or(false);
+                match pattern::parse_mode(r.match_mode.as_deref()) {
+                    Err(m) => out.push(Diagnostic::error(file, format!("{rp}.match"), "E034", m)),
+                    Ok(mode) => {
+                        let eff = mode.unwrap_or_else(|| pattern::infer_mode(&r.path));
+                        match eff {
+                            MatchMode::Regex => {
+                                if let Err(m) = pattern::compile_regex(&r.path) {
+                                    out.push(Diagnostic::error(
+                                        file,
+                                        format!("{rp}.path"),
+                                        "E035",
+                                        m,
+                                    ));
+                                }
+                            }
+                            MatchMode::Param => {
+                                if let Err(e) = pattern::parse_param(&r.path, strict) {
+                                    out.push(Diagnostic::error(
+                                        file,
+                                        format!("{rp}.path"),
+                                        "E033",
+                                        e.to_string(),
+                                    ));
+                                }
+                            }
+                            MatchMode::Exact => {
+                                if mode.is_some() && pattern::looks_like_param(&r.path) {
+                                    out.push(Diagnostic::warning(
+                                        file,
+                                        format!("{rp}.path"),
+                                        "W052",
+                                        "looks like a param pattern but match is exact",
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+                let is_regex = r.match_mode.as_deref() == Some("regex");
+                if !is_regex && !r.path.starts_with('/') {
                     out.push(Diagnostic::error(
                         file,
                         format!("{rp}.path"),
@@ -152,6 +193,21 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                     format!("{rp}.responses"),
                     "W043",
                     "more than one default response",
+                ));
+            }
+        }
+        for sh in pattern::shadowed_routes(s) {
+            let by = s.routes.iter().find(|r| r.id == sh.by);
+            let me = s.routes.iter().find(|r| r.id == sh.route);
+            if let (Some(by), Some(me)) = (by, me) {
+                out.push(Diagnostic::warning(
+                    file,
+                    format!("routes[{}]", sh.route),
+                    "W051",
+                    format!(
+                        "Route `{} {}` is never reached: shadowed by `{} {}` ({})",
+                        me.method, me.path, by.method, by.path, by.id
+                    ),
                 ));
             }
         }

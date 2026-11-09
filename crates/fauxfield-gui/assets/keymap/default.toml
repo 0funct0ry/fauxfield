@@ -138,22 +138,22 @@ platform = ["windows", "linux"]
 [[binding]]
 action = "edit_cut"
 keys = "secondary-x"
-context = "Picker"
+context = "Picker || Field || Editor"
 
 [[binding]]
 action = "edit_copy"
 keys = "secondary-c"
-context = "Picker"
+context = "Picker || Field || Editor"
 
 [[binding]]
 action = "edit_paste"
 keys = "secondary-v"
-context = "Picker"
+context = "Picker || Field || Editor"
 
 [[binding]]
 action = "edit_select_all"
 keys = "secondary-a"
-context = "Picker"
+context = "Picker || Field || Editor"
 
 [[binding]]
 action = "toggle_fullscreen"
@@ -179,3 +179,11 @@ platform = "macos"
 action = "minimize_window"
 keys = "cmd-m"
 platform = "macos"
+
+[[binding]]
+action = "move_up"
+keys = "alt-up"
+
+[[binding]]
+action = "move_down"
+keys = "alt-down"

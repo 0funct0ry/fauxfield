@@ -92,6 +92,15 @@ pub enum PromptAction {
     RoutePath {
         route: String,
     },
+    RoutePriority {
+        route: String,
+    },
+    RouteMatch {
+        route: String,
+    },
+    RouteTestPath {
+        route: String,
+    },
     ResponseStatus {
         response: String,
     },
@@ -151,6 +160,9 @@ impl PromptAction {
             PromptAction::Rename { .. } => "New name",
             PromptAction::RouteMethod { .. } => "Method",
             PromptAction::RoutePath { .. } => "Path",
+            PromptAction::RoutePriority { .. } => "Priority (integer, higher wins, 0 = default)",
+            PromptAction::RouteMatch { .. } => "Match mode (exact, param, regex; empty = inferred)",
+            PromptAction::RouteTestPath { .. } => "Test a path (e.g. /users/42)",
             PromptAction::ResponseStatus { .. } => "Status",
             PromptAction::ResponseName { .. } => "Response name",
             PromptAction::ResponseContentType { .. } => "Content type",
@@ -164,10 +176,46 @@ impl PromptAction {
 pub struct Picker {
     pub kind: PickerKind,
     pub query: String,
-    /// Select All was pressed: the next typed text or Backspace replaces the whole query.
-    pub all_selected: bool,
+    /// Caret as a byte offset into `query`.
+    pub cursor: usize,
+    /// Selection anchor; the selection is the range between it and the caret.
+    pub anchor: Option<usize>,
     pub selected: usize,
     pub hits: Vec<Hit>,
+}
+
+impl Picker {
+    /// Run an edit through the shared text buffer (cursor, selection, char boundaries).
+    pub fn edit(&mut self, f: impl FnOnce(&mut crate::editor::TextBuf)) {
+        let mut b = crate::editor::TextBuf {
+            text: std::mem::take(&mut self.query),
+            cursor: self.cursor,
+            anchor: self.anchor,
+        };
+        f(&mut b);
+        self.query = b.text;
+        self.cursor = b.cursor.min(self.query.len());
+        self.anchor = b.anchor;
+    }
+
+    /// Replace the text; the caret goes to the end.
+    pub fn set_query(&mut self, text: &str) {
+        self.query = text.to_string();
+        self.cursor = self.query.len();
+        self.anchor = None;
+    }
+
+    pub fn selection(&self) -> Option<(usize, usize)> {
+        let a = self.anchor?;
+        (a != self.cursor).then(|| (a.min(self.cursor), a.max(self.cursor)))
+    }
+}
+
+/// Inline Response body editor state (runtime-only until committed to the file).
+#[derive(Clone, Debug)]
+pub struct BodyEdit {
+    pub response: String,
+    pub buf: crate::editor::TextBuf,
 }
 
 /// An open tree-row context menu, positioned in window coordinates.
@@ -228,6 +276,8 @@ pub struct Shell {
     pub(crate) commands: Vec<CommandEntry>,
     chord: ChordState,
     pub(crate) collapsed: HashSet<String>,
+    /// Folder IDs already seen, so `collapsed = true` only applies when a Folder first appears.
+    pub(crate) known_folders: HashSet<String>,
     pub(crate) sidebar_tab: tree::SidebarTab,
     pub(crate) selected: Option<String>,
     pub(crate) active_env: String,
@@ -239,6 +289,8 @@ pub struct Shell {
     pub(crate) traffic_scroll: UniformListScrollHandle,
     pub(crate) traffic_selected: Option<usize>,
     pub(crate) route_sub: HashMap<String, usize>,
+    /// Route Settings "Test a path" input per Route (runtime-only).
+    pub(crate) test_path: HashMap<String, String>,
     pub(crate) server_section: HashMap<String, usize>,
     pub(crate) reveal_secrets: bool,
     /// Dev-only: render volatile text (Traffic time and duration) as fixed placeholders so
@@ -264,6 +316,30 @@ pub struct Shell {
     pub(crate) port_offset: u16,
     pub(crate) focus: FocusHandle,
     pub(crate) picker_focus: FocusHandle,
+    /// The Response body being edited inline (committed on blur or Cmd/Ctrl+Enter).
+    pub(crate) body_edit: Option<BodyEdit>,
+    pub(crate) body_focus: FocusHandle,
+    /// Painted bounds of the picker's text input, and a drag in progress in it.
+    pub(crate) picker_bounds: crate::response_pane::BoundsCell,
+    pub(crate) picker_drag: bool,
+    /// Painted bounds of the body editor's text area (mouse → line/column).
+    pub(crate) body_bounds: crate::response_pane::BoundsCell,
+    /// A mouse drag is extending the body selection.
+    pub(crate) body_drag: bool,
+    /// Advance width of the buffer font at the body size (measured each frame).
+    pub(crate) mono_w: f32,
+    /// The single-line field being edited in the Response pane.
+    pub(crate) inline: Option<crate::response_pane::InlineEdit>,
+    pub(crate) field_focus: FocusHandle,
+    /// Painted bounds of the active field's text, of the completion popup, and a mouse drag
+    /// that is extending the field's selection.
+    pub(crate) inline_bounds: crate::response_pane::BoundsCell,
+    pub(crate) popup_bounds: crate::response_pane::BoundsCell,
+    pub(crate) field_drag: bool,
+    /// A header row whose key was typed but whose value is not written yet: (response, key).
+    pub(crate) pending_header: Option<(String, String)>,
+    /// Response pane sub-tab per Response (0 Body, 1 Headers); runtime-only.
+    pub(crate) resp_sub: HashMap<String, usize>,
     pub(crate) lc: crate::lifecycle::Lifecycle,
     /// M3.2: where the menu is drawn, the last context, the last native model, and the seams.
     pub(crate) menu_style: crate::menu::MenuStyle,
@@ -374,7 +450,19 @@ impl Shell {
             layout,
             layout_path: opts.layout_path,
             keymap,
-            collapsed: HashSet::new(),
+            collapsed: ws
+                .servers
+                .iter()
+                .flat_map(|s| &s.folders)
+                .filter(|f| f.collapsed)
+                .map(|f| f.id.clone())
+                .collect(),
+            known_folders: ws
+                .servers
+                .iter()
+                .flat_map(|s| &s.folders)
+                .map(|f| f.id.clone())
+                .collect(),
             sidebar_tab: tree::SidebarTab::from_id(&layout_sidebar_tab),
             selected: None,
             active_env: ws
@@ -400,6 +488,7 @@ impl Shell {
             traffic_scroll: UniformListScrollHandle::new(),
             traffic_selected: None,
             route_sub: HashMap::new(),
+            test_path: HashMap::new(),
             server_section: HashMap::new(),
             reveal_secrets: false,
             #[cfg(feature = "dev-mcp")]
@@ -420,6 +509,20 @@ impl Shell {
             port_offset: opts.port_offset,
             focus,
             picker_focus: cx.focus_handle(),
+            body_edit: None,
+            body_focus: cx.focus_handle(),
+            picker_bounds: Default::default(),
+            picker_drag: false,
+            body_bounds: Default::default(),
+            body_drag: false,
+            mono_w: 0.0,
+            inline: None,
+            field_focus: cx.focus_handle(),
+            inline_bounds: Default::default(),
+            popup_bounds: Default::default(),
+            field_drag: false,
+            pending_header: None,
+            resp_sub: HashMap::new(),
             lc: Default::default(),
             menu_style: crate::menu::menu_style(),
             menu_ctx: None,
@@ -502,6 +605,15 @@ impl Shell {
     }
 
     /// Rebuild the view from the store (after an edit, undo, or external reload).
+    /// `collapsed = true` Folders start collapsed the first time they are seen.
+    fn apply_start_collapsed(&mut self) {
+        for f in self.ws.servers.iter().flat_map(|s| &s.folders) {
+            if self.known_folders.insert(f.id.clone()) && f.collapsed {
+                self.collapsed.insert(f.id.clone());
+            }
+        }
+    }
+
     pub fn reload(&mut self, cx: &mut Context<Self>) {
         let Some(store) = self.store.clone() else {
             return;
@@ -515,6 +627,7 @@ impl Shell {
             .map(|s| s.id.clone())
             .collect();
         self.ws = Workspace::from_snapshot(&snap);
+        self.apply_start_collapsed();
         for s in &mut self.ws.servers {
             s.running = running.contains(&s.id);
         }
@@ -573,6 +686,8 @@ impl Shell {
             .opened_at
             .insert(snap.root.clone(), std::time::SystemTime::now());
         self.ws = Workspace::from_snapshot(&snap);
+        self.known_folders.clear();
+        self.apply_start_collapsed();
         self.problems = Workspace::problems(&snap);
         self.store = Some(store);
         self.tabs = TabSet::from_saved(vec![], None);
@@ -710,6 +825,7 @@ impl Shell {
                 .find_route(id)
                 .map(|(_, r)| format!("{} {}", r.method, r.path)),
             TabKind::Server => self.ws.find_server(id).map(|s| s.name.clone()),
+            TabKind::Folder => self.ws.find_folder(id).map(|(_, f)| f.name.clone()),
             TabKind::Environment => self.ws.find_environment(id).map(|e| e.name.clone()),
         }
     }
@@ -760,6 +876,17 @@ impl Shell {
             self.open_tab(&tab_id, kind, &title, clicks >= 2);
         } else if row_id.starts_with("ds:") {
             self.notify("Dataset tabs arrive in M8.".into(), cx);
+        } else if let Some((_, f)) = self
+            .ws
+            .find_folder(row_id)
+            .map(|(s, f)| (s, f.name.clone()))
+        {
+            // A Folder click toggles; a double-click opens its tab (the second click's toggle
+            // undoes the first, so the row ends where it started).
+            self.toggle_row(row_id);
+            if clicks >= 2 {
+                self.open_tab(row_id, TabKind::Folder, &f, true);
+            }
         } else {
             self.toggle_row(row_id);
         }
@@ -896,6 +1023,42 @@ impl Shell {
         cx.notify();
     }
 
+    /// Context menu of a Response row in the Route tab.
+    pub fn open_response_menu(&mut self, response: &str, x: f32, y: f32, cx: &mut Context<Self>) {
+        let Some(default) = self
+            .ws
+            .servers
+            .iter()
+            .flat_map(|s| s.all_routes())
+            .flat_map(|r| &r.responses)
+            .find(|r| r.id == response)
+            .map(|r| r.default)
+        else {
+            return;
+        };
+        self.menu = Some(RowMenu {
+            row_id: response.to_string(),
+            kind: RowKind::Response { default },
+            x,
+            y,
+        });
+        cx.notify();
+    }
+
+    /// The Response with this ID: `(route id, index, response)`.
+    pub(crate) fn find_response(&self, id: &str) -> Option<(String, usize, crate::view::Response)> {
+        self.ws
+            .servers
+            .iter()
+            .flat_map(|s| s.all_routes())
+            .find_map(|r| {
+                r.responses
+                    .iter()
+                    .position(|x| x.id == id)
+                    .map(|i| (r.id.clone(), i, r.responses[i].clone()))
+            })
+    }
+
     pub fn close_menu(&mut self, cx: &mut Context<Self>) {
         if self.menu.take().is_some() {
             cx.notify();
@@ -923,6 +1086,16 @@ impl Shell {
             MenuAct::Rename => self.rename_row(&m.row_id, window, cx),
             MenuAct::Duplicate => self.duplicate_row(&m.row_id, cx),
             MenuAct::Delete => self.delete_row(&m.row_id, cx),
+            MenuAct::SetDefaultResponse => {
+                let id = m.row_id.clone();
+                self.store_op(cx, |s| s.set_default_response(&id));
+            }
+            MenuAct::DeleteWithRoutes => self.delete_folder(&m.row_id, true, cx),
+            MenuAct::FolderToggleEnabled => self.folder_toggle(&m.row_id, true, cx),
+            MenuAct::FolderToggleCollapsed => self.folder_toggle(&m.row_id, false, cx),
+            MenuAct::MoveUp => self.move_row(&m.row_id, -1, cx),
+            MenuAct::MoveDown => self.move_row(&m.row_id, 1, cx),
+            MenuAct::MoveToRoot => self.move_to_root(&m.row_id, cx),
             MenuAct::ResetDataset => self.stub("Resetting dataset state", "M8", cx),
             MenuAct::Restart => self.restart_server_id(&m.row_id, cx),
             MenuAct::ToggleEnabled => self.toggle_enabled(&m.row_id, cx),
@@ -1060,7 +1233,8 @@ impl Shell {
         self.picker = Some(Picker {
             kind,
             query: String::new(),
-            all_selected: false,
+            cursor: 0,
+            anchor: None,
             selected,
             hits,
         });
@@ -1127,21 +1301,100 @@ impl Shell {
 
     pub fn picker_type(&mut self, text: &str, cx: &mut Context<Self>) {
         if let Some(p) = &mut self.picker {
-            if std::mem::take(&mut p.all_selected) {
-                p.query.clear();
-            }
-            p.query.push_str(text);
+            p.edit(|b| b.insert(text));
         }
         self.refresh_picker(cx);
     }
 
+    /// Move the caret / selection only (no re-search).
+    pub fn picker_caret(
+        &mut self,
+        f: impl FnOnce(&mut crate::editor::TextBuf),
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(p) = &mut self.picker {
+            p.edit(f);
+        }
+        cx.notify();
+    }
+
+    /// Edit the text and re-run the search.
+    pub fn picker_edit(
+        &mut self,
+        f: impl FnOnce(&mut crate::editor::TextBuf),
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(p) = &mut self.picker {
+            p.edit(f);
+        }
+        self.refresh_picker(cx);
+    }
+
+    /// Byte offset in the query under window x, by shaping the text in the input's font.
+    fn picker_index_at(&self, window: &Window, x: gpui::Pixels) -> Option<usize> {
+        let p = self.picker.as_ref()?;
+        let b = self.picker_bounds.get()?;
+        let style = window.text_style();
+        let size = style.font_size.to_pixels(window.rem_size());
+        let run = style.to_run(p.query.len());
+        let line = window
+            .text_system()
+            .shape_line(p.query.clone().into(), size, &[run], None);
+        Some(line.closest_index_for_x(x - b.origin.x).min(p.query.len()))
+    }
+
+    pub fn picker_mouse_down(
+        &mut self,
+        ev: &gpui::MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(i) = self.picker_index_at(window, ev.position.x) else {
+            return;
+        };
+        if let Some(p) = &mut self.picker {
+            if ev.click_count >= 2 {
+                p.edit(|b| b.select_all());
+            } else {
+                p.edit(|b| {
+                    b.anchor = if ev.modifiers.shift {
+                        b.anchor.or(Some(b.cursor))
+                    } else {
+                        None
+                    };
+                    b.cursor = i;
+                });
+            }
+            self.picker_drag = ev.click_count < 2;
+        }
+        window.focus(&self.picker_focus);
+        cx.notify();
+    }
+
+    pub fn picker_mouse_move(
+        &mut self,
+        ev: &gpui::MouseMoveEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.picker_drag || ev.pressed_button != Some(MouseButton::Left) {
+            return;
+        }
+        let Some(i) = self.picker_index_at(window, ev.position.x) else {
+            return;
+        };
+        if let Some(p) = &mut self.picker {
+            p.edit(|b| {
+                b.anchor.get_or_insert(b.cursor);
+                b.cursor = i;
+            });
+        }
+        cx.notify();
+    }
+
     pub fn picker_backspace(&mut self, cx: &mut Context<Self>) {
         if let Some(p) = &mut self.picker {
-            if std::mem::take(&mut p.all_selected) {
-                p.query.clear();
-            } else {
-                p.query.pop();
-            }
+            p.edit(|b| b.backspace());
         }
         self.refresh_picker(cx);
     }
@@ -1263,6 +1516,10 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         let m = ev.keystroke.modifiers;
+        let prompt = self
+            .picker
+            .as_ref()
+            .is_some_and(|p| p.kind == PickerKind::Prompt);
         match ev.keystroke.key.as_str() {
             "escape" => self.close_picker(true, window, cx),
             "enter" => {
@@ -1275,11 +1532,18 @@ impl Shell {
                 };
                 self.run_picker_selection(mode, window, cx);
             }
+            "up" if prompt => self.picker_caret(|b| b.home(m.shift), cx),
+            "down" if prompt => self.picker_caret(|b| b.end(m.shift), cx),
             "up" => self.move_selection(-1, cx),
             "down" => self.move_selection(1, cx),
             "pageup" => self.move_selection(-8, cx),
             "pagedown" => self.move_selection(8, cx),
             "backspace" => self.picker_backspace(cx),
+            "delete" => self.picker_edit(|b| b.delete(), cx),
+            "left" => self.picker_caret(|b| b.left(m.shift), cx),
+            "right" => self.picker_caret(|b| b.right(m.shift), cx),
+            "home" => self.picker_caret(|b| b.home(m.shift), cx),
+            "end" => self.picker_caret(|b| b.end(m.shift), cx),
             _ => {
                 if !m.secondary()
                     && !m.control
@@ -1416,7 +1680,7 @@ impl Shell {
         self.prompt = Some(action);
         self.open_picker(PickerKind::Prompt, window, cx);
         if let Some(p) = &mut self.picker {
-            p.query = initial.to_string();
+            p.set_query(initial);
         }
         self.refresh_picker(cx);
     }
@@ -1535,6 +1799,8 @@ impl Shell {
             Some(T::Route(id.into()))
         } else if self.folder_server(id).is_some() {
             Some(T::Folder(id.into()))
+        } else if self.find_response(id).is_some() {
+            Some(T::Response(id.into()))
         } else {
             None
         }
@@ -1549,7 +1815,7 @@ impl Shell {
         self.rename_row(id, window, cx)
     }
 
-    fn rename_row(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn rename_row(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
         if id.starts_with("env:") {
             return self.stub("Renaming environments", "M7", cx);
         }
@@ -1557,6 +1823,15 @@ impl Shell {
             s.name.clone()
         } else if let Some((_, r)) = self.ws.find_route(id) {
             r.name.clone()
+        } else if let Some((_, _, x)) = self.find_response(id) {
+            return self.begin_prompt(
+                PromptAction::ResponseName {
+                    response: id.into(),
+                },
+                &x.name,
+                window,
+                cx,
+            );
         } else if let Some(f) = self
             .ws
             .servers
@@ -1593,6 +1868,161 @@ impl Shell {
             }
             None => self.notify("Nothing to duplicate here.".into(), cx),
         }
+    }
+
+    /// Delete a Folder: with its Routes, or keeping them at the server root (SPEC §20.17).
+    pub(crate) fn delete_folder(&mut self, id: &str, with_routes: bool, cx: &mut Context<Self>) {
+        let fid = id.to_string();
+        if self
+            .store_op(cx, |s| s.delete_folder(&fid, with_routes))
+            .is_some()
+        {
+            self.selected = None;
+            self.notify(
+                if with_routes {
+                    "Deleted folder and its routes (undo with Edit: Undo)"
+                } else {
+                    "Deleted folder; routes moved to the server root (undo with Edit: Undo)"
+                }
+                .into(),
+                cx,
+            );
+        }
+    }
+
+    /// Toggle a Folder's `enabled` (`true`) or `collapsed` flag.
+    pub(crate) fn folder_toggle(&mut self, id: &str, enabled: bool, cx: &mut Context<Self>) {
+        let Some(f) = self
+            .ws
+            .servers
+            .iter()
+            .flat_map(|s| &s.folders)
+            .find(|f| f.id == id)
+        else {
+            return;
+        };
+        let (fid, en, col) = (id.to_string(), f.enabled, f.collapsed);
+        self.store_op(cx, |s| {
+            if enabled {
+                s.set_folder_enabled(&fid, !en)
+            } else {
+                s.set_folder_collapsed(&fid, !col)
+            }
+        });
+    }
+
+    /// Move a Route or Folder one step among its siblings (Alt+Up / Alt+Down, menu).
+    pub(crate) fn move_row(&mut self, id: &str, delta: i32, cx: &mut Context<Self>) {
+        let ids = |v: Vec<&str>| v.into_iter().map(String::from).collect::<Vec<_>>();
+        // Siblings in effective order, and whether the item is a Folder.
+        let mut found: Option<(Vec<String>, Option<String>, bool)> = None;
+        for s in &self.ws.servers {
+            if s.folders.iter().any(|f| f.id == id) {
+                found = Some((
+                    ids(s.folders.iter().map(|f| f.id.as_str()).collect()),
+                    None,
+                    true,
+                ));
+            } else if let Some(f) = s
+                .folders
+                .iter()
+                .find(|f| f.routes.iter().any(|r| r.id == id))
+            {
+                found = Some((
+                    ids(f.routes.iter().map(|r| r.id.as_str()).collect()),
+                    Some(f.id.clone()),
+                    false,
+                ));
+            } else if s.routes.iter().any(|r| r.id == id) {
+                found = Some((
+                    ids(s.routes.iter().map(|r| r.id.as_str()).collect()),
+                    None,
+                    false,
+                ));
+            }
+        }
+        let Some((sib, folder, is_folder)) = found else {
+            return;
+        };
+        let Some(i) = sib.iter().position(|x| x == id) else {
+            return;
+        };
+        let to = i as i32 + delta;
+        if to < 0 || to as usize >= sib.len() {
+            return;
+        }
+        // Insert before the sibling that will follow the item at its new position.
+        let before = if delta < 0 {
+            sib.get(i - 1).cloned()
+        } else {
+            sib.get(i + 2).cloned()
+        };
+        let rid = id.to_string();
+        self.store_op(cx, |s| {
+            if is_folder {
+                s.move_folder(&rid, before.as_deref())
+            } else {
+                s.move_route(&rid, folder.as_deref(), before.as_deref())
+            }
+        });
+    }
+
+    /// Drop of a dragged Route or Folder row onto `target` (SPEC §20.17): onto a Folder
+    /// appends the Route; onto a Route inserts before it; onto a Server appends at the
+    /// root; a Folder dropped on a Folder reorders. Cross-server drops and no-ops do nothing.
+    pub(crate) fn drop_row(&mut self, dragged: &str, target: &str, cx: &mut Context<Self>) {
+        if dragged == target {
+            return;
+        }
+        let owner = |ws: &crate::view::Workspace, id: &str| {
+            ws.servers.iter().position(|s| {
+                s.id == id
+                    || s.folders.iter().any(|f| f.id == id)
+                    || s.all_routes().any(|r| r.id == id)
+            })
+        };
+        let (Some(a), Some(b)) = (owner(&self.ws, dragged), owner(&self.ws, target)) else {
+            return;
+        };
+        if a != b {
+            return;
+        }
+        let srv = &self.ws.servers[a];
+        let dragged_folder = srv.folders.iter().any(|f| f.id == dragged);
+        let (did, tid) = (dragged.to_string(), target.to_string());
+        if dragged_folder {
+            if srv.folders.iter().any(|f| f.id == target) {
+                self.store_op(cx, |s| s.move_folder(&did, Some(&tid)));
+            }
+            return;
+        }
+        let into: Option<(Option<String>, Option<String>)> =
+            if srv.folders.iter().any(|f| f.id == target) {
+                Some((Some(tid.clone()), None))
+            } else if srv.id == target {
+                Some((None, None))
+            } else {
+                srv.folders
+                    .iter()
+                    .find(|f| f.routes.iter().any(|r| r.id == target))
+                    .map(|f| (Some(f.id.clone()), Some(tid.clone())))
+                    .or_else(|| {
+                        srv.routes
+                            .iter()
+                            .any(|r| r.id == target)
+                            .then(|| (None, Some(tid.clone())))
+                    })
+            };
+        if let Some((folder, before)) = into {
+            self.store_op(cx, |s| {
+                s.move_route(&did, folder.as_deref(), before.as_deref())
+            });
+        }
+    }
+
+    pub(crate) fn move_to_root(&mut self, id: &str, cx: &mut Context<Self>) {
+        let rid = id.to_string();
+        self.store_op(cx, |s| s.move_route(&rid, None, None));
     }
 
     fn delete_row(&mut self, id: &str, cx: &mut Context<Self>) {
@@ -1660,6 +2090,45 @@ impl Shell {
         self.reload(cx);
     }
 
+    /// Prompt for a Route Settings field: 0 priority, 1 match mode, 2 test a path.
+    pub(crate) fn edit_route_setting(
+        &mut self,
+        which: u8,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(route) = self.current_route_id() else {
+            return self.notify("Open a route first.".into(), cx);
+        };
+        let Some((_, r)) = self.ws.find_route(&route) else {
+            return;
+        };
+        let (action, initial) = match which {
+            0 => (
+                PromptAction::RoutePriority { route },
+                r.priority.to_string(),
+            ),
+            1 => (
+                PromptAction::RouteMatch { route },
+                r.match_explicit.clone().unwrap_or_default(),
+            ),
+            _ => {
+                let cur = self.test_path.get(&route).cloned().unwrap_or_default();
+                self.route_sub.insert(route.clone(), 5);
+                (PromptAction::RouteTestPath { route }, cur)
+            }
+        };
+        self.begin_prompt(action, &initial, window, cx);
+    }
+
+    pub(crate) fn toggle_strict_slash(&mut self, id: &str, cx: &mut Context<Self>) {
+        let Some(s) = self.ws.find_server(id) else {
+            return;
+        };
+        let (sid, on) = (id.to_string(), !s.strict_slash);
+        self.store_op(cx, |st| st.set_strict_slash(&sid, on));
+    }
+
     fn edit_field(&mut self, field: FieldEdit, window: &mut Window, cx: &mut Context<Self>) {
         let (Some(route), resp) = (self.current_route_id(), self.current_response_id()) else {
             return self.notify("Open a route first.".into(), cx);
@@ -1667,6 +2136,40 @@ impl Shell {
         let Some((_, r)) = self.ws.find_route(&route) else {
             return;
         };
+        if let Some(id) = resp.clone() {
+            use crate::response_pane::InlineTarget as I;
+            let cur = r.responses.iter().find(|x| x.id == id);
+            match (field, cur) {
+                (FieldEdit::ResponseBody, _) => {
+                    self.resp_sub.insert(id.clone(), 0);
+                    return self.begin_body_edit(&id, window, cx);
+                }
+                (FieldEdit::ResponseStatus, Some(x)) => {
+                    let v = x.status.to_string();
+                    return self.begin_inline(I::Status(id), &v, true, window, cx);
+                }
+                (FieldEdit::ResponseDelay, Some(x)) => {
+                    let v = x.delay_ms.to_string();
+                    return self.begin_inline(I::Delay(id), &v, true, window, cx);
+                }
+                (FieldEdit::ResponseHeader, _) => {
+                    self.resp_sub.insert(id.clone(), 1);
+                    let at = r
+                        .responses
+                        .iter()
+                        .find(|x| x.id == id)
+                        .map_or(0, |x| crate::header_table::header_rows(x, None).len());
+                    return self.begin_header_cell(
+                        &id,
+                        at,
+                        crate::header_catalog::Col::Key,
+                        window,
+                        cx,
+                    );
+                }
+                _ => {}
+            }
+        }
         let cur_resp = resp
             .as_ref()
             .and_then(|id| r.responses.iter().find(|x| &x.id == id));
@@ -1826,7 +2329,34 @@ impl Shell {
                 });
             }
             PromptAction::RoutePath { route } => {
-                self.store_op(cx, |s| s.set_str(&T::Route(route), "path", Some(&v)));
+                let mode = self
+                    .ws
+                    .find_route(&route)
+                    .and_then(|(_, r)| r.match_explicit.clone());
+                let strict = self
+                    .ws
+                    .find_route(&route)
+                    .is_some_and(|(s, _)| s.strict_slash);
+                match fauxfield_model::pattern::Pattern::parse(&v, mode.as_deref(), strict) {
+                    Ok(_) => {
+                        self.store_op(cx, |s| s.set_str(&T::Route(route), "path", Some(&v)));
+                    }
+                    Err(e) => self.notify(format!("Invalid pattern: {e}"), cx),
+                }
+            }
+            PromptAction::RoutePriority { route } => match v.trim().parse::<i32>() {
+                Ok(n) => {
+                    self.store_op(cx, |s| s.set_route_priority(&route, n));
+                }
+                Err(_) => self.notify("Priority must be an integer".into(), cx),
+            },
+            PromptAction::RouteMatch { route } => {
+                let m = v.trim().to_ascii_lowercase();
+                let mode = (!m.is_empty() && m != "inferred").then_some(m);
+                self.store_op(cx, |s| s.set_route_match(&route, mode.as_deref()));
+            }
+            PromptAction::RouteTestPath { route } => {
+                self.test_path.insert(route, v.clone());
             }
             PromptAction::ResponseStatus { response } => match v.parse::<i64>() {
                 Ok(n) => {
@@ -1911,6 +2441,7 @@ fn tab_exists(ws: &Workspace, kind: TabKind, id: &str) -> bool {
     match kind {
         TabKind::Route => ws.find_route(id).is_some(),
         TabKind::Server => ws.find_server(id).is_some(),
+        TabKind::Folder => ws.find_folder(id).is_some(),
         TabKind::Environment => ws.find_environment(id).is_some(),
     }
 }
@@ -1934,6 +2465,20 @@ macro_rules! on_actions {
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sync_window_title(window);
+        // A field or the body editor that just closed leaves focus on an element that is no
+        // longer drawn; give it back to the shell so keys and actions keep working.
+        if (self.inline.is_none() && self.field_focus.is_focused(window))
+            || (self.body_edit.is_none() && self.body_focus.is_focused(window))
+        {
+            window.focus(&self.focus);
+        }
+        if self.mono_w == 0.0 {
+            let ts = window.text_system();
+            let font = ts.resolve_font(&gpui::font(crate::assets::BUFFER_FONT));
+            if let Ok(sz) = ts.advance(font, px(crate::response_pane::BODY_FONT_SIZE), 'm') {
+                self.mono_w = f32::from(sz.width);
+            }
+        }
         let w = f32::from(window.viewport_size().width);
         if (self.bar.win_w - w).abs() > 0.5 {
             self.bar.win_w = w;
@@ -2059,6 +2604,33 @@ impl Render for Shell {
                 Some(id) => this.delete_row(&id, cx),
                 None => this.notify("Select something to delete.".into(), cx),
             },
+            MoveUp => |this, _w, cx| {
+                if this.body_edit.is_some() || this.inline.is_some() {
+                    return;
+                }
+                if let Some(id) = this.selected_visible() {
+                    this.move_row(&id, -1, cx)
+                }
+            },
+            MoveDown => |this, _w, cx| {
+                if this.body_edit.is_some() || this.inline.is_some() {
+                    return;
+                }
+                if let Some(id) = this.selected_visible() {
+                    this.move_row(&id, 1, cx)
+                }
+            },
+            MoveToRoot => |this, _w, cx| match this.current_route_id() {
+                Some(id) => this.move_to_root(&id, cx),
+                None => this.notify("Open a route first.".into(), cx),
+            },
+            EditRoutePriority => |this, w, cx| this.edit_route_setting(0, w, cx),
+            EditRouteMatch => |this, w, cx| this.edit_route_setting(1, w, cx),
+            RouteTestPath => |this, w, cx| this.edit_route_setting(2, w, cx),
+            ToggleStrictSlash => |this, _w, cx| match this.current_server_id() {
+                Some(id) => this.toggle_strict_slash(&id, cx),
+                None => this.notify("Select a server first.".into(), cx),
+            },
             Undo => |this, _w, cx| this.undo_redo(true, cx),
             Redo => |this, _w, cx| this.undo_redo(false, cx),
             OpenFolder => |this, w, cx| this.pick_folder(false, w, cx),
@@ -2106,6 +2678,11 @@ impl Render for Shell {
                 // Cmd+Enter is also "open pinned" inside Quick Search.
                 if this.picker.is_some() {
                     this.run_picker_selection(OpenMode::Pinned, w, cx);
+                } else if this.body_edit.is_some() {
+                    // ... and "save" in the Response body editor.
+                    this.commit_body_edit(cx);
+                } else if this.inline.is_some() {
+                    this.commit_inline(crate::response_pane::Nav::Stay, w, cx);
                 } else {
                     this.send_test(cx);
                 }

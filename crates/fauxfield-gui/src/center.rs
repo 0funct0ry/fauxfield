@@ -20,7 +20,7 @@ pub struct DraggedTab {
     pub title: String,
 }
 
-struct DragGhost(String);
+pub(crate) struct DragGhost(pub(crate) String);
 
 impl Render for DragGhost {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -55,6 +55,7 @@ fn tab_icon(kind: TabKind) -> &'static str {
     match kind {
         TabKind::Route => "file-text",
         TabKind::Server => "server",
+        TabKind::Folder => "folder",
         TabKind::Environment => "layers",
     }
 }
@@ -118,6 +119,7 @@ impl Shell {
         let accent = match tab.kind {
             TabKind::Route => t.syntax_function,
             TabKind::Server => t.created,
+            TabKind::Folder => t.icon_muted,
             TabKind::Environment => t.modified,
         };
         crate::dev_id!(
@@ -198,6 +200,10 @@ impl Shell {
             },
             TabKind::Server => match self.ws.find_server(&tab.id) {
                 Some(s) => self.render_server_tab(t, s, cx).into_any_element(),
+                None => self.render_empty(t).into_any_element(),
+            },
+            TabKind::Folder => match self.ws.find_folder(&tab.id) {
+                Some((s, f)) => self.render_folder_tab(t, s, f, cx).into_any_element(),
                 None => self.render_empty(t).into_any_element(),
             },
             TabKind::Environment => match self.ws.find_environment(&tab.id) {
@@ -293,17 +299,62 @@ impl Shell {
                                 w,
                                 cx
                             )))
-                            .child(format!("{}{}", s.prefix, r.path)),
+                            .child(r.path.clone()),
                         format!("route-path-{}", r.id),
                         Button,
                         "Route path",
                         Action("edit_route_path")
                     ))
-                    .child(
+                    .children((!s.prefix.is_empty()).then(|| {
                         div()
-                            .text_size(px(12.))
+                            .text_size(px(11.))
                             .text_color(t.text_muted)
-                            .child(r.name.clone()),
+                            .child(format!("prefix {}", s.prefix))
+                    }))
+                    .child(crate::dev_id!(
+                        div()
+                            .id(crate::ui::eid(format!("route-match-{}", r.id)))
+                            .px(px(6.))
+                            .py(px(2.))
+                            .rounded(px(4.))
+                            .bg(t.element_selected)
+                            .cursor_pointer()
+                            .text_size(px(11.))
+                            .text_color(if r.pattern_error.is_some() {
+                                t.deleted
+                            } else {
+                                t.text_muted
+                            })
+                            .on_click(cx.listener({
+                                let rid = r.id.clone();
+                                move |this, _, _, cx| {
+                                    this.route_sub.insert(rid.clone(), 5);
+                                    cx.notify();
+                                }
+                            }))
+                            .child(format!(
+                                "Match: {}{}",
+                                r.match_mode,
+                                if r.match_explicit.is_none() {
+                                    " auto"
+                                } else {
+                                    ""
+                                }
+                            )),
+                        format!("route-match-dropdown-{}", r.id),
+                        Button,
+                        "Match mode",
+                        Action("edit_route_match")
+                    ))
+                    .children(
+                        // The view model falls back to "METHOD path" for unnamed Routes;
+                        // showing that next to the path is redundant.
+                        (r.name != format!("{} {}", r.method, r.path)).then(|| {
+                            div()
+                                .text_size(px(12.))
+                                .text_color(t.text_muted)
+                                .child(r.name.clone())
+                        }),
                     )
                     .child(div().flex_1())
                     .child(crate::dev_id!(
@@ -360,6 +411,7 @@ impl Shell {
             .child(
                 div().flex_1().min_h_0().child(match sub {
                     0 => self.render_responses(t, r, cx).into_any_element(),
+                    5 => self.render_route_settings(t, s, r, cx).into_any_element(),
                     n => div()
                         .p(px(16.))
                         .text_color(t.text_muted)
@@ -378,6 +430,276 @@ impl Shell {
                         .into_any_element(),
                 }),
             )
+    }
+
+    /// Folder tab (SPEC §20.17): header with the Enabled toggle, settings, routes table.
+    fn render_folder_tab(
+        &self,
+        t: &Theme,
+        s: &Server,
+        f: &crate::view::Folder,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let label = |k: &str| {
+            div()
+                .w(px(190.))
+                .flex_none()
+                .text_color(t.text_muted)
+                .child(k.to_string())
+        };
+        let row = || div().flex().flex_row().h(px(ROW_H + 4.)).items_center();
+        let (fid_en, fid_col, fid_name) = (f.id.clone(), f.id.clone(), f.id.clone());
+        let cell = |w: f32, text: String, color| {
+            div()
+                .w(px(w))
+                .flex_none()
+                .truncate()
+                .font_family(BUFFER_FONT)
+                .text_size(px(12.))
+                .text_color(color)
+                .child(text)
+        };
+        div()
+            .id(crate::ui::eid(format!("folder-tab-{}", f.id)))
+            .size_full()
+            .overflow_y_scroll()
+            .p(px(16.))
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(8.))
+                    .pb(px(8.))
+                    .child(icon("folder", 16., t.icon_muted))
+                    .child(div().text_size(px(14.)).child(f.name.clone()))
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .text_color(t.text_muted)
+                            .child(format!("{} · {} routes", s.name, f.routes.len())),
+                    ),
+            )
+            .child(section_heading(t, "General"))
+            .child(row().child(label("Name")).child(field_button_with(
+                "folder-name",
+                f.name.clone(),
+                "rename",
+                cx.listener(move |this, _, w, cx| this.rename_server_row(&fid_name, w, cx)),
+            )))
+            .child(row().child(label("Enabled")).child(toggle_button(
+                t,
+                "folder-enabled",
+                f.enabled,
+                "folder_toggle_enabled",
+                cx.listener(move |this, _, _, cx| this.folder_toggle(&fid_en, true, cx)),
+            )))
+            .child(row().child(label("Start collapsed")).child(toggle_button(
+                t,
+                "folder-collapsed",
+                f.collapsed,
+                "folder_toggle_collapsed",
+                cx.listener(move |this, _, _, cx| this.folder_toggle(&fid_col, false, cx)),
+            )))
+            .child(div().mt(px(12.)).child(section_heading(t, "Routes")))
+            .child(crate::dev_id!(
+                div()
+                    .id("folder-routes-table")
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .h(px(ROW_H))
+                            .items_center()
+                            .text_size(px(11.))
+                            .text_color(t.text_muted)
+                            .child(div().w(px(70.)).child("Method"))
+                            .child(div().w(px(260.)).child("Path"))
+                            .child(div().w(px(80.)).child("Match"))
+                            .child(div().w(px(70.)).child("Priority"))
+                            .child(div().w(px(90.)).child("Status")),
+                    )
+                    .children(f.routes.iter().map(|r| {
+                        let rid = r.id.clone();
+                        let status = if r.pattern_error.is_some() {
+                            ("invalid", t.deleted)
+                        } else if r.shadowed_by.is_some() {
+                            ("shadowed", t.modified)
+                        } else if f.enabled {
+                            ("enabled", t.created)
+                        } else {
+                            ("disabled", t.text_muted)
+                        };
+                        div()
+                            .id(crate::ui::eid(format!("folder-route-{}", r.id)))
+                            .flex()
+                            .flex_row()
+                            .h(px(ROW_H))
+                            .items_center()
+                            .cursor_pointer()
+                            .hover(|s| s.bg(t.element_hover))
+                            .on_click(cx.listener(move |this, ev: &gpui::ClickEvent, _, cx| {
+                                this.click_row(&rid, ev.click_count(), cx)
+                            }))
+                            .child(cell(70., r.method.clone(), t.method_color(&r.method)))
+                            .child(cell(260., r.path.clone(), t.text))
+                            .child(cell(80., r.match_mode.clone(), t.text_muted))
+                            .child(cell(70., r.priority.to_string(), t.text_muted))
+                            .child(cell(90., status.0.into(), status.1))
+                    }))
+                    .children(f.routes.is_empty().then(|| {
+                        div()
+                            .text_size(px(12.))
+                            .text_color(t.text_muted)
+                            .child("No routes in this folder. Drag routes here or use New route…")
+                    })),
+                "folder-routes-table",
+                Text,
+                "Folder routes",
+                None
+            ))
+    }
+
+    /// Route Settings sub-tab (SPEC §20.15, §20.17): matching, priority, test a path.
+    fn render_route_settings(
+        &self,
+        t: &Theme,
+        s: &Server,
+        r: &Route,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let label = |k: &str| {
+            div()
+                .w(px(190.))
+                .flex_none()
+                .text_color(t.text_muted)
+                .child(k.to_string())
+        };
+        let row = || div().flex().flex_row().h(px(ROW_H + 4.)).items_center();
+        let mode_text = if r.match_explicit.is_some() {
+            r.match_mode.clone()
+        } else {
+            format!("{} (inferred)", r.match_mode)
+        };
+        let input = self.test_path.get(&r.id).cloned().unwrap_or_default();
+        let result = self.test_path_result(s, r, &input);
+        let note = |text: String, color| {
+            div()
+                .ml(px(190.))
+                .text_size(px(12.))
+                .text_color(color)
+                .child(text)
+        };
+        div()
+            .id(crate::ui::eid(format!("route-settings-{}", r.id)))
+            .size_full()
+            .overflow_y_scroll()
+            .p(px(16.))
+            .flex()
+            .flex_col()
+            .child(section_heading(t, "Matching"))
+            .child(row().child(label("Match mode")).child(field_button_with(
+                "route-match-mode",
+                mode_text,
+                "edit_route_match",
+                cx.listener(|this, _, w, cx| this.edit_route_setting(1, w, cx)),
+            )))
+            .child(row().child(label("Priority")).child(field_button_with(
+                "route-priority-input",
+                r.priority.to_string(),
+                "edit_route_priority",
+                cx.listener(|this, _, w, cx| this.edit_route_setting(0, w, cx)),
+            )))
+            .child(
+                row().child(label("Response mode")).child(
+                    div()
+                        .id("route-response-mode")
+                        .px(px(4.))
+                        .child("Rules")
+                        .child(
+                            div()
+                                .ml(px(8.))
+                                .text_size(px(12.))
+                                .text_color(t.text_muted)
+                                .child("Other modes arrive in M5"),
+                        ),
+                ),
+            )
+            .child(row().child(label("Test a path")).child(field_button_with(
+                "route-test-path-input",
+                if input.is_empty() {
+                    format!("{}/users/42", s.prefix)
+                } else {
+                    input.clone()
+                },
+                "route_test_path",
+                cx.listener(|this, _, w, cx| this.edit_route_setting(2, w, cx)),
+            )))
+            .children(result.map(|(ok, text)| {
+                crate::dev_id!(
+                    note(text.clone(), if ok { t.created } else { t.text_muted })
+                        .id("route-test-path-result"),
+                    "route-test-path-result",
+                    Text,
+                    text,
+                    None
+                )
+            }))
+            .children(r.pattern_error.clone().map(|e| {
+                crate::dev_id!(
+                    note(e.clone(), t.deleted).id("route-pattern-error"),
+                    "route-pattern-error",
+                    Text,
+                    e,
+                    None
+                )
+            }))
+            .children(
+                r.shadowed_by
+                    .clone()
+                    .map(|by| note(format!("Never reached: shadowed by {by}"), t.modified)),
+            )
+    }
+
+    /// Result line of "Test a path": `(matches, text)`; `None` while the input is empty.
+    fn test_path_result(&self, s: &Server, r: &Route, input: &str) -> Option<(bool, String)> {
+        if input.is_empty() {
+            return None;
+        }
+        let snap = self.store.as_ref()?.snapshot();
+        let (_, srv) = snap.servers.iter().find(|(_, x)| x.id == s.id)?;
+        let table = fauxfield_engine::RouteTable::compile(srv);
+        let method = if r.method.eq_ignore_ascii_case("ANY") {
+            "GET"
+        } else {
+            r.method.as_str()
+        };
+        let c = table.candidates(method, input);
+        let Some(me) = c.iter().find(|m| m.route.id == r.id) else {
+            return Some((false, "✗ does not match".into()));
+        };
+        let params = me
+            .params
+            .iter()
+            .map(|(k, v)| format!("{k} = {v}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut text = if params.is_empty() {
+            "✓ matches".to_string()
+        } else {
+            format!("✓ matches · {params}")
+        };
+        if let Some(w) = c.first().filter(|w| w.route.id != r.id) {
+            text.push_str(&format!(
+                ", but {} (priority {}) wins",
+                w.pattern, w.priority
+            ));
+        }
+        Some((true, text))
     }
 
     fn render_responses(&self, t: &Theme, r: &Route, cx: &mut Context<Self>) -> impl IntoElement {
@@ -402,19 +724,37 @@ impl Shell {
                     .bg(t.panel)
                     .children(r.responses.iter().enumerate().map(|(i, resp)| {
                         let rid = r.id.clone();
+                        let (resp_id, menu_id, dots_id) =
+                            (resp.id.clone(), resp.id.clone(), resp.id.clone());
+                        let group = format!("resp-grp-{}", resp.id);
                         crate::dev_id!(
                             div()
                                 .id(crate::ui::eid(format!("resp-{}-{i}", r.id)))
+                                .group(group.clone())
                                 .h(px(ROW_H + 4.))
                                 .px(px(10.))
                                 .flex()
                                 .items_center()
                                 .gap(px(6.))
                                 .cursor_pointer()
-                                .on_click(cx.listener(move |this, _, _, cx| {
+                                .on_click(cx.listener(move |this, ev: &ClickEvent, w, cx| {
                                     this.resp_sel.insert(rid.clone(), i);
+                                    if ev.click_count() >= 2 {
+                                        this.rename_row(&resp_id, w, cx);
+                                    }
                                     cx.notify();
                                 }))
+                                .on_mouse_down(
+                                    MouseButton::Right,
+                                    cx.listener(move |this, ev: &gpui::MouseDownEvent, _, cx| {
+                                        this.open_response_menu(
+                                            &menu_id,
+                                            f32::from(ev.position.x),
+                                            f32::from(ev.position.y),
+                                            cx,
+                                        )
+                                    }),
+                                )
                                 .when(i == sel, |d| d.bg(t.element_selected))
                                 .child(
                                     div()
@@ -423,7 +763,39 @@ impl Shell {
                                         .child(resp.status.to_string()),
                                 )
                                 .child(div().flex_1().truncate().child(resp.name.clone()))
-                                .children(resp.default.then(|| icon("check", 12., t.created))),
+                                .children(resp.default.then(|| icon("check", 12., t.created)))
+                                .child(crate::dev_id!(
+                                    div()
+                                        .id(crate::ui::eid(format!("resp-dots-{}", resp.id)))
+                                        .size(px(20.))
+                                        .flex_none()
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .rounded(px(3.))
+                                        .invisible()
+                                        .group_hover(group, |s| s.visible())
+                                        .hover(|s| s.bg(t.element_selected))
+                                        .on_mouse_down(
+                                            MouseButton::Left,
+                                            cx.listener(
+                                                move |this, ev: &gpui::MouseDownEvent, _, cx| {
+                                                    this.open_response_menu(
+                                                        &dots_id,
+                                                        f32::from(ev.position.x),
+                                                        f32::from(ev.position.y),
+                                                        cx,
+                                                    );
+                                                    cx.stop_propagation();
+                                                },
+                                            ),
+                                        )
+                                        .child(icon("ellipsis", 14., t.icon_muted)),
+                                    format!("resp-dots-{}", resp.id),
+                                    Button,
+                                    format!("Menu for {}", resp.name),
+                                    None
+                                )),
                             format!("resp-{}-{i}", r.id),
                             Row,
                             &resp.name,
@@ -437,77 +809,7 @@ impl Shell {
                     .min_w_0()
                     .flex()
                     .flex_col()
-                    .children(first.map(|resp| {
-                        div()
-                            .size_full()
-                            .flex()
-                            .flex_col()
-                            .child(
-                                div()
-                                    .h(px(32.))
-                                    .flex_none()
-                                    .px(px(12.))
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(16.))
-                                    .text_size(px(12.))
-                                    .text_color(t.text_muted)
-                                    .child(field_button(
-                                        "resp-status",
-                                        format!("Status {}", resp.status),
-                                        "edit_response_status",
-                                        cx,
-                                    ))
-                                    .child(field_button(
-                                        "resp-delay",
-                                        format!("Delay {} ms", resp.delay_ms),
-                                        "edit_response_delay",
-                                        cx,
-                                    ))
-                                    .child(field_button(
-                                        "resp-content-type",
-                                        if resp.content_type.is_empty() {
-                                            "(no content type)".to_string()
-                                        } else {
-                                            resp.content_type.clone()
-                                        },
-                                        "edit_response_content_type",
-                                        cx,
-                                    ))
-                                    .child(field_button(
-                                        "resp-header",
-                                        format!("Headers {}", resp.headers.len()),
-                                        "edit_response_header",
-                                        cx,
-                                    ))
-                                    .child(field_button(
-                                        "resp-body-edit",
-                                        "Edit body".to_string(),
-                                        "edit_response_body",
-                                        cx,
-                                    )),
-                            )
-                            .child(crate::dev_id!(
-                                div()
-                                    .id("body-editor")
-                                    .flex_1()
-                                    .min_h_0()
-                                    .overflow_y_scroll()
-                                    .p(px(12.))
-                                    .font_family(BUFFER_FONT)
-                                    .text_size(px(13.))
-                                    .text_color(t.syntax_string)
-                                    .child(if resp.body.is_empty() {
-                                        "(empty body)".to_string()
-                                    } else {
-                                        resp.body.clone()
-                                    }),
-                                "body-editor",
-                                Input,
-                                "Response body",
-                                None
-                            ))
-                    })),
+                    .children(first.map(|resp| self.render_response_pane(t, &resp, cx))),
             )
     }
 
@@ -634,7 +936,7 @@ impl Shell {
         let sid = s.id.clone();
         let (id_name, id_host, id_port, id_prefix) =
             (sid.clone(), sid.clone(), sid.clone(), sid.clone());
-        let (id_en, id_hint) = (sid.clone(), sid.clone());
+        let (id_en, id_hint, id_strict) = (sid.clone(), sid.clone(), sid.clone());
         let prefix = if s.prefix.is_empty() {
             "(none)".to_string()
         } else {
@@ -700,6 +1002,24 @@ impl Shell {
                         "toggle_unmatched_hint",
                         cx.listener(move |this, _, _, cx| this.toggle_unmatched_hint(&id_hint, cx)),
                     )),
+            )
+            .child(
+                row()
+                    .child(label("Strict trailing slash"))
+                    .child(toggle_button(
+                        t,
+                        "server-strict-slash",
+                        s.strict_slash,
+                        "toggle_strict_slash",
+                        cx.listener(move |this, _, _, cx| this.toggle_strict_slash(&id_strict, cx)),
+                    ))
+                    .child(
+                        div()
+                            .ml(px(8.))
+                            .text_size(px(12.))
+                            .text_color(t.text_muted)
+                            .child("/users and /users/ are different paths"),
+                    ),
             )
             .child(
                 row().child(label("Routes")).child(
@@ -906,7 +1226,20 @@ impl Shell {
             )
             .child(line("Server".into(), rec.server.clone()))
             .child(line("Route".into(), rec.route.clone()))
-            .child(line("Source".into(), rec.source.clone()))
+            .child(line("Source".into(), rec.source.clone()));
+        if !rec.route_pattern.is_empty() {
+            col = col
+                .child(
+                    div()
+                        .id("traffic-matched-route")
+                        .child(section("MATCHED ROUTE")),
+                )
+                .child(line("Pattern".into(), rec.route_pattern.clone()));
+            for (k, v) in &rec.params {
+                col = col.child(line(format!("{k} ="), v.clone()));
+            }
+        }
+        let mut col = col
             .child(section("TIMING"))
             .child(line("Match".into(), format!("{} µs", rec.timing.match_us)))
             .child(line("Delay".into(), format!("{} ms", rec.timing.delay_ms)))
@@ -1092,30 +1425,6 @@ fn toggle_button(
         id,
         Button,
         if on { "On" } else { "Off" },
-        Action(action)
-    )
-}
-
-/// A muted, clickable field label that runs an edit action (opens its Prompt).
-fn field_button(
-    id: &'static str,
-    label: String,
-    action: &'static str,
-    cx: &mut Context<Shell>,
-) -> impl IntoElement {
-    crate::dev_id!(
-        div()
-            .id(id)
-            .h(px(22.))
-            .px(px(4.))
-            .flex()
-            .items_center()
-            .cursor_pointer()
-            .on_click(cx.listener(move |this, _, w, cx| this.run_action_id(action, w, cx)))
-            .child(label.clone()),
-        id,
-        Button,
-        label,
         Action(action)
     )
 }

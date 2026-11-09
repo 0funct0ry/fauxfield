@@ -580,7 +580,22 @@ async fn handle(
 
     let match_start = Instant::now();
     let table = rt.table.read().unwrap().clone();
-    let route = table.find(&method, &path).cloned();
+    let found = table.find(&method, &path);
+    let route = found.as_ref().map(|m| m.route.clone());
+    let (params, route_pattern) = found
+        .map(|m| {
+            (
+                m.params
+                    .into_iter()
+                    .map(|(k, v)| {
+                        let v = crate::router::mask_param(&k, &v);
+                        (k, v)
+                    })
+                    .collect::<Vec<_>>(),
+                m.pattern,
+            )
+        })
+        .unwrap_or_default();
     let match_us = match_start.elapsed().as_micros() as u64;
 
     let mut delay_ms = 0;
@@ -627,6 +642,8 @@ async fn handle(
             server_id: id,
             server: server_name,
             route: route_id,
+            params,
+            route_pattern,
             method,
             url,
             request_headers: redact(req_headers),

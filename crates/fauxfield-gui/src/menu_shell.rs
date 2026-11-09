@@ -122,7 +122,8 @@ impl Shell {
         let mut c = MenuContext::welcome(Platform::current());
         c.workspace_open = self.store.is_some();
         c.modal_open = self.any_modal_open();
-        c.text_input_focused = self.picker.is_some();
+        c.text_input_focused =
+            self.picker.is_some() || self.body_edit.is_some() || self.inline.is_some();
         let sidx = self.current_server();
         c.current_server = sidx.map(|i| self.ws.servers[i].id.clone());
         c.current_server_enabled = sidx.is_some_and(|i| self.ws.servers[i].enabled);
@@ -251,17 +252,50 @@ impl Shell {
 
     // ---- edit_* on the focused single-line input (the picker query) -------------------------
 
+    /// The focused text buffer outside the picker: an inline field or the body editor.
+    fn focused_buf(&mut self) -> Option<&mut crate::editor::TextBuf> {
+        if self.picker.is_some() {
+            return None;
+        }
+        if let Some(i) = self.inline.as_mut() {
+            return Some(&mut i.buf);
+        }
+        self.body_edit.as_mut().map(|b| &mut b.buf)
+    }
+
     pub(crate) fn edit_copy(&mut self, cx: &mut Context<Self>) {
+        if let Some(b) = self.focused_buf() {
+            // The selection, else everything.
+            let text = b.selected_text().unwrap_or(&b.text).to_string();
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
+            return;
+        }
         if let Some(p) = &self.picker {
-            cx.write_to_clipboard(ClipboardItem::new_string(p.query.clone()));
+            let text = p
+                .selection()
+                .map_or(p.query.as_str(), |(a, z)| &p.query[a..z])
+                .to_string();
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
         }
     }
 
     pub(crate) fn edit_cut(&mut self, cx: &mut Context<Self>) {
         self.edit_copy(cx);
+        if let Some(b) = self.focused_buf() {
+            if b.selection().is_none() {
+                b.select_all();
+            }
+            b.delete_selection();
+            cx.notify();
+            return;
+        }
         if let Some(p) = &mut self.picker {
-            p.query.clear();
-            p.all_selected = false;
+            p.edit(|b| {
+                if b.selection().is_none() {
+                    b.select_all();
+                }
+                b.delete_selection();
+            });
         }
         self.refresh_picker(cx);
     }
@@ -270,13 +304,39 @@ impl Shell {
         let Some(text) = cx.read_from_clipboard().and_then(|c| c.text()) else {
             return;
         };
+        let single_line = self.inline.is_some();
+        if let Some(b) = self.focused_buf() {
+            // The body keeps its newlines (line endings normalised); fields take the first line.
+            let text = if single_line {
+                text.lines().next().unwrap_or("").to_string()
+            } else {
+                let t = text.replace("\r\n", "\n");
+                // Pasting a valid JSON document over an empty (or fully selected) body
+                // pretty-prints it; anything else is pasted as is.
+                let replaces_all =
+                    b.text.trim().is_empty() || b.selection() == Some((0, b.text.len()));
+                if replaces_all && crate::editor::looks_like_json_document(&t) {
+                    crate::editor::format_json(&t).unwrap_or(t)
+                } else {
+                    t
+                }
+            };
+            b.insert(&text);
+            cx.notify();
+            return;
+        }
         let line = text.lines().next().unwrap_or("").to_string();
         self.picker_type(&line, cx);
     }
 
     pub(crate) fn edit_select_all(&mut self, cx: &mut Context<Self>) {
+        if let Some(b) = self.focused_buf() {
+            b.select_all();
+            cx.notify();
+            return;
+        }
         if let Some(p) = &mut self.picker {
-            p.all_selected = !p.query.is_empty();
+            p.edit(|b| b.select_all());
         }
         cx.notify();
     }

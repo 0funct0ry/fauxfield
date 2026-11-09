@@ -65,6 +65,13 @@ actions!(
         EditRouteMethod,
         EditRouteMethodCustom,
         EditRoutePath,
+        MoveUp,
+        MoveDown,
+        MoveToRoot,
+        EditRoutePriority,
+        EditRouteMatch,
+        RouteTestPath,
+        ToggleStrictSlash,
         EditResponseStatus,
         EditResponseName,
         EditResponseContentType,
@@ -244,6 +251,25 @@ pub static ACTIONS: &[ActionInfo] = &[
         EditRouteMethodCustom
     ),
     row!("edit_route_path", "Route: Edit Path…", EditRoutePath),
+    row!("move_up", "Tree: Move Route or Folder Up", MoveUp),
+    row!("move_down", "Tree: Move Route or Folder Down", MoveDown),
+    row!(
+        "route_move_to_root",
+        "Route: Move to Server Root",
+        MoveToRoot
+    ),
+    row!(
+        "edit_route_priority",
+        "Route: Set Priority…",
+        EditRoutePriority
+    ),
+    row!("edit_route_match", "Route: Set Match Mode…", EditRouteMatch),
+    row!("route_test_path", "Route: Test a Path…", RouteTestPath),
+    row!(
+        "toggle_strict_slash",
+        "Server: Toggle Strict Trailing Slash",
+        ToggleStrictSlash
+    ),
     row!(
         "edit_response_status",
         "Response: Edit Status…",

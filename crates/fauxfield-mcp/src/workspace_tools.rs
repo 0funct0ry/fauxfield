@@ -83,7 +83,22 @@ struct UpsertRoute {
     method: Option<String>,
     path: Option<String>,
     name: Option<String>,
+    /// Match mode: exact, param or regex; omit to keep (create: inferred).
+    #[serde(rename = "match")]
+    #[schemars(rename = "match")]
+    match_mode: Option<String>,
+    /// Higher wins; 0 is the default and is not written.
+    priority: Option<i32>,
     responses: Option<Vec<ResponseSpec>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct MatchPath {
+    /// Server ID, name, or file slug.
+    server: String,
+    method: String,
+    /// Request path (with the Server prefix), query ignored.
+    path: String,
 }
 
 fn parse<T: for<'de> Deserialize<'de>>(m: Map<String, Value>) -> Result<T, String> {
@@ -139,9 +154,17 @@ fn summary(file: &str, s: &Server) -> Value {
     json!({ "id": s.id, "name": s.name, "file": file, "host": s.host, "port": s.port, "enabled": s.enabled, "prefix": s.prefix, "unmatched_hint": s.unmatched_hint.unwrap_or(true), "routes": s.routes.len(), "folders": s.folders.len() })
 }
 
+fn shadowed_by(s: &Server, id: &str) -> Option<String> {
+    fauxfield_model::pattern::shadowed_routes(s)
+        .into_iter()
+        .find(|x| x.route == id)
+        .map(|x| x.by)
+}
+
 fn route_json(s: &Server, r: &Route) -> Value {
     let mut v = serde_json::to_value(r).unwrap_or(Value::Null);
     v["server"] = json!(s.id);
+    v["shadowed_by"] = json!(shadowed_by(s, &r.id));
     v
 }
 
@@ -323,7 +346,7 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                 if a.server.as_ref().is_some_and(|q| *q != srv.id && *q != srv.name && *q != slug(f)) {
                     continue;
                 }
-                rows.extend(srv.routes.iter().map(|r| json!({ "id": r.id, "server": srv.id, "folder": r.folder, "kind": r.kind, "method": r.method, "path": r.path, "name": r.name, "responses": r.responses.len() })));
+                rows.extend(srv.routes.iter().map(|r| json!({ "id": r.id, "server": srv.id, "folder": r.folder, "kind": r.kind, "method": r.method, "path": r.path, "name": r.name, "responses": r.responses.len(), "match": r.match_mode, "priority": r.priority.unwrap_or(0), "shadowed_by": shadowed_by(srv, &r.id) })));
             }
             json!({ "routes": rows })
         });
@@ -360,11 +383,16 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                             .path
                             .as_deref()
                             .ok_or("path is required to create a route")?;
-                        s.create_route(
+                        s.create_route_with(
                             &srv.id,
                             a.folder.as_deref(),
                             a.method.as_deref().unwrap_or("GET"),
                             path,
+                            &fauxfield_store::RouteOpts {
+                                match_mode: a.match_mode.clone(),
+                                name: None,
+                                priority: a.priority,
+                            },
                         )
                         .map_err(e)?
                     }
@@ -380,7 +408,13 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                         s.set_str(&t, "path", Some(v)).map_err(e)?;
                     }
                     if let Some(v) = &a.folder {
-                        s.set_str(&t, "folder", Some(v)).map_err(e)?;
+                        s.move_route(&rid, Some(v), None).map_err(e)?;
+                    }
+                    if let Some(v) = &a.match_mode {
+                        s.set_route_match(&rid, Some(v)).map_err(e)?;
+                    }
+                    if let Some(v) = a.priority {
+                        s.set_route_priority(&rid, v).map_err(e)?;
                     }
                 }
                 if let Some(v) = &a.name {
@@ -407,6 +441,31 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                 s.flush().map_err(e)?;
                 let (srv, r) = find_route(&s, &rid)?;
                 Ok(route_json(&srv, &r))
+            });
+            Box::pin(async move { out })
+        },
+    ));
+    let p = provider.clone();
+    r.register(ToolDef::new::<MatchPath>(
+        "match_path",
+        "Which Route a request would match: the winner, all candidates (best first) and closest hints.",
+        ToolClass::Read,
+        move |m| {
+            let Some(s) = p() else { return no_workspace() };
+            let out = parse::<MatchPath>(m).and_then(|a| {
+                let (_, srv) = find_server(&s, &a.server)?;
+                let t = fauxfield_engine::RouteTable::compile(&srv);
+                let row = |m: &fauxfield_engine::Match<'_>| {
+                    let folder = m.route.folder.clone();
+                    json!({ "route_id": m.route.id, "pattern": m.pattern, "params": m.params.iter().cloned().collect::<std::collections::BTreeMap<_, _>>(), "folder": folder, "priority": m.priority })
+                };
+                let c = t.candidates(&a.method, &a.path);
+                let closest: Vec<_> = t
+                    .closest(&a.method, &a.path)
+                    .into_iter()
+                    .map(|(m, p, _)| format!("{m} {p}"))
+                    .collect();
+                Ok(json!({ "matched": c.first().map(row), "candidates": c.iter().map(row).collect::<Vec<_>>(), "closest": closest }))
             });
             Box::pin(async move { out })
         },

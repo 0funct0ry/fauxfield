@@ -525,6 +525,19 @@ impl Store {
         method: &str,
         path: &str,
     ) -> Result<String, StoreError> {
+        self.create_route_with(server_id, folder, method, path, &RouteOpts::default())
+    }
+
+    /// Create a Route with optional match mode, name and priority. Defaults are not written.
+    pub fn create_route_with(
+        &self,
+        server_id: &str,
+        folder: Option<&str>,
+        method: &str,
+        path: &str,
+        opts: &RouteOpts,
+    ) -> Result<String, StoreError> {
+        validate_pattern(path, opts.match_mode.as_deref())?;
         let file = self
             .server_file(server_id)
             .ok_or_else(|| StoreError::NotFound(server_id.into()))?;
@@ -537,6 +550,15 @@ impl Store {
             }
             t["method"] = value(method.to_ascii_uppercase());
             t["path"] = value(path);
+            if let Some(n) = &opts.name {
+                t["name"] = value(n.as_str());
+            }
+            if let Some(m) = &opts.match_mode {
+                t["match"] = value(m.as_str());
+            }
+            if let Some(p) = opts.priority.filter(|p| *p != 0) {
+                t["priority"] = value(i64::from(p));
+            }
             let mut resp = Table::new();
             resp["id"] = value(new_id("rsp"));
             resp["name"] = value("OK");
@@ -549,6 +571,193 @@ impl Store {
             Ok(())
         })?;
         Ok(id)
+    }
+
+    /// Set or clear (`None` = inferred) a Route's match mode; validated like the loader.
+    pub fn set_route_match(&self, route_id: &str, mode: Option<&str>) -> Result<(), StoreError> {
+        let t = Target::Route(route_id.into());
+        let file = self
+            .file_of(&t)
+            .ok_or_else(|| StoreError::NotFound(route_id.into()))?;
+        self.edit(&file, |d| {
+            let r = find_table(d, "routes", route_id)
+                .ok_or_else(|| StoreError::NotFound(route_id.into()))?;
+            let path = r
+                .get("path")
+                .and_then(Item::as_str)
+                .unwrap_or("")
+                .to_string();
+            validate_pattern(&path, mode)?;
+            match mode {
+                Some(m) => r["match"] = value(m),
+                None => {
+                    r.remove("match");
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// Set a Route's priority; `0` removes the key.
+    pub fn set_route_priority(&self, route_id: &str, priority: i32) -> Result<(), StoreError> {
+        self.set_int(
+            &Target::Route(route_id.into()),
+            "priority",
+            (priority != 0).then_some(i64::from(priority)),
+        )
+    }
+
+    pub fn rename_folder(&self, folder_id: &str, name: &str) -> Result<(), StoreError> {
+        self.set_str(&Target::Folder(folder_id.into()), "name", Some(name))
+    }
+
+    /// `enabled = true` is the default and is removed rather than written.
+    pub fn set_folder_enabled(&self, folder_id: &str, enabled: bool) -> Result<(), StoreError> {
+        self.set_item(
+            &Target::Folder(folder_id.into()),
+            "enabled",
+            (!enabled).then(|| value(false)),
+        )
+    }
+
+    /// `collapsed = false` is the default and is removed rather than written.
+    pub fn set_folder_collapsed(&self, folder_id: &str, collapsed: bool) -> Result<(), StoreError> {
+        self.set_item(
+            &Target::Folder(folder_id.into()),
+            "collapsed",
+            collapsed.then(|| value(true)),
+        )
+    }
+
+    /// `strict_slash = false` is the default and is removed rather than written.
+    pub fn set_strict_slash(&self, server_id: &str, strict: bool) -> Result<(), StoreError> {
+        self.set_item(
+            &Target::Server(server_id.into()),
+            "strict_slash",
+            strict.then(|| value(true)),
+        )
+    }
+
+    /// Delete a Folder; `with_routes` removes its Routes, otherwise they move to the
+    /// end of the server root in their current relative order.
+    pub fn delete_folder(&self, folder_id: &str, with_routes: bool) -> Result<(), StoreError> {
+        if !with_routes {
+            return self.delete(&Target::Folder(folder_id.into()));
+        }
+        let t = Target::Folder(folder_id.into());
+        let file = self
+            .file_of(&t)
+            .ok_or_else(|| StoreError::NotFound(folder_id.into()))?;
+        self.edit(&file, |d| {
+            if let Some(rs) = d.get_mut("routes").and_then(Item::as_array_of_tables_mut) {
+                let mut keep = Vec::new();
+                while !rs.is_empty() {
+                    let r = rs.get(0).cloned().expect("non-empty");
+                    rs.remove(0);
+                    if r.get("folder").and_then(Item::as_str) != Some(folder_id) {
+                        keep.push(r);
+                    }
+                }
+                for r in keep {
+                    rs.push(r);
+                }
+            }
+            remove_by_id(d.get_mut("folders"), folder_id);
+            Ok(())
+        })
+    }
+
+    /// Move a Route into `target` (`None` = server root), immediately before sibling
+    /// `before`, or at the end of the target block. Physical order then equals effective
+    /// order for that block (SPEC §20.17). A no-op move writes nothing.
+    pub fn move_route(
+        &self,
+        route_id: &str,
+        target: Option<&str>,
+        before: Option<&str>,
+    ) -> Result<(), StoreError> {
+        let t = Target::Route(route_id.into());
+        let file = self
+            .file_of(&t)
+            .ok_or_else(|| StoreError::NotFound(route_id.into()))?;
+        self.edit(&file, |d| {
+            if let Some(f) = target
+                && !has_id(d.get("folders"), f)
+            {
+                return Err(StoreError::NotFound(f.into()));
+            }
+            if before == Some(route_id) {
+                return Ok(());
+            }
+            let rs = d
+                .get_mut("routes")
+                .and_then(Item::as_array_of_tables_mut)
+                .ok_or_else(|| StoreError::NotFound(route_id.into()))?;
+            let (mut v, pos) = take_all(rs);
+            let from = v
+                .iter()
+                .position(|t| id_of(t) == Some(route_id))
+                .ok_or_else(|| StoreError::NotFound(route_id.into()))?;
+            let mut r = v.remove(from);
+            let folder_of = |t: &Table| t.get("folder").and_then(Item::as_str).map(String::from);
+            let before_idx = match before {
+                Some(b) => Some(
+                    v.iter()
+                        .position(|t| id_of(t) == Some(b))
+                        .ok_or_else(|| StoreError::NotFound(b.into()))?,
+                ),
+                None => None,
+            };
+            let at = match before_idx {
+                Some(i) => i,
+                None => v
+                    .iter()
+                    .rposition(|t| folder_of(t).as_deref() == target)
+                    .map_or(v.len(), |i| i + 1),
+            };
+            match target {
+                Some(f) => r["folder"] = value(f),
+                None => {
+                    r.remove("folder");
+                }
+            }
+            v.insert(at, r);
+            put_all(rs, v, pos);
+            Ok(())
+        })
+    }
+
+    /// Reorder a Folder before sibling `before` (or to the end). Routes are untouched.
+    pub fn move_folder(&self, folder_id: &str, before: Option<&str>) -> Result<(), StoreError> {
+        let t = Target::Folder(folder_id.into());
+        let file = self
+            .file_of(&t)
+            .ok_or_else(|| StoreError::NotFound(folder_id.into()))?;
+        self.edit(&file, |d| {
+            if before == Some(folder_id) {
+                return Ok(());
+            }
+            let fs = d
+                .get_mut("folders")
+                .and_then(Item::as_array_of_tables_mut)
+                .ok_or_else(|| StoreError::NotFound(folder_id.into()))?;
+            let (mut v, pos) = take_all(fs);
+            let from = v
+                .iter()
+                .position(|t| id_of(t) == Some(folder_id))
+                .ok_or_else(|| StoreError::NotFound(folder_id.into()))?;
+            let f = v.remove(from);
+            let at = match before {
+                Some(b) => v
+                    .iter()
+                    .position(|t| id_of(t) == Some(b))
+                    .ok_or_else(|| StoreError::NotFound(b.into()))?,
+                None => v.len(),
+            };
+            v.insert(at, f);
+            put_all(fs, v, pos);
+            Ok(())
+        })
     }
 
     pub fn create_response(&self, route_id: &str) -> Result<String, StoreError> {
@@ -640,6 +849,46 @@ impl Store {
     }
 
     /// Make one response the default of its route.
+    /// Rename a header keeping its position, value and comments. Fails if `new` exists
+    /// (case-insensitively) or `old` is missing.
+    pub fn rename_header(&self, response_id: &str, old: &str, new: &str) -> Result<(), StoreError> {
+        let target = Target::Response(response_id.into());
+        let file = self
+            .file_of(&target)
+            .ok_or_else(|| StoreError::NotFound(response_id.into()))?;
+        self.edit(&file, |d| {
+            let t = resolve(d, &target).ok_or_else(|| StoreError::NotFound(response_id.into()))?;
+            let h = t
+                .get_mut("headers")
+                .and_then(Item::as_table_mut)
+                .ok_or_else(|| StoreError::NotFound(format!("header {old}")))?;
+            if old == new {
+                return Ok(());
+            }
+            if h.iter().any(|(k, _)| k.eq_ignore_ascii_case(new)) {
+                return Err(StoreError::Invalid(format!(
+                    "header `{new}` already exists"
+                )));
+            }
+            let mut entries: Vec<(toml_edit::Key, Item)> = h
+                .iter()
+                .filter_map(|(k, _)| h.get_key_value(k).map(|(k, v)| (k.clone(), v.clone())))
+                .collect();
+            let at = entries
+                .iter()
+                .position(|(k, _)| k.get() == old)
+                .ok_or_else(|| StoreError::NotFound(format!("header {old}")))?;
+            let mut key = toml_edit::Key::new(new);
+            *key.leaf_decor_mut() = entries[at].0.leaf_decor().clone();
+            entries[at].0 = key;
+            h.clear();
+            for (k, v) in entries {
+                h.insert_formatted(&k, v);
+            }
+            Ok(())
+        })
+    }
+
     pub fn set_default_response(&self, response_id: &str) -> Result<(), StoreError> {
         let target = Target::Response(response_id.into());
         let file = self
@@ -883,6 +1132,46 @@ pub(crate) fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
     let tmp = path.with_extension("toml.tmp");
     std::fs::write(&tmp, text)?;
     std::fs::rename(&tmp, path)
+}
+
+/// Optional Route fields for [`Store::create_route_with`].
+#[derive(Debug, Clone, Default)]
+pub struct RouteOpts {
+    pub match_mode: Option<String>,
+    pub name: Option<String>,
+    pub priority: Option<i32>,
+}
+
+fn validate_pattern(path: &str, mode: Option<&str>) -> Result<(), StoreError> {
+    fauxfield_model::pattern::Pattern::parse(path, mode, false)
+        .map(|_| ())
+        .map_err(StoreError::Invalid)
+}
+
+fn id_of(t: &Table) -> Option<&str> {
+    t.get("id").and_then(Item::as_str)
+}
+
+fn take_all(a: &mut ArrayOfTables) -> (Vec<Table>, Vec<usize>) {
+    let mut v = Vec::with_capacity(a.len());
+    while !a.is_empty() {
+        v.push(a.get(0).cloned().expect("non-empty"));
+        a.remove(0);
+    }
+    let mut pos: Vec<usize> = v.iter().filter_map(Table::position).collect();
+    pos.sort_unstable();
+    (v, pos)
+}
+
+/// Rebuild the array in `v`'s order. toml_edit prints tables by their document position,
+/// so the existing positions are reassigned in ascending order to the new sequence.
+fn put_all(a: &mut ArrayOfTables, mut v: Vec<Table>, positions: Vec<usize>) {
+    for (t, p) in v.iter_mut().zip(positions) {
+        t.set_position(p);
+    }
+    for t in v {
+        a.push(t);
+    }
 }
 
 fn has_id(item: Option<&Item>, id: &str) -> bool {

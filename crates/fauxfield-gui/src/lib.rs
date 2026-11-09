@@ -8,6 +8,9 @@ pub mod center;
 pub mod chord;
 #[cfg(feature = "dev-mcp")]
 pub mod dev_mcp;
+pub mod editor;
+pub mod header_catalog;
+pub mod header_table;
 pub mod keymap;
 pub mod layout;
 pub mod left_dock;
@@ -16,6 +19,7 @@ pub mod menu;
 pub mod menu_shell;
 pub mod menubar;
 pub mod overlay;
+pub mod response_pane;
 pub mod run;
 pub mod search;
 pub mod shell;

@@ -254,16 +254,27 @@ impl Shell {
         let group = crate::ui::eid(format!("grp-{}", r.id));
         let group_name = format!("grp-{}", r.id);
         let is_server = matches!(r.kind, RowKind::Server { .. });
-        let disabled = matches!(r.kind, RowKind::Server { enabled: false, .. });
+        let draggable = matches!(r.kind, RowKind::Route { .. } | RowKind::Folder { .. });
+        let drop_id = r.id.clone();
+        let drag = tree::DraggedRow {
+            id: r.id.clone(),
+            label: r.label.clone(),
+        };
+        let disabled = matches!(
+            r.kind,
+            RowKind::Server { enabled: false, .. }
+                | RowKind::Folder { enabled: false, .. }
+                | RowKind::Route { disabled: true, .. }
+        );
         let lead: gpui::AnyElement = match &r.kind {
             RowKind::Server { running, .. } => status_dot(t, *running).into_any_element(),
-            RowKind::Folder => icon(
+            RowKind::Folder { .. } => icon(
                 if r.expanded { "folder-open" } else { "folder" },
                 14.,
                 t.icon_muted,
             )
             .into_any_element(),
-            RowKind::Route { method } => method_badge(t, method).into_any_element(),
+            RowKind::Route { method, .. } => method_badge(t, method).into_any_element(),
             RowKind::Workspace => div().into_any_element(),
             RowKind::Environment { active } => icon(
                 if *active { "check" } else { "layers" },
@@ -272,6 +283,7 @@ impl Shell {
             )
             .into_any_element(),
             RowKind::Dataset => icon("table", 13., t.icon_muted).into_any_element(),
+            RowKind::Response { .. } => div().into_any_element(),
         };
         let chevron: gpui::AnyElement = if r.expandable {
             crate::dev_id!(
@@ -371,6 +383,25 @@ impl Shell {
                 .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| {
                     this.click_row(&id, ev.click_count(), cx)
                 }))
+                .when(draggable, |d| {
+                    let (hover_drop, drop_target) = (hover, drop_id.clone());
+                    d.on_drag(drag, |d, _, _, cx| {
+                        gpui::AppContext::new(cx, |_| crate::center::DragGhost(d.label.clone()))
+                    })
+                    .drag_over::<tree::DraggedRow>(move |s, _, _, _| s.bg(hover_drop))
+                    .on_drop(cx.listener(
+                        move |this, d: &tree::DraggedRow, _, cx| {
+                            this.drop_row(&d.id, &drop_target, cx)
+                        },
+                    ))
+                })
+                .when(!draggable && is_server, |d| {
+                    let target = drop_id.clone();
+                    d.drag_over::<tree::DraggedRow>(move |s, _, _, _| s.bg(hover))
+                        .on_drop(cx.listener(move |this, d: &tree::DraggedRow, _, cx| {
+                            this.drop_row(&d.id, &target, cx)
+                        }))
+                })
                 .on_mouse_down(
                     MouseButton::Right,
                     cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
@@ -404,7 +435,33 @@ impl Shell {
                                     None
                                 ))
                             })
-                            .child(format!(":{port}")),
+                            .child(format!(":{port}"))
+                            .into_any_element(),
+                    ),
+                    RowKind::Folder { routes, .. } => Some(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(t.text_muted)
+                            .child(routes.to_string())
+                            .into_any_element(),
+                    ),
+                    RowKind::Route { warn: Some(w), .. } => Some(
+                        crate::dev_id!(
+                            div()
+                                .id(crate::ui::eid(format!("warn-{}", r.id)))
+                                .flex_none()
+                                .tooltip(crate::ui::tooltip(w.message.clone()))
+                                .child(icon(
+                                    "triangle-alert",
+                                    12.,
+                                    if w.error { t.deleted } else { t.modified }
+                                )),
+                            format!("tree-shadow-icon-{}", r.id),
+                            Text,
+                            w.message.clone(),
+                            None
+                        )
+                        .into_any_element()
                     ),
                     _ => None,
                 })

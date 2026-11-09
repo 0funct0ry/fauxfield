@@ -3,6 +3,7 @@
 
 mod diagnostic;
 mod id;
+pub mod pattern;
 mod types;
 mod validate;
 

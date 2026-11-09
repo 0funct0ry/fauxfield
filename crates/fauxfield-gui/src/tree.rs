@@ -90,14 +90,46 @@ pub enum RowKind {
     },
     /// The workspace root header (rendered above the tree, not part of `flatten`).
     Workspace,
-    Folder,
+    Folder {
+        enabled: bool,
+        routes: usize,
+        start_collapsed: bool,
+    },
     Route {
         method: String,
+        /// Shadow or pattern problem shown as a trailing warn icon (tooltip text).
+        warn: Option<RouteWarn>,
+        /// Route sits in a disabled Folder.
+        disabled: bool,
     },
     Environment {
         active: bool,
     },
     Dataset,
+    /// A Response in the Route tab's list (menu only; never a tree row).
+    Response {
+        default: bool,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RouteWarn {
+    /// `true`: invalid pattern (error colour); `false`: shadowed (warning colour).
+    pub error: bool,
+    pub message: String,
+}
+
+fn route_warn(r: &crate::view::Route) -> Option<RouteWarn> {
+    if let Some(e) = &r.pattern_error {
+        return Some(RouteWarn {
+            error: true,
+            message: e.clone(),
+        });
+    }
+    r.shadowed_by.as_ref().map(|by| RouteWarn {
+        error: false,
+        message: format!("Never reached: shadowed by {by}"),
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -154,7 +186,18 @@ pub fn flatten(
                 continue;
             }
             for f in &s.folders {
-                let open = node(&mut rows, &f.id, 1, &f.name, RowKind::Folder, true);
+                let open = node(
+                    &mut rows,
+                    &f.id,
+                    1,
+                    &f.name,
+                    RowKind::Folder {
+                        enabled: f.enabled,
+                        routes: f.routes.len(),
+                        start_collapsed: f.collapsed,
+                    },
+                    true,
+                );
                 if open {
                     for r in &f.routes {
                         node(
@@ -164,6 +207,8 @@ pub fn flatten(
                             &r.path,
                             RowKind::Route {
                                 method: r.method.clone(),
+                                warn: route_warn(r),
+                                disabled: !f.enabled,
                             },
                             false,
                         );
@@ -178,6 +223,8 @@ pub fn flatten(
                     &r.path,
                     RowKind::Route {
                         method: r.method.clone(),
+                        warn: route_warn(r),
+                        disabled: false,
                     },
                     false,
                 );
@@ -222,6 +269,14 @@ pub enum MenuAct {
     Rename,
     Duplicate,
     Delete,
+    /// Folder: delete it together with its Routes (SPEC §20.17).
+    DeleteWithRoutes,
+    FolderToggleEnabled,
+    FolderToggleCollapsed,
+    MoveUp,
+    MoveDown,
+    MoveToRoot,
+    SetDefaultResponse,
     ResetDataset,
     // Server menu (M3.1).
     Restart,
@@ -254,6 +309,13 @@ impl MenuAct {
             Rename => "rename".into(),
             Duplicate => "duplicate".into(),
             Delete => "delete".into(),
+            DeleteWithRoutes => "delete-with-routes".into(),
+            FolderToggleEnabled => "folder-toggle-enabled".into(),
+            FolderToggleCollapsed => "folder-toggle-collapsed".into(),
+            MoveUp => "move-up".into(),
+            MoveDown => "move-down".into(),
+            MoveToRoot => "move-to-root".into(),
+            SetDefaultResponse => "set-default-response".into(),
             ResetDataset => "reset-dataset".into(),
             Restart => "restart".into(),
             ToggleEnabled => "toggle-enabled".into(),
@@ -316,11 +378,34 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
             v
         }
         RowKind::Workspace => vec![],
-        RowKind::Folder => vec![
+        RowKind::Folder {
+            enabled,
+            start_collapsed,
+            ..
+        } => vec![
             ("New route…", NewRoute),
             ("Rename…", Rename),
             ("Duplicate", Duplicate),
-            ("Delete", Delete),
+            (
+                if *enabled {
+                    "Disable all routes"
+                } else {
+                    "Enable all routes"
+                },
+                FolderToggleEnabled,
+            ),
+            (
+                if *start_collapsed {
+                    "✓ Start collapsed"
+                } else {
+                    "Start collapsed"
+                },
+                FolderToggleCollapsed,
+            ),
+            ("Move up", MoveUp),
+            ("Move down", MoveDown),
+            ("Delete folder, keep routes", Delete),
+            ("Delete folder and its routes", DeleteWithRoutes),
         ],
         RowKind::Route { .. } => vec![
             ("Open", Open),
@@ -328,6 +413,9 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
             ("New response", NewResponse),
             ("Rename…", Rename),
             ("Duplicate", Duplicate),
+            ("Move up", MoveUp),
+            ("Move down", MoveDown),
+            ("Move to server root", MoveToRoot),
             ("Delete", Delete),
         ],
         RowKind::Environment { active } => {
@@ -343,6 +431,18 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
             v
         }
         RowKind::Dataset => vec![("Reset to seed", ResetDataset)],
+        RowKind::Response { default } => {
+            let mut v = Vec::new();
+            if !default {
+                v.push(("Set as default", SetDefaultResponse));
+            }
+            v.extend([
+                ("Rename…", Rename),
+                ("Duplicate", Duplicate),
+                ("Delete", Delete),
+            ]);
+            v
+        }
     }
 }
 
@@ -471,4 +571,11 @@ mod tests {
         assert!(labels(&RowKind::Environment { active: false }, false).contains(&"Set active"));
         assert_eq!(labels(&RowKind::Dataset, false), ["Reset to seed"]);
     }
+}
+
+/// A Route or Folder row being dragged in the tree (runtime-only).
+#[derive(Clone, Debug)]
+pub struct DraggedRow {
+    pub id: String,
+    pub label: String,
 }

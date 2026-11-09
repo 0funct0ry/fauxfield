@@ -51,6 +51,8 @@ pub struct Layout {
     pub theme: Option<String>,
     pub tabs: Vec<Tab>,
     pub active_tab: Option<String>,
+    /// Format valid JSON bodies when the body editor saves (off by default).
+    pub format_on_save: bool,
 }
 
 impl Default for Layout {
@@ -68,6 +70,7 @@ impl Default for Layout {
             theme: None,
             tabs: Vec::new(),
             active_tab: None,
+            format_on_save: false,
         }
     }
 }

@@ -200,6 +200,22 @@ pub const NOT_IN_MENU: &[(&str, &str)] = &[
         "context-menu only; not in the spec'd Server menu",
     ),
     ("edit_route_method_custom", "follow-up of Edit Method…"),
+    (
+        "move_up",
+        "Alt+Up in the tree; also in the row context menu",
+    ),
+    (
+        "move_down",
+        "Alt+Down in the tree; also in the row context menu",
+    ),
+    ("route_move_to_root", "row context menu and palette"),
+    ("edit_route_priority", "Route Settings field and palette"),
+    ("edit_route_match", "Route Settings field and palette"),
+    ("route_test_path", "Route Settings field and palette"),
+    (
+        "toggle_strict_slash",
+        "context-menu only; not in the spec'd Server menu",
+    ),
     ("reset_state", "placeholder until M8 (dataset state)"),
 ];
 

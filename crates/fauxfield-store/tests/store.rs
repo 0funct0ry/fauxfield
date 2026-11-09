@@ -80,7 +80,11 @@ fn crud_undo_and_ids() {
     assert_eq!(file, "servers/payments-api.toml");
     assert_eq!(p.routes.len(), 2);
     assert_eq!(p.routes[0].method, "POST");
-    assert!(snap.diagnostics.is_empty(), "{:?}", snap.diagnostics);
+    assert!(
+        snap.diagnostics.iter().all(|d| d.code == "W051"),
+        "{:?}",
+        snap.diagnostics
+    );
     s.delete(&Target::Response(rsp)).unwrap();
     assert!(s.undo(file));
     assert!(
@@ -292,4 +296,135 @@ fn problems_fixture_has_exactly_three_errors() {
         .filter(|d| d.severity == fauxfield_model::Severity::Error)
         .count();
     assert_eq!(errors, 3);
+}
+
+const FOLDERS: &str = r#"id = "srv_f"
+name = "F"
+port = 4100
+
+[[folders]]
+id = "fld_a"
+name = "A"
+
+[[folders]]
+id = "fld_b"
+name = "B"
+
+# first
+[[routes]]
+id = "r1"
+folder = "fld_a"
+path = "/one"
+
+[[routes]]
+id = "r2"
+folder = "fld_a"
+path = "/two"
+
+[[routes]]
+id = "r3"
+path = "/three"
+"#;
+
+fn ids(out: &str) -> Vec<String> {
+    out.lines()
+        .filter_map(|l| {
+            l.strip_prefix("id = \"r")
+                .map(|x| format!("r{}", x.trim_end_matches('"')))
+        })
+        .collect()
+}
+
+#[test]
+fn route_and_folder_moves_keep_comments_and_defaults() {
+    let (dir, s) = ws();
+    let f = dir.path().join("servers/f.toml");
+    std::fs::write(&f, FOLDERS).unwrap();
+    let s2 = Store::open(dir.path()).unwrap();
+    drop(s);
+    s2.move_route("r1", Some("fld_b"), None).unwrap();
+    s2.move_route("r3", Some("fld_a"), Some("r2")).unwrap();
+    s2.flush().unwrap();
+    let out = std::fs::read_to_string(&f).unwrap();
+    assert!(out.contains("# first"), "{out}");
+    assert_eq!(ids(&out), ["r3", "r2", "r1"].map(String::from), "{out}");
+    // no-op move writes nothing
+    assert!(!s2.is_dirty("servers/f.toml"));
+    s2.move_route("r3", Some("fld_a"), Some("r2")).unwrap();
+    assert!(!s2.is_dirty("servers/f.toml"));
+    s2.move_folder("fld_b", Some("fld_a")).unwrap();
+    s2.set_route_priority("r2", 5).unwrap();
+    s2.set_route_priority("r2", 0).unwrap();
+    s2.set_folder_enabled("fld_a", false).unwrap();
+    s2.set_folder_collapsed("fld_a", true).unwrap();
+    s2.set_route_match("r2", Some("regex")).unwrap();
+    assert!(s2.set_route_match("r2", Some("bogus")).is_err());
+    s2.set_route_match("r2", None).unwrap();
+    s2.flush().unwrap();
+    let out = std::fs::read_to_string(&f).unwrap();
+    assert!(out.find("fld_b").unwrap() < out.find("fld_a").unwrap());
+    assert!(!out.contains("priority") && !out.contains("match"));
+    assert!(out.contains("enabled = false") && out.contains("collapsed = true"));
+    s2.set_folder_enabled("fld_a", true).unwrap();
+    s2.flush().unwrap();
+    assert!(!std::fs::read_to_string(&f).unwrap().contains("enabled"));
+    s2.delete_folder("fld_a", true).unwrap();
+    s2.flush().unwrap();
+    let out = std::fs::read_to_string(&f).unwrap();
+    assert_eq!(ids(&out), ["r1"].map(String::from), "{out}");
+}
+
+#[test]
+fn headers_keep_file_order_and_rename_in_place() {
+    let (dir, s) = ws();
+    let f = dir.path().join("servers/h.toml");
+    std::fs::write(
+        &f,
+        r#"id = "srv_h"
+name = "H"
+port = 4200
+
+[[routes]]
+id = "rt"
+path = "/h"
+
+  [[routes.responses]]
+  id = "rs"
+  status = 200
+  [routes.responses.headers]
+  zeta = "1"
+  # keep
+  alpha = "2"
+  mid = "3"
+"#,
+    )
+    .unwrap();
+    let s2 = Store::open(dir.path()).unwrap();
+    drop(s);
+    let order = |s: &Store| {
+        s.snapshot()
+            .servers
+            .iter()
+            .find(|(_, x)| x.id == "srv_h")
+            .unwrap()
+            .1
+            .routes[0]
+            .responses[0]
+            .headers
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(order(&s2), ["zeta", "alpha", "mid"]);
+    s2.rename_header("rs", "alpha", "beta").unwrap();
+    assert_eq!(order(&s2), ["zeta", "beta", "mid"]);
+    assert!(s2.rename_header("rs", "beta", "MID").is_err());
+    s2.set_header("rs", "new", Some("")).unwrap();
+    assert_eq!(order(&s2), ["zeta", "beta", "mid", "new"]);
+    s2.flush().unwrap();
+    let out = std::fs::read_to_string(&f).unwrap();
+    assert!(
+        out.contains("# keep") && out.contains("beta = \"2\""),
+        "{out}"
+    );
 }
