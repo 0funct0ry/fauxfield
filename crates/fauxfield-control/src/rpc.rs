@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use fauxfield_engine::{Recording, ServerInfo, TestRequest, TestResponse, TrafficFilter};
+use fauxfield_model::vars::ResolvedVar;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -47,6 +48,19 @@ async fn dispatch(
                 .await?;
             Ok(serde_json::to_value(r).unwrap_or_default())
         }
+        "env.active" => api.env_active().await.map(|n| json!({"active": n})),
+        "env.use" => api
+            .env_use(param(params, "name")?)
+            .await
+            .map(|n| json!({"active": n})),
+        "var.runtime" => api
+            .var_runtime(param(params, "key")?, param(params, "value")?)
+            .await
+            .map(|_| json!({})),
+        "vars" => api
+            .vars(param(params, "server")?, param(params, "route")?)
+            .await
+            .map(|v| json!({"vars": v})),
         "shutdown" => api.shutdown().await.map(|_| json!({})),
         other => Err(ControlError::new(
             "method_not_found",
@@ -240,6 +254,30 @@ impl ControlApi for RemoteControl {
             .call("test.send", json!({"server": server, "request": request}))
             .await?;
         serde_json::from_value(v).map_err(|e| ControlError::new("transport", e.to_string()))
+    }
+    async fn env_active(&self) -> Result<String, ControlError> {
+        let v = self.call("env.active", Value::Null).await?;
+        Ok(v["active"].as_str().unwrap_or_default().to_string())
+    }
+    async fn env_use(&self, name: String) -> Result<String, ControlError> {
+        let v = self.call("env.use", json!({"name": name})).await?;
+        Ok(v["active"].as_str().unwrap_or_default().to_string())
+    }
+    async fn var_runtime(&self, key: String, value: Option<String>) -> Result<(), ControlError> {
+        self.call("var.runtime", json!({"key": key, "value": value}))
+            .await
+            .map(|_| ())
+    }
+    async fn vars(
+        &self,
+        server: String,
+        route: Option<String>,
+    ) -> Result<Vec<ResolvedVar>, ControlError> {
+        let v = self
+            .call("vars", json!({"server": server, "route": route}))
+            .await?;
+        serde_json::from_value(v["vars"].clone())
+            .map_err(|e| ControlError::new("transport", e.to_string()))
     }
     async fn shutdown(&self) -> Result<(), ControlError> {
         self.call("shutdown", Value::Null).await.map(|_| ())

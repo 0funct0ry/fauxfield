@@ -58,6 +58,8 @@ pub(crate) fn context(
     body: &[u8],
     request_id: u64,
     call: u64,
+    vc: &crate::vars::VarContext,
+    route_id: Option<&str>,
 ) -> Value {
     let (path, q) = url.split_once('?').unwrap_or((url, ""));
     let query: Vec<(String, String)> = form_urlencoded::parse(q.as_bytes())
@@ -94,11 +96,9 @@ pub(crate) fn context(
                 .collect()
         })
         .unwrap_or_default();
-    let vars: Map<String, Value> = server
-        .variables
-        .iter()
-        .map(|(k, v)| (k.clone(), serde_json::to_value(v).unwrap_or(Value::Null)))
-        .collect();
+    let vars = vc.vars_json(server, route_id);
+    let mut state = vc.state_json();
+    state.insert("call".into(), json!(call));
     let host = if server.host == "0.0.0.0" {
         "127.0.0.1"
     } else {
@@ -120,14 +120,14 @@ pub(crate) fn context(
             "id": request_id,
         },
         "vars": vars,
-        "env": "",
+        "env": vc.active_env,
         "server": {
             "name": server.name,
             "port": server.port,
             "base_url": format!("http://{host}:{}{}", server.port, server.prefix.clone().unwrap_or_default()),
         },
         "data": {},
-        "state": { "call": call },
+        "state": state,
     })
 }
 
@@ -265,6 +265,27 @@ pub fn preview(
     sample: &SampleRequest,
     seq: Option<Sequences>,
 ) -> Preview {
+    preview_with(
+        root,
+        server,
+        route,
+        response,
+        sample,
+        seq,
+        &crate::vars::VarContext::default(),
+    )
+}
+
+/// [`preview`] with the workspace variable context (active Environment, globals, runtime).
+pub fn preview_with(
+    root: &Path,
+    server: &Server,
+    route: &Route,
+    response: &Response,
+    sample: &SampleRequest,
+    seq: Option<Sequences>,
+    vc: &crate::vars::VarContext,
+) -> Preview {
     let lc: Vec<(String, String)> = sample
         .headers
         .iter()
@@ -284,6 +305,8 @@ pub fn preview(
         sample.body.as_bytes(),
         1,
         1,
+        vc,
+        Some(&route.id),
     );
     let env = TplEnv {
         context: ctx,

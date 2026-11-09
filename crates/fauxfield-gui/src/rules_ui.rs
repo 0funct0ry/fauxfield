@@ -486,6 +486,22 @@ impl Shell {
                 self.begin_route_header_cell(&id, at, crate::header_catalog::Col::Key, window, cx);
             }
             "route-header-remove" => self.remove_route_header_row(&id, need()?, cx),
+            "var-add" => {
+                let (sc, ow) = id.split_once('|').unwrap_or((&id, ""));
+                if let Some(scope) = fauxfield_model::vars::Scope::parse(sc) {
+                    let owner = (!ow.is_empty()).then(|| ow.to_string());
+                    self.begin_prompt(
+                        crate::shell::PromptAction::SetVariable {
+                            scope,
+                            owner,
+                            key: None,
+                        },
+                        "",
+                        window,
+                        cx,
+                    );
+                }
+            }
             "sample-cancel" => self.close_sample_dialog(cx),
             "sample-save" => self.save_sample(false, window, cx),
             "sample-send" => self.save_sample(true, window, cx),

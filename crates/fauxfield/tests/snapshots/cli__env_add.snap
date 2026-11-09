@@ -1,0 +1,8 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "file": "environments/staging.toml",
+  "name": "staging"
+}

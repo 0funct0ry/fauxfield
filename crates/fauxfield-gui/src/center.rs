@@ -12,6 +12,7 @@ use crate::tabs::{Tab, TabKind};
 use crate::theme::Theme;
 use crate::ui::{ROW_H, TAB_BAR_H, icon, status_dot, toolbar_button};
 use crate::view::{Environment, Route, Server};
+use fauxfield_model::vars::Scope;
 
 /// Drag payload of a tab being reordered.
 #[derive(Clone)]
@@ -692,6 +693,14 @@ impl Shell {
                     .clone()
                     .map(|by| note(format!("Never reached: shadowed by {by}"), t.modified)),
             )
+            .child(div().mt(px(14.)).child(self.render_var_section(
+                t,
+                Scope::Route,
+                Some(r.id.clone()),
+                self.file_vars(Scope::Route, &r.id),
+                "route",
+                cx,
+            )))
     }
 
     /// Result line of "Test a path": `(matches, text)`; `None` while the input is empty.
@@ -1092,6 +1101,18 @@ impl Shell {
                     .gap(px(2.))
                     .child(self.server_general(t, s, cx))
                     .children(SERVER_SECTIONS.iter().enumerate().skip(1).map(|(i, name)| {
+                        if i == 7 {
+                            return div().mt(px(14.)).flex().flex_col().child(
+                                self.render_var_section(
+                                    t,
+                                    Scope::Server,
+                                    Some(s.id.clone()),
+                                    self.file_vars(Scope::Server, &s.id),
+                                    "server",
+                                    cx,
+                                ),
+                            );
+                        }
                         div()
                             .mt(px(14.))
                             .flex()
@@ -1100,7 +1121,7 @@ impl Shell {
                             .child(div().text_size(px(12.)).text_color(t.text_muted).child(
                                 format!(
                                     "Settings arrive in {}.",
-                                    ["", "M10", "M10", "M9", "M9", "M11", "M8", "M7", "M15"][i]
+                                    ["", "M10", "M10", "M9", "M9", "M11", "M8", "", "M15"][i]
                                 ),
                             ))
                     })),
@@ -1237,7 +1258,6 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let reveal = self.reveal_secrets;
-        let cell = |w: f32, s: String| div().w(px(w)).flex_none().truncate().child(s);
         div()
             .id(crate::ui::eid(format!("env-tab-{}", e.name)))
             .size_full()
@@ -1286,56 +1306,32 @@ impl Shell {
             )
             .child(
                 div()
-                    .h(px(ROW_H))
-                    .flex_none()
-                    .px(px(12.))
-                    .flex()
-                    .items_center()
-                    .text_size(px(11.))
-                    .text_color(t.text_muted)
-                    .border_b_1()
-                    .border_color(t.border_variant)
-                    .child(cell(200., "KEY".into()))
-                    .child(cell(320., "VALUE".into()))
-                    .child(cell(120., "SOURCE".into())),
-            )
-            .child(
-                div()
                     .id("env-rows")
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .children(e.vars.iter().map(|v| {
-                        let shown = if is_secret_key(&v.key) && !reveal {
-                            masked(&v.value)
-                        } else {
-                            v.value.clone()
-                        };
-                        div()
-                            .id(crate::ui::eid(format!("var-{}", v.key)))
-                            .h(px(ROW_H + 2.))
-                            .px(px(12.))
-                            .flex()
-                            .items_center()
-                            .child(cell(200., v.key.clone()))
-                            .child(
-                                div()
-                                    .w(px(320.))
-                                    .flex_none()
-                                    .truncate()
-                                    .font_family(BUFFER_FONT)
-                                    .text_size(px(12.))
-                                    .child(shown),
-                            )
-                            .child(
-                                div()
-                                    .w(px(120.))
-                                    .flex_none()
-                                    .text_size(px(12.))
-                                    .text_color(t.text_muted)
-                                    .child(v.source.label()),
-                            )
-                    })),
+                    .p(px(12.))
+                    .child(
+                        self.render_var_section(
+                            t,
+                            Scope::Environment,
+                            Some(e.name.clone()),
+                            e.vars
+                                .iter()
+                                .map(|v| VarRow {
+                                    key: v.key.clone(),
+                                    raw: v.raw.clone(),
+                                    shown: v.value.clone(),
+                                    note: v.source.label().to_string(),
+                                    // Dotenv-only keys (raw == value) are read-only.
+                                    editable: !(v.source == crate::view::VarSource::Dotenv
+                                        && v.raw == v.value),
+                                })
+                                .collect(),
+                            "env",
+                            cx,
+                        ),
+                    ),
             )
     }
 
@@ -1598,8 +1594,20 @@ impl Shell {
                         .flex()
                         .flex_row()
                         .py(px(2.))
-                        .child(div().w(px(70.)).text_color(t.text_muted).child(k.to_string()))
-                        .child(div().flex_1().truncate().font_family(BUFFER_FONT).text_size(px(12.)).child(v))
+                        .child(
+                            div()
+                                .w(px(70.))
+                                .text_color(t.text_muted)
+                                .child(k.to_string()),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .truncate()
+                                .font_family(BUFFER_FONT)
+                                .text_size(px(12.))
+                                .child(v),
+                        )
                 };
                 div()
                     .p(px(10.))
@@ -1618,7 +1626,7 @@ impl Shell {
             None => div()
                 .p(px(10.))
                 .text_color(t.text_muted)
-                .child("Select a request in Traffic to inspect it. Variables in scope appear here from M7.")
+                .child("Select a request in Traffic to inspect it.")
                 .into_any_element(),
         };
         div()
@@ -1640,6 +1648,7 @@ impl Shell {
                     .child("INSPECTOR"),
             )
             .child(body)
+            .children(self.render_scope_section(t))
             .children(self.render_seed_section(t, cx))
     }
 
@@ -1722,6 +1731,321 @@ impl Shell {
                         .text_color(t.text_muted)
                         .child("Same seed, same fake data on every request."),
                 )
+                .into_any_element(),
+        )
+    }
+}
+
+/// One row of a Variables table.
+pub struct VarRow {
+    pub key: String,
+    /// Text as written in the file (what editing starts from).
+    pub raw: String,
+    /// Effective text shown (before masking).
+    pub shown: String,
+    /// Source label shown in the last column (`file`, `dotenv`, `process env`).
+    pub note: String,
+    pub editable: bool,
+}
+
+impl Shell {
+    /// Variables written in a file at `scope`, as table rows (`owner` is a Server or Route ID).
+    fn file_vars(&self, scope: Scope, owner: &str) -> Vec<VarRow> {
+        let Some(store) = &self.store else {
+            return vec![];
+        };
+        let snap = store.snapshot();
+        let map = match scope {
+            Scope::Server => snap
+                .servers
+                .iter()
+                .map(|(_, s)| s)
+                .find(|s| s.id == owner)
+                .map(|s| s.variables.clone()),
+            Scope::Route => snap
+                .servers
+                .iter()
+                .flat_map(|(_, s)| s.routes.iter())
+                .find(|r| r.id == owner)
+                .map(|r| r.variables.clone()),
+            _ => None,
+        };
+        map.unwrap_or_default()
+            .iter()
+            .map(|(k, v)| {
+                let raw = fauxfield_model::vars::value_text(v);
+                VarRow {
+                    key: k.clone(),
+                    shown: raw.clone(),
+                    raw,
+                    note: "file".into(),
+                    editable: true,
+                }
+            })
+            .collect()
+    }
+
+    /// Editable Variables table with an "Add variable" button; secret-looking keys are masked
+    /// unless "Show secrets" is on. Edits save through the store (comments are kept).
+    fn render_var_section(
+        &self,
+        t: &Theme,
+        scope: Scope,
+        owner: Option<String>,
+        rows: Vec<VarRow>,
+        id: &'static str,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let reveal = self.reveal_secrets;
+        let add_owner = owner.clone();
+        div()
+            .id(crate::ui::eid(format!("vars-{id}")))
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .child(div().flex_1().child(section_heading(t, "Variables")))
+                    .child(crate::dev_id!(
+                        toolbar_button(t, crate::ui::eid(format!("var-add-{id}")))
+                            .child("+ Add variable")
+                            .on_click(cx.listener(move |this, _, w, cx| {
+                                this.begin_prompt(
+                                    crate::shell::PromptAction::SetVariable {
+                                        scope,
+                                        owner: add_owner.clone(),
+                                        key: None,
+                                    },
+                                    "",
+                                    w,
+                                    cx,
+                                )
+                            })),
+                        format!("var-add-{id}"),
+                        Button,
+                        "Add variable",
+                        Press(format!(
+                            "var-add:{}|{}",
+                            scope.as_str(),
+                            owner.clone().unwrap_or_default()
+                        ))
+                    )),
+            )
+            .child(
+                div()
+                    .h(px(ROW_H))
+                    .flex()
+                    .items_center()
+                    .text_size(px(11.))
+                    .text_color(t.text_muted)
+                    .border_b_1()
+                    .border_color(t.border_variant)
+                    .child(div().w(px(200.)).flex_none().child("KEY"))
+                    .child(div().w(px(320.)).flex_none().child("VALUE"))
+                    .child(div().w(px(120.)).flex_none().child("SOURCE")),
+            )
+            .when(rows.is_empty(), |d| {
+                d.child(
+                    div()
+                        .py(px(8.))
+                        .text_size(px(12.))
+                        .text_color(t.text_muted)
+                        .child("No variables."),
+                )
+            })
+            .children(rows.into_iter().map(|r| {
+                let shown = if is_secret_key(&r.key) && !reveal {
+                    masked(&r.shown)
+                } else {
+                    r.shown.clone()
+                };
+                let (k_edit, o_edit, raw) = (r.key.clone(), owner.clone(), r.raw.clone());
+                let (k_del, o_del) = (r.key.clone(), owner.clone());
+                let row_id = format!("var-{id}-{}", r.key);
+                crate::dev_id!(
+                    div()
+                        .id(crate::ui::eid(row_id.clone()))
+                        .h(px(ROW_H + 2.))
+                        .flex()
+                        .items_center()
+                        .child(
+                            div()
+                                .w(px(200.))
+                                .flex_none()
+                                .truncate()
+                                .child(r.key.clone())
+                        )
+                        .child(
+                            div()
+                                .id(crate::ui::eid(format!("{row_id}-value")))
+                                .w(px(320.))
+                                .flex_none()
+                                .truncate()
+                                .font_family(BUFFER_FONT)
+                                .text_size(px(12.))
+                                .when(r.editable, |d| {
+                                    d.cursor_pointer().on_click(cx.listener(
+                                        move |this, _, w, cx| {
+                                            this.begin_prompt(
+                                                crate::shell::PromptAction::SetVariable {
+                                                    scope,
+                                                    owner: o_edit.clone(),
+                                                    key: Some(k_edit.clone()),
+                                                },
+                                                &raw,
+                                                w,
+                                                cx,
+                                            )
+                                        },
+                                    ))
+                                })
+                                .child(shown),
+                        )
+                        .child(
+                            div()
+                                .w(px(100.))
+                                .flex_none()
+                                .text_size(px(12.))
+                                .text_color(t.text_muted)
+                                .child(r.note.clone()),
+                        )
+                        .when(r.editable, |d| {
+                            d.child(
+                                div()
+                                    .id(crate::ui::eid(format!("{row_id}-del")))
+                                    .size(px(20.))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded(px(3.))
+                                    .cursor_pointer()
+                                    .hover(|s| s.bg(t.element_hover))
+                                    .tooltip(crate::ui::tooltip("Delete variable".to_string()))
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        let (k, o) = (k_del.clone(), o_del.clone());
+                                        this.store_op(cx, |s| {
+                                            s.set_variable(scope, o.as_deref(), &k, None)
+                                        });
+                                    }))
+                                    .child(icon("x", 12., t.icon_muted)),
+                            )
+                        }),
+                    row_id,
+                    Row,
+                    r.key,
+                    None
+                )
+            }))
+            .into_any_element()
+    }
+
+    /// Variables in scope for the current Server and Route, with scope and source (M7).
+    fn scope_vars(&self) -> Vec<fauxfield_model::vars::ResolvedVar> {
+        let Some(si) = self.current_server() else {
+            return vec![];
+        };
+        let sid = self.ws.servers[si].id.clone();
+        let rid = self.current_route_id();
+        if let Some(h) = &self.host
+            && let Ok(v) = h.engine().vars_in_scope(&sid, rid.as_deref())
+        {
+            return v;
+        }
+        self.store
+            .as_ref()
+            .map(|st| {
+                st.snapshot().vars_in_scope(
+                    Some(&self.active_env),
+                    Some(&sid),
+                    rid.as_deref(),
+                    None,
+                )
+            })
+            .unwrap_or_default()
+    }
+
+    /// Inspector "Variables in scope": effective value, scope and source of each variable.
+    fn render_scope_section(&self, t: &Theme) -> Option<AnyElement> {
+        self.current_server()?;
+        let vars = self.scope_vars();
+        let reveal = self.reveal_secrets;
+        Some(
+            div()
+                .id("inspector-vars")
+                .p(px(10.))
+                .flex()
+                .flex_col()
+                .border_t_1()
+                .border_color(t.border_variant)
+                .child(section_heading(t, "Variables in scope"))
+                .child(
+                    div()
+                        .text_size(px(11.))
+                        .text_color(t.text_muted)
+                        .pb(px(4.))
+                        .child(format!(
+                            "Environment: {}",
+                            if self.active_env.is_empty() {
+                                "none"
+                            } else {
+                                &self.active_env
+                            }
+                        )),
+                )
+                .when(vars.is_empty(), |d| {
+                    d.child(
+                        div()
+                            .text_size(px(12.))
+                            .text_color(t.text_muted)
+                            .child("No variables."),
+                    )
+                })
+                .children(vars.into_iter().map(|v| {
+                    let shown = if is_secret_key(&v.key) && !reveal {
+                        masked(&v.value)
+                    } else {
+                        v.value.clone()
+                    };
+                    let source = match v.source {
+                        fauxfield_model::vars::Source::File => String::new(),
+                        fauxfield_model::vars::Source::Dotenv => " · dotenv".into(),
+                        fauxfield_model::vars::Source::Process => " · process env".into(),
+                    };
+                    let row_id = format!("scope-var-{}", v.key);
+                    crate::dev_id!(
+                        div()
+                            .id(crate::ui::eid(row_id.clone()))
+                            .py(px(2.))
+                            .flex()
+                            .flex_col()
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_row()
+                                    .child(div().flex_1().truncate().child(v.key.clone()))
+                                    .child(
+                                        div()
+                                            .text_size(px(11.))
+                                            .text_color(t.text_muted)
+                                            .child(format!("{}{source}", v.scope.as_str())),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .truncate()
+                                    .font_family(BUFFER_FONT)
+                                    .text_size(px(12.))
+                                    .text_color(t.text_muted)
+                                    .child(shown),
+                            ),
+                        row_id,
+                        Row,
+                        format!("{} = {} ({})", v.key, v.value, v.scope.as_str()),
+                        None
+                    )
+                }))
                 .into_any_element(),
         )
     }

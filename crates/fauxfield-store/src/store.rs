@@ -69,7 +69,7 @@ pub(crate) fn hash(s: &str) -> u64 {
 }
 
 impl Doc {
-    fn parse(text: String) -> Doc {
+    pub(crate) fn parse(text: String) -> Doc {
         let doc = text.parse::<DocumentMut>().ok();
         Doc {
             written_hash: hash(&text),
@@ -103,7 +103,7 @@ pub struct Store {
     pub(crate) inner: Arc<Mutex<State>>,
 }
 
-const MANIFEST: &str = "fauxfield.toml";
+pub(crate) const MANIFEST: &str = "fauxfield.toml";
 
 impl Store {
     pub fn open(root: &Path) -> Result<Store, StoreError> {
@@ -1505,7 +1505,7 @@ fn find_table<'a>(d: &'a mut DocumentMut, key: &str, id: &str) -> Option<&'a mut
         .find(|t| t.get("id").and_then(Item::as_str) == Some(id))
 }
 
-fn resolve<'a>(d: &'a mut DocumentMut, target: &Target) -> Option<&'a mut Table> {
+pub(crate) fn resolve<'a>(d: &'a mut DocumentMut, target: &Target) -> Option<&'a mut Table> {
     match target {
         Target::Server(_) => Some(d.as_table_mut()),
         Target::Folder(id) => find_table(d, "folders", id),

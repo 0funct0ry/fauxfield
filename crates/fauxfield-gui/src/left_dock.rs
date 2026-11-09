@@ -157,6 +157,38 @@ impl Shell {
                         .flex_1()
                         .child(format!("{} {count}", tab.label().to_uppercase()))
                 )
+                .when(tab == tree::SidebarTab::Environments, |d| {
+                    d.child(crate::dev_id_meta!(
+                        div()
+                            .id("sidebar-new-environment")
+                            .size(px(20.))
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(3.))
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(sel))
+                            .tooltip(crate::ui::tooltip("New environment…".to_string()))
+                            .on_click(cx.listener(|this, _, w, cx| {
+                                this.begin_prompt(
+                                    crate::shell::PromptAction::NewEnvironment,
+                                    "",
+                                    w,
+                                    cx,
+                                )
+                            }))
+                            .child(icon("plus", 14., t.icon_muted)),
+                        crate::dev_mcp::tree::Meta {
+                            tooltip: true,
+                            ..Default::default()
+                        },
+                        "sidebar-new-environment",
+                        Button,
+                        "New environment",
+                        Action("new_environment")
+                    ))
+                })
                 .when(tab == tree::SidebarTab::Servers, |d| {
                     d.child(crate::dev_id_meta!(
                         div()
@@ -213,6 +245,35 @@ impl Shell {
                 .text_size(px(12.))
                 .text_color(t.text_muted)
                 .child(div().text_center().child(tab.empty_text()))
+                .when(tab == tree::SidebarTab::Environments, |d| {
+                    d.child(crate::dev_id!(
+                        div()
+                            .id("sidebar-empty-new-environment")
+                            .h(px(24.))
+                            .px(px(10.))
+                            .flex()
+                            .items_center()
+                            .rounded(px(4.))
+                            .border_1()
+                            .border_color(border)
+                            .text_color(t.text)
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(hover))
+                            .on_click(cx.listener(|this, _, w, cx| {
+                                this.begin_prompt(
+                                    crate::shell::PromptAction::NewEnvironment,
+                                    "",
+                                    w,
+                                    cx,
+                                )
+                            }))
+                            .child("New environment…"),
+                        "sidebar-empty-new-environment",
+                        Button,
+                        "New environment…",
+                        Action("new_environment")
+                    ))
+                })
                 .when(tab == tree::SidebarTab::Servers, |d| {
                     d.child(crate::dev_id!(
                         div()

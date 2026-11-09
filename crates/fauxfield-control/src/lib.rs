@@ -12,6 +12,6 @@ mod runtime;
 
 pub use api::{ControlApi, ControlError, LocalControl};
 pub use host::{HostInfo, HostLock, control_socket_path, read_host};
-pub use reload::attach_store;
+pub use reload::{attach_store, attach_store_with_env};
 pub use rpc::{RemoteControl, handle_conn, serve};
 pub use runtime::{Host, HostError, HostOptions};

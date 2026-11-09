@@ -1,0 +1,17 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "active": "local",
+  "default": "local",
+  "environments": [
+    {
+      "active": true,
+      "dotenv": null,
+      "file": "environments/local.toml",
+      "name": "local",
+      "variables": 1
+    }
+  ]
+}

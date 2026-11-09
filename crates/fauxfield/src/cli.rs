@@ -76,6 +76,16 @@ pub enum Command {
         #[command(subcommand)]
         action: crate::workspace_cmd::ResponseAction,
     },
+    /// List, switch and add Environments.
+    Env {
+        #[command(subcommand)]
+        action: crate::env_cmd::EnvAction,
+    },
+    /// Get, set and unset variables at a scope.
+    Var {
+        #[command(subcommand)]
+        action: crate::env_cmd::VarAction,
+    },
     /// Render a Response template against a sample request, without running a server.
     Render(crate::workspace_cmd::RenderArgs),
     /// Serve a workspace headless: become the host and run its servers until stopped.
@@ -185,6 +195,8 @@ pub fn run() -> i32 {
         Some(Command::Server { action }) => crate::workspace_cmd::server(action),
         Some(Command::Route { action }) => crate::workspace_cmd::route(action),
         Some(Command::Response { action }) => crate::workspace_cmd::response(action),
+        Some(Command::Env { action }) => crate::env_cmd::env(action),
+        Some(Command::Var { action }) => crate::env_cmd::var(action),
         Some(Command::Render(a)) => crate::workspace_cmd::render(a),
         Some(Command::Run(a)) => crate::host_cmd::run(a),
         Some(Command::Status(a)) => crate::host_cmd::status(a),

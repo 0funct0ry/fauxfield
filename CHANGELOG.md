@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- M7 Environments and variables: variable resolver (global < environment < server < route, runtime on top) with `dotenv` and `${env:NAME}` (never written back); live Environment switch (title bar, Cmd/Ctrl+E, `fauxfield run --env`, `fauxfield env list|use|add`) that re-renders templated prefixes and headers without a restart; Route `variables`; editable Environment, Server and Route Variables tables with source column and secret masking; Inspector "Variables in scope"; `fauxfield var get|set|unset --scope`; MCP `set_variable`; "New environment" in the sidebar, File menu and palette.
 - M6 Tera templating and fake data: Response bodies, `body_file` (path and contents), header values,
   Route headers and string rule values render with Tera (`template = false` sends verbatim); context
   `request`, `vars`, `env`, `server`, `data`, `state`; functions `fake`, `uuid`, `ulid`, `now`,

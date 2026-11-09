@@ -5,6 +5,7 @@
 mod init;
 mod recent;
 mod store;
+mod vars;
 mod watch;
 
 pub use init::{discover, init_workspace, slugify};

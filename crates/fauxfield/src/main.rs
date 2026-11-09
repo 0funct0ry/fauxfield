@@ -1,6 +1,7 @@
 //! `fauxfield`: the desktop app and CLI in one binary (SPEC §3.1, §10).
 
 mod cli;
+mod env_cmd;
 mod host_cmd;
 mod scenario_cmd;
 mod workspace_cmd;

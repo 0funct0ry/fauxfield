@@ -98,7 +98,10 @@ impl VarSource {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Variable {
     pub key: String,
+    /// Effective value (`${env:NAME}` expanded); what the Environment tab shows.
     pub value: String,
+    /// Text as written in the file; what editing starts from and what is saved.
+    pub raw: String,
     pub source: VarSource,
 }
 
@@ -316,20 +319,42 @@ impl Workspace {
         let environments = snap
             .environments
             .iter()
-            .map(|(_, e)| Environment {
-                name: e.name.clone(),
-                vars: e
+            .map(|(_, e)| {
+                use fauxfield_model::vars::{Source, expand_env, value_text};
+                let dot = snap.dotenv(&e.name);
+                let mut vars: Vec<Variable> = e
                     .variables
                     .iter()
-                    .map(|(k, v)| Variable {
-                        key: k.clone(),
-                        value: v
-                            .as_str()
-                            .map(str::to_string)
-                            .unwrap_or_else(|| v.to_string()),
-                        source: VarSource::File,
+                    .map(|(k, v)| {
+                        let raw = value_text(v);
+                        let (value, src) = expand_env(&raw, &dot, &|n| std::env::var(n).ok());
+                        Variable {
+                            key: k.clone(),
+                            value,
+                            raw,
+                            source: match src {
+                                Source::File => VarSource::File,
+                                Source::Dotenv => VarSource::Dotenv,
+                                Source::Process => VarSource::Process,
+                            },
+                        }
                     })
-                    .collect(),
+                    .collect();
+                // Dotenv keys the file does not define are listed read-only.
+                for (k, v) in &dot {
+                    if !e.variables.contains_key(k) {
+                        vars.push(Variable {
+                            key: k.clone(),
+                            value: v.clone(),
+                            raw: v.clone(),
+                            source: VarSource::Dotenv,
+                        });
+                    }
+                }
+                Environment {
+                    name: e.name.clone(),
+                    vars,
+                }
             })
             .collect();
         Workspace {

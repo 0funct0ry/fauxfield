@@ -47,6 +47,9 @@ pub struct Manifest {
 pub struct Environment {
     #[serde(default)]
     pub name: String,
+    /// Dotenv file (workspace-relative); its values are never written back (SPEC §4.3).
+    #[serde(default)]
+    pub dotenv: Option<String>,
     #[serde(default)]
     #[schemars(with = "BTreeMap<String, serde_json::Value>")]
     pub variables: BTreeMap<String, toml::Value>,
@@ -133,6 +136,10 @@ pub struct Route {
     #[serde(default)]
     #[schemars(with = "BTreeMap<String, String>")]
     pub headers: indexmap::IndexMap<String, String>,
+    /// Route-scope variables (SPEC §8.1).
+    #[serde(default)]
+    #[schemars(with = "BTreeMap<String, serde_json::Value>")]
+    pub variables: BTreeMap<String, toml::Value>,
     #[serde(default)]
     pub responses: Vec<Response>,
     #[serde(flatten)]

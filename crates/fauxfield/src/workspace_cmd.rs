@@ -73,7 +73,7 @@ pub enum RouteAction {
     },
 }
 
-fn open_store(a: &WsArgs) -> Result<Store, i32> {
+pub(crate) fn open_store(a: &WsArgs) -> Result<Store, i32> {
     let root = match &a.workspace {
         Some(p) => p.clone(),
         None => {
@@ -87,7 +87,7 @@ fn open_store(a: &WsArgs) -> Result<Store, i32> {
     })
 }
 
-fn print_json(v: &serde_json::Value) {
+pub(crate) fn print_json(v: &serde_json::Value) {
     println!("{}", serde_json::to_string_pretty(v).unwrap());
 }
 

@@ -1,0 +1,10 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "key": "base",
+  "removed": true,
+  "scope": "environment",
+  "value": null
+}

@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use fauxfield_engine::{
     Engine, EngineError, Recording, ServerInfo, TestRequest, TestResponse, TrafficFilter,
 };
+use fauxfield_model::vars::ResolvedVar;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Notify;
@@ -52,6 +53,18 @@ pub trait ControlApi: Send + Sync {
         server: String,
         request: TestRequest,
     ) -> Result<TestResponse, ControlError>;
+    /// Active Environment name ("" when none).
+    async fn env_active(&self) -> Result<String, ControlError>;
+    /// Switch the active Environment live (routes recompile; no restart).
+    async fn env_use(&self, name: String) -> Result<String, ControlError>;
+    /// Set (`Some`) or unset (`None`) a runtime variable.
+    async fn var_runtime(&self, key: String, value: Option<String>) -> Result<(), ControlError>;
+    /// Variables in scope for a Server (and optional Route) with scope and source.
+    async fn vars(
+        &self,
+        server: String,
+        route: Option<String>,
+    ) -> Result<Vec<ResolvedVar>, ControlError>;
     /// Asks the host to exit (graceful drain happens in the host).
     async fn shutdown(&self) -> Result<(), ControlError>;
 }
@@ -144,6 +157,34 @@ impl ControlApi for LocalControl {
         request: TestRequest,
     ) -> Result<TestResponse, ControlError> {
         Ok(self.engine.send_test(&server, &request).await?)
+    }
+
+    async fn env_active(&self) -> Result<String, ControlError> {
+        Ok(self.engine.var_context().active_env)
+    }
+
+    async fn env_use(&self, name: String) -> Result<String, ControlError> {
+        if !self.engine.var_context().envs.contains_key(&name) {
+            return Err(ControlError::new(
+                "unknown_environment",
+                format!("no environment named `{name}`"),
+            ));
+        }
+        self.engine.set_active_env(&name);
+        Ok(name)
+    }
+
+    async fn var_runtime(&self, key: String, value: Option<String>) -> Result<(), ControlError> {
+        self.engine.set_runtime_var(&key, value.as_deref());
+        Ok(())
+    }
+
+    async fn vars(
+        &self,
+        server: String,
+        route: Option<String>,
+    ) -> Result<Vec<ResolvedVar>, ControlError> {
+        Ok(self.engine.vars_in_scope(&server, route.as_deref())?)
     }
 
     async fn shutdown(&self) -> Result<(), ControlError> {

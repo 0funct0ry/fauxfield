@@ -56,9 +56,7 @@ impl SidebarTab {
     pub fn empty_text(self) -> &'static str {
         match self {
             SidebarTab::Servers => "No servers yet.",
-            SidebarTab::Environments => {
-                "No environments. Add one as environments/<name>.toml in the workspace folder."
-            }
+            SidebarTab::Environments => "No environments.",
             SidebarTab::Datasets => "No datasets. Datasets arrive in M8.",
         }
     }

@@ -95,3 +95,23 @@ The left dock has a header with the workspace name, an icon-only tab strip and o
 Servers, Environments and Datasets; hover one for its name and shortcut (Cmd/Ctrl+Alt+1, 2, 3, also in
 View > Sidebar and the Command Palette). The selected tab is remembered between launches. Opening an
 item from Quick Search or Problems switches to the tab that owns it.
+
+## Environments and variables
+
+An Environment is a file in `environments/` with a `[variables]` table. Exactly one is active per run: pick it in the title bar, press Cmd/Ctrl+E, run `fauxfield run --env staging`, or `fauxfield env use staging` (a running host switches live; templated headers and the Server `prefix` change on the next request, no restart).
+
+```toml
+name = "staging"
+dotenv = ".env.staging"          # optional; its values are never written back
+[variables]
+base_url = "https://staging.acme.dev"
+auth_token = "${env:ACME_TOKEN}"  # read from dotenv, then the process environment
+```
+
+`{{ vars.name }}` resolves, most specific first: runtime, route, server, environment, global. `{{ env }}` is the active Environment name. The Inspector lists every variable in scope with where it came from. Keys containing `token`, `secret`, `password` or `key` are masked until you choose Show secrets.
+
+```bash
+fauxfield env list
+fauxfield var set base_url https://x.dev --scope environment --env staging
+fauxfield var get base_url --server users-api
+```

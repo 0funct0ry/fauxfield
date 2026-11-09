@@ -716,3 +716,34 @@ mod windows {
         let _ = child.kill().await;
     }
 }
+
+/// M7: `set_variable` writes at a scope and never echoes secret values.
+#[tokio::test]
+async fn set_variable_writes_and_hides_secrets() {
+    let dir = init_ws();
+    let p = dir.path().to_str().unwrap();
+    let mut child = spawn(&[p]);
+    let c = ().serve((child.stdout.take().unwrap(), child.stdin.take().unwrap())).await.unwrap();
+    let call = |args: serde_json::Value| {
+        let c = &c;
+        async move {
+            c.call_tool(
+                CallToolRequestParams::new("set_variable")
+                    .with_arguments(args.as_object().unwrap().clone()),
+            )
+            .await
+        }
+    };
+    let r = call(json!({"scope": "environment", "owner": "local", "key": "page", "value": "5"}))
+        .await
+        .unwrap();
+    assert_eq!(r.structured_content.unwrap()["value"], "5");
+    let r = call(json!({"scope": "global", "key": "api_token", "value": "zzz"}))
+        .await
+        .unwrap();
+    assert!(r.structured_content.unwrap()["value"].is_null());
+    let t = std::fs::read_to_string(dir.path().join("fauxfield.toml")).unwrap();
+    assert!(t.contains("api_token"));
+    let bad = call(json!({"scope": "runtime", "key": "x", "value": "1"})).await;
+    assert!(bad.is_err() || bad.unwrap().is_error == Some(true));
+}

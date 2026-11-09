@@ -144,6 +144,7 @@ struct Inner {
     seq: AtomicU64,
     events: broadcast::Sender<EngineEvent>,
     handle: tokio::runtime::Handle,
+    vars: RwLock<crate::vars::VarContext>,
 }
 
 /// The mock engine. Cheap to clone; shared by the GUI, the headless runner and MCP.
@@ -163,6 +164,7 @@ impl Engine {
                 seq: AtomicU64::new(1),
                 events,
                 handle,
+                vars: RwLock::new(Default::default()),
             }),
         }
     }
@@ -217,7 +219,7 @@ impl Engine {
                 keep_it
             });
             for s in servers {
-                let table = Arc::new(RouteTable::compile(&s));
+                let table = Arc::new(self.compile(&s));
                 if let Some((_, rt)) = list.iter().find(|(id, _)| *id == s.id) {
                     let old = self.bind_of(&rt.def.lock().unwrap());
                     let new = self.bind_of(&s);
@@ -425,6 +427,91 @@ impl Engine {
             rt.counters.reset();
             rt.seq.lock().unwrap().clear();
         }
+        self.inner.vars.write().unwrap().runtime.clear();
+        self.recompile();
+    }
+
+    /// Compile a Route table with the Server `prefix` templated against the current variables
+    /// (SPEC §4.4: templated once at start; recompiled when the variable context changes).
+    fn compile(&self, s: &Server) -> RouteTable {
+        let mut s = s.clone();
+        if let Some(p) = s.prefix.as_deref()
+            && (p.contains("{{") || p.contains("{%"))
+        {
+            let vc = self.inner.vars.read().unwrap();
+            let ctx = serde_json::json!({
+                "vars": vc.vars_json(&s, None),
+                "env": vc.active_env,
+                "state": vc.state_json(),
+                "server": { "name": s.name, "port": s.port },
+            });
+            let input = crate::template::Input {
+                context: ctx,
+                root: &self.inner.cfg.root,
+                seed: s.fake_seed,
+                route_id: "",
+                counter: 0,
+                seq: None,
+            };
+            if let Ok(r) = crate::template::render(p, &input) {
+                s.prefix = Some(r.trim().to_string());
+            }
+        }
+        RouteTable::compile(&s)
+    }
+
+    /// Recompile every Route table and drop rule caches (variables changed). No restart.
+    fn recompile(&self) {
+        let list = self.inner.servers.lock().unwrap();
+        for (_, rt) in list.iter() {
+            let def = rt.def.lock().unwrap().clone();
+            *rt.table.write().unwrap() = Arc::new(self.compile(&def));
+            rt.compiled.clear();
+        }
+    }
+
+    /// Replace the variable context (Environment switched, variables edited, files reloaded).
+    /// Route tables are recompiled in place; no listener restarts.
+    pub fn set_var_context(&self, vc: crate::vars::VarContext) {
+        *self.inner.vars.write().unwrap() = vc;
+        self.recompile();
+    }
+
+    pub fn var_context(&self) -> crate::vars::VarContext {
+        self.inner.vars.read().unwrap().clone()
+    }
+
+    /// Switch the active Environment live.
+    pub fn set_active_env(&self, name: &str) {
+        self.inner.vars.write().unwrap().active_env = name.to_string();
+        self.recompile();
+    }
+
+    /// Set or unset a runtime variable (lives until state reset).
+    pub fn set_runtime_var(&self, key: &str, val: Option<&str>) {
+        {
+            let mut v = self.inner.vars.write().unwrap();
+            match val {
+                Some(x) => {
+                    v.runtime.insert(key.to_string(), x.to_string());
+                }
+                None => {
+                    v.runtime.remove(key);
+                }
+            }
+        }
+        self.recompile();
+    }
+
+    /// Variables in scope for a Server key (id, name or slug) and optional Route.
+    pub fn vars_in_scope(
+        &self,
+        server: &str,
+        route_id: Option<&str>,
+    ) -> Result<Vec<fauxfield_model::vars::ResolvedVar>, EngineError> {
+        let (_, rt) = self.find(server)?;
+        let def = rt.def.lock().unwrap().clone();
+        Ok(self.inner.vars.read().unwrap().resolve(&def, route_id))
     }
 
     pub fn clear_traffic(&self) {
@@ -650,6 +737,8 @@ async fn handle(
                     &body,
                     req_id,
                     call,
+                    &engine.inner.vars.read().unwrap(),
+                    Some(&r.id),
                 ),
                 seed: server_def.fake_seed,
                 route_id: r.id.clone(),

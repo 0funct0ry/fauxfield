@@ -448,3 +448,64 @@ fn templates_render_seeded_data_route_headers_and_errors() {
     let b = get("/users/9");
     assert_ne!(b.body, a.body);
 }
+
+#[test]
+fn switching_environment_changes_response_and_prefix_without_restart() {
+    use fauxfield_engine::{EnvData, VarContext};
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(&rt, dir.path());
+    let port = free_port();
+    let mut s = server(port, r#"{"host":"{{ vars.host }}","env":"{{ env }}"}"#, "");
+    s.prefix = Some("/{{ vars.ver }}".into());
+    let ev = |h: &str, v: &str| EnvData {
+        variables: [
+            ("host".to_string(), toml::Value::String(h.into())),
+            ("ver".to_string(), toml::Value::String(v.into())),
+        ]
+        .into(),
+        dotenv: Default::default(),
+    };
+    let vc = VarContext {
+        active_env: "local".into(),
+        globals: [("host".to_string(), toml::Value::String("global".into()))].into(),
+        envs: [
+            ("local".to_string(), ev("l.example", "v1")),
+            ("staging".to_string(), ev("s.example", "v2")),
+        ]
+        .into(),
+        runtime: Default::default(),
+    };
+    e.set_var_context(vc);
+    e.apply(vec![s]);
+    e.start("srv_a").unwrap();
+    let r = rt
+        .block_on(e.send_test("srv_a", &req("GET", "/v1/users")))
+        .unwrap();
+    assert!(
+        r.body.contains(r#""host":"l.example","env":"local""#),
+        "{r:?}"
+    );
+    e.set_active_env("staging");
+    let r = rt
+        .block_on(e.send_test("srv_a", &req("GET", "/v2/users")))
+        .unwrap();
+    assert!(r.body.contains(r#""host":"s.example","env":"staging""#));
+    e.set_runtime_var("host", Some("rt"));
+    let r = rt
+        .block_on(e.send_test("srv_a", &req("GET", "/v2/users")))
+        .unwrap();
+    assert!(r.body.contains(r#""host":"rt""#));
+    let scope = e.vars_in_scope("srv_a", Some("rte_1")).unwrap();
+    assert_eq!(
+        scope
+            .iter()
+            .find(|v| v.key == "host")
+            .unwrap()
+            .scope
+            .as_str(),
+        "runtime"
+    );
+    e.reset_state();
+    e.stop("srv_a").unwrap();
+}

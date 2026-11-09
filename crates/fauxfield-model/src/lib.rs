@@ -7,6 +7,7 @@ pub mod pattern;
 pub mod rules;
 mod types;
 mod validate;
+pub mod vars;
 
 pub use diagnostic::{Diagnostic, Severity};
 pub use id::new_id;

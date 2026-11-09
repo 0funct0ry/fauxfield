@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use fauxfield_engine::Engine;
+use fauxfield_engine::{Engine, VarContext};
 use fauxfield_model::{Server, Severity};
 use fauxfield_store::{Event, Store};
 
@@ -12,6 +12,13 @@ use fauxfield_store::{Event, Store};
 /// A server whose file has errors (or no longer parses) is never applied: the last good
 /// definition of that file keeps serving, and the errors show up in Problems (SPEC §20.13).
 pub fn attach_store(engine: &Engine, store: &Store) {
+    attach_store_with_env(engine, store, None)
+}
+
+/// [`attach_store`] with an initial active Environment (`run --env`). Later reloads keep the
+/// current active Environment and the runtime variables, rebuilding everything else.
+pub fn attach_store_with_env(engine: &Engine, store: &Store, initial_env: Option<String>) {
+    let initial = Arc::new(Mutex::new(initial_env));
     let last: Arc<Mutex<HashMap<String, Server>>> = Arc::default();
     let apply = move |engine: &Engine, store: &Store| {
         let snap = store.snapshot();
@@ -50,6 +57,21 @@ pub fn attach_store(engine: &Engine, store: &Store) {
             last.remove(&f);
         }
         drop(last);
+        let cur = engine.var_context();
+        let active = if !cur.active_env.is_empty() {
+            Some(cur.active_env.clone())
+        } else {
+            initial.lock().unwrap().take()
+        };
+        let envs: Vec<_> = snap.environments.iter().map(|(_, e)| e.clone()).collect();
+        let vc = VarContext::from_workspace(
+            &snap.manifest,
+            &envs,
+            |n| snap.dotenv(n),
+            active.as_deref(),
+            cur.runtime,
+        );
+        engine.set_var_context(vc);
         engine.apply(servers);
     };
     apply(engine, store);

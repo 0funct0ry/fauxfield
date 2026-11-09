@@ -1,0 +1,8 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "active": "staging",
+  "live": false
+}

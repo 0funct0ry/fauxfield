@@ -382,3 +382,62 @@ fn render_is_stable_and_seed_deterministic() {
     let (code, _, _) = run(&["render", "example-api", "rte_nope", "-w", p]);
     assert_eq!(code, 2);
 }
+
+#[test]
+fn env_and_var_commands_are_stable() {
+    let dir = workspace();
+    let p = dir.path().to_str().unwrap();
+    let json = |args: &[&str]| -> serde_json::Value {
+        let mut a = args.to_vec();
+        a.extend(["-w", p, "--json"]);
+        let (code, out, err) = run(&a);
+        assert_eq!(code, 0, "{args:?}: {err}");
+        serde_json::from_str(&out).unwrap()
+    };
+    let mut v = json(&["env", "list"]);
+    snap_json(Some("env_list"), &v);
+    v = json(&["env", "add", "staging"]);
+    snap_json(Some("env_add"), &v);
+    v = json(&["env", "use", "staging"]);
+    snap_json(Some("env_use"), &v);
+    v = json(&[
+        "var",
+        "set",
+        "api_token",
+        "s3cret",
+        "--scope",
+        "environment",
+        "--env",
+        "staging",
+    ]);
+    snap_json(Some("var_set_secret"), &v);
+    v = json(&[
+        "var",
+        "set",
+        "base",
+        "http://s",
+        "--scope",
+        "environment",
+        "--env",
+        "staging",
+    ]);
+    snap_json(Some("var_set"), &v);
+    v = json(&["var", "get", "base"]);
+    snap_json(Some("var_get"), &v);
+    v = json(&[
+        "var",
+        "unset",
+        "base",
+        "--scope",
+        "environment",
+        "--env",
+        "staging",
+    ]);
+    snap_json(Some("var_unset"), &v);
+    let (code, _, _) = run(&["var", "get", "base", "-w", p]);
+    assert_eq!(code, 1);
+    let (code, _, _) = run(&["var", "set", "x", "1", "-w", p]);
+    assert_eq!(code, 2);
+    let (code, _, _) = run(&["var", "set", "x", "1", "--scope", "runtime", "-w", p]);
+    assert_eq!(code, 4, "runtime scope needs a host");
+}

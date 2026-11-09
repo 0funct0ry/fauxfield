@@ -337,6 +337,7 @@ pub fn build_menus(ctx: &MenuContext) -> Vec<MenuDef> {
 
     let mut file = vec![
         act("new_server", "New Server…"),
+        act("new_environment", "New Environment…"),
         act("new_route", "New Route…"),
         act("new_folder", "New Folder…"),
         MenuEntry::Separator,
@@ -557,6 +558,7 @@ pub fn enabled(id: &str, ctx: &MenuContext) -> bool {
     }
     match id {
         "new_server"
+        | "new_environment"
         | "close_workspace"
         | "rename_workspace"
         | "reveal_workspace"
@@ -649,6 +651,7 @@ pub fn why_disabled(id: &str, ctx: &MenuContext) -> &'static str {
     } else if matches!(
         id,
         "new_server"
+            | "new_environment"
             | "close_workspace"
             | "rename_workspace"
             | "reveal_workspace"

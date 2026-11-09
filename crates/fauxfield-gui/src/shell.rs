@@ -60,6 +60,16 @@ pub enum PickerKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PromptAction {
     NewServer,
+    NewEnvironment,
+    RenameEnvironment {
+        name: String,
+    },
+    /// `key` is `None` for "add" (the value is `KEY=value`), else the value of that variable.
+    SetVariable {
+        scope: fauxfield_model::vars::Scope,
+        owner: Option<String>,
+        key: Option<String>,
+    },
     ServerPort {
         server: String,
     },
@@ -142,6 +152,7 @@ impl PromptAction {
                 "0.0.0.0 or :: makes the server reachable from your network."
             }
             PromptAction::ServerPrefix { .. } => "Starts with /, no trailing /. Empty removes it.",
+            PromptAction::SetVariable { .. } => "Use ${env:NAME} to read the process environment.",
             _ => "",
         }
     }
@@ -149,6 +160,10 @@ impl PromptAction {
     pub fn title(&self) -> &'static str {
         match self {
             PromptAction::NewServer => "New server name",
+            PromptAction::NewEnvironment => "New environment name",
+            PromptAction::RenameEnvironment { .. } => "Environment name",
+            PromptAction::SetVariable { key: None, .. } => "Variable (KEY=value)",
+            PromptAction::SetVariable { .. } => "Value",
             PromptAction::ServerPort { .. } => "Port (1-65535)",
             PromptAction::OpenFolder => "Open workspace folder",
             PromptAction::CreateWorkspace => "Create workspace in folder",
@@ -1288,6 +1303,15 @@ impl Shell {
     pub fn set_environment(&mut self, name: &str, cx: &mut Context<Self>) {
         if self.ws.find_environment(name).is_some() {
             self.active_env = name.to_string();
+            // Live switch: Route tables recompile and templated headers re-render on the next
+            // request; no listener restarts (M7). The choice is also saved as the default.
+            if let Some(h) = &self.host {
+                h.engine().set_active_env(name);
+            }
+            let n = name.to_string();
+            self.store_op(cx, |s| s.set_default_environment(Some(&n)));
+            self.preview_key = 0;
+            self.preview_samples.clear();
             self.notify(format!("Environment: {name}"), cx);
         }
     }
@@ -1974,8 +1998,13 @@ impl Shell {
     }
 
     pub(crate) fn rename_row(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
-        if id.starts_with("env:") {
-            return self.stub("Renaming environments", "M7", cx);
+        if let Some(name) = id.strip_prefix("env:") {
+            return self.begin_prompt(
+                PromptAction::RenameEnvironment { name: name.into() },
+                name,
+                window,
+                cx,
+            );
         }
         let current = if let Some(s) = self.ws.find_server(id) {
             s.name.clone()
@@ -2005,8 +2034,12 @@ impl Shell {
     }
 
     fn duplicate_row(&mut self, id: &str, cx: &mut Context<Self>) {
-        if id.starts_with("env:") {
-            return self.stub("Duplicating environments", "M7", cx);
+        if let Some(name) = id.strip_prefix("env:") {
+            let n = name.to_string();
+            if let Some(new) = self.store_op(cx, |s| s.duplicate_environment(&n)) {
+                self.notify(format!("Duplicated as {new}"), cx);
+            }
+            return;
         }
         let target = self.row_target(id).or_else(|| {
             self.ws
@@ -2208,8 +2241,15 @@ impl Shell {
     }
 
     fn delete_row(&mut self, id: &str, cx: &mut Context<Self>) {
-        if id.starts_with("env:") {
-            return self.stub("Deleting environments", "M7", cx);
+        if let Some(name) = id.strip_prefix("env:") {
+            let n = name.to_string();
+            if self.store_op(cx, |s| s.delete_environment(&n)).is_some() {
+                if let Some(i) = self.tabs.position(&n) {
+                    self.tabs.close(i);
+                }
+                self.notify(format!("Deleted environment {n}"), cx);
+            }
+            return;
         }
         if self.ws.find_server(id).is_some() {
             // Deleting a server asks first (modal `delete-confirm`).
@@ -2396,6 +2436,45 @@ impl Shell {
         use fauxfield_store::Target as T;
         let v = value.to_string();
         match action {
+            PromptAction::NewEnvironment => {
+                let n = v.trim().to_string();
+                if self.store_op(cx, |s| s.create_environment(&n)).is_some() {
+                    self.sidebar_tab = tree::SidebarTab::Environments;
+                    self.notify(format!("Created environment {n}"), cx);
+                }
+            }
+            PromptAction::RenameEnvironment { name } => {
+                let n = v.trim().to_string();
+                if self
+                    .store_op(cx, |s| s.rename_environment(&name, &n))
+                    .is_some()
+                {
+                    if self.active_env == name {
+                        self.active_env = n.clone();
+                        if let Some(h) = &self.host {
+                            h.engine().set_active_env(&n);
+                        }
+                    }
+                    if let Some(i) = self.tabs.position(&name) {
+                        self.tabs.close(i);
+                    }
+                }
+            }
+            PromptAction::SetVariable { scope, owner, key } => {
+                let (k, val) = match key {
+                    Some(k) => (k, v.clone()),
+                    None => match v.split_once('=') {
+                        Some((k, x)) => (k.trim().to_string(), x.trim().to_string()),
+                        None => {
+                            self.notify("Use KEY=value.".into(), cx);
+                            return;
+                        }
+                    },
+                };
+                self.store_op(cx, |s| {
+                    s.set_variable(scope, owner.as_deref(), &k, Some(&val))
+                });
+            }
             PromptAction::OpenFolder => self.open_folder_chosen(PathBuf::from(&v), cx),
             PromptAction::CreateWorkspace => self.create_folder_chosen(PathBuf::from(&v), cx),
             PromptAction::RenameWorkspace => {
@@ -2770,6 +2849,7 @@ impl Render for Shell {
                 }
             },
             NewServer => |this, w, cx| this.begin_prompt(PromptAction::NewServer, "", w, cx),
+            NewEnvironment => |this, w, cx| this.begin_prompt(PromptAction::NewEnvironment, "", w, cx),
             NewRoute => |this, w, cx| match this.current_server_id() {
                 Some(server) => this.begin_prompt(PromptAction::NewRoute { server, folder: None }, "GET /", w, cx),
                 None => this.notify("Select a server first.".into(), cx),

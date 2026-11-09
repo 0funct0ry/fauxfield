@@ -35,6 +35,9 @@ pub struct RunArgs {
     /// Bind every Server to this host address.
     #[arg(long, value_name = "ADDR")]
     pub host: Option<String>,
+    /// Active Environment for this run (default: `default_environment`).
+    #[arg(long, value_name = "NAME")]
+    pub env: Option<String>,
     /// Hot-reload external edits (default when attached to a terminal).
     #[arg(long, overrides_with = "no_watch")]
     pub watch: bool,
@@ -82,7 +85,7 @@ pub struct LogsArgs {
     pub ws: crate::workspace_cmd::WsArgs,
 }
 
-fn root_of(ws: &crate::workspace_cmd::WsArgs) -> PathBuf {
+pub(crate) fn root_of(ws: &crate::workspace_cmd::WsArgs) -> PathBuf {
     match &ws.workspace {
         Some(p) => p.canonicalize().unwrap_or_else(|_| p.clone()),
         None => {
@@ -93,7 +96,7 @@ fn root_of(ws: &crate::workspace_cmd::WsArgs) -> PathBuf {
     }
 }
 
-fn rt() -> tokio::runtime::Runtime {
+pub(crate) fn rt() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -137,6 +140,7 @@ pub fn run(a: RunArgs) -> i32 {
         HostOptions {
             port_offset: a.port_offset,
             host_override: a.host.clone(),
+            env: a.env.clone(),
             watch,
             publish: true,
         },
@@ -261,7 +265,7 @@ fn slug(name: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
-fn attach(root: &Path) -> Result<(fauxfield_control::HostInfo, RemoteControl), i32> {
+pub(crate) fn attach(root: &Path) -> Result<(fauxfield_control::HostInfo, RemoteControl), i32> {
     match read_host(root) {
         Some(info) => {
             let c = RemoteControl::new(&info.socket);
@@ -277,7 +281,7 @@ fn attach(root: &Path) -> Result<(fauxfield_control::HostInfo, RemoteControl), i
     }
 }
 
-fn control_failed(e: ControlError) -> i32 {
+pub(crate) fn control_failed(e: ControlError) -> i32 {
     eprintln!("error: {e}");
     if e.kind == "no_host" {
         EXIT_NO_HOST

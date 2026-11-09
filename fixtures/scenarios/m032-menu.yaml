@@ -14,15 +14,15 @@ steps:
   - assert: {pointer: /menus/menus/1/title, equals: File}
   - assert: {pointer: /menus/menus/1/items/0/id, equals: new_server}
   - assert: {pointer: /menus/menus/1/items/0/enabled, equals: false}
-  - assert: {pointer: /menus/menus/1/items/4/id, equals: open_folder}
-  - assert: {pointer: /menus/menus/1/items/4/enabled, equals: true}
-  - assert: {pointer: /menus/menus/1/items/8/id, equals: close_workspace}
-  - assert: {pointer: /menus/menus/1/items/8/enabled, equals: false}
+  - assert: {pointer: /menus/menus/1/items/5/id, equals: open_folder}
+  - assert: {pointer: /menus/menus/1/items/5/enabled, equals: true}
+  - assert: {pointer: /menus/menus/1/items/9/id, equals: close_workspace}
+  - assert: {pointer: /menus/menus/1/items/9/enabled, equals: false}
   # Open the example workspace through File > Open Recent (it was just closed, so it is first).
   - menu: {action: invoke, path: [File, Open Recent, example-workspace]}
   - wait_for_idle: {}
   - assert: {pointer: /view, equals: workspace}
-  - assert: {pointer: /menus/menus/1/items/8/enabled, equals: true}
+  - assert: {pointer: /menus/menus/1/items/9/enabled, equals: true}
   # Labels follow state: docks.
   - assert: {pointer: /docks/left/open, equals: true}
   - menu: {action: invoke, path: [View, Hide Left Dock]}

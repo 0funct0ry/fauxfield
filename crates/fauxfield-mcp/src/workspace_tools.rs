@@ -58,6 +58,20 @@ struct UpdateWorkspace {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct SetVariable {
+    /// `global`, `environment`, `server` or `route`.
+    scope: String,
+    /// Environment name, Server ID or Route ID (not needed for `global`).
+    #[serde(default)]
+    owner: Option<String>,
+    /// Variable name.
+    key: String,
+    /// New value; omit or null to remove the variable.
+    #[serde(default)]
+    value: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct RouteRef {
     /// Route ID (`rte_…`).
     route: String,
@@ -320,6 +334,30 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                 s.set_workspace_name(&a.name).map_err(e)?;
                 s.flush().map_err(e)?;
                 Ok(json!({ "name": s.snapshot().manifest.name }))
+            });
+            Box::pin(async move { out })
+        },
+    ));
+    let p = provider.clone();
+    r.register(ToolDef::new::<SetVariable>(
+        "set_variable",
+        "Set or remove a variable at a scope (global, environment, server, route). Values for secret-looking names (*token*, *secret*, *password*, *key*) are never echoed back.",
+        ToolClass::Write,
+        move |m| {
+            let Some(s) = p() else { return no_workspace() };
+            let out = parse::<SetVariable>(m).and_then(|a| {
+                let scope = fauxfield_model::vars::Scope::parse(&a.scope)
+                    .filter(|sc| *sc != fauxfield_model::vars::Scope::Runtime)
+                    .ok_or_else(|| "scope must be global, environment, server or route".to_string())?;
+                s.set_variable(scope, a.owner.as_deref(), &a.key, a.value.as_deref()).map_err(e)?;
+                s.flush().map_err(e)?;
+                let secret = fauxfield_model::vars::is_secret_key(&a.key);
+                Ok(json!({
+                    "key": a.key,
+                    "scope": scope.as_str(),
+                    "removed": a.value.is_none(),
+                    "value": a.value.filter(|_| !secret),
+                }))
             });
             Box::pin(async move { out })
         },

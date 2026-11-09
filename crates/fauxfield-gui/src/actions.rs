@@ -36,6 +36,7 @@ actions!(
         RunAll,
         ToggleServer,
         NewServer,
+        NewEnvironment,
         NewRoute,
         SendTest,
         EditSampleRequest,
@@ -195,6 +196,7 @@ pub static ACTIONS: &[ActionInfo] = &[
     row!("quit_anyway", "Quit: Stop Servers and Quit", QuitAnyway),
     row!("cancel_quit", "Quit: Cancel", CancelQuit),
     row!("new_server", "Server: New…", NewServer),
+    row!("new_environment", "Environment: New…", NewEnvironment),
     row!("new_route", "Route: New…", NewRoute),
     row!("send_test", "Route: Send Test Request", SendTest),
     row!(

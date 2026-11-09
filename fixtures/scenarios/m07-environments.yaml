@@ -1,0 +1,29 @@
+# M7 scenario: Environments. Create one from the sidebar "+", switch live, add a secret variable
+# in the Environment tab, and see it in the Inspector scope list.
+# Needs the example workspace as the launch workspace (scripts/smoke-ui.sh copies it).
+name: m07-environments
+size: default
+steps:
+  - state: [reset]
+  - click_element: {id: sidebar-tab-environments}
+  - wait_for_idle: {}
+  - assert_find: {text: New environment, ids: [sidebar-new-environment]}
+  - click_element: {id: sidebar-new-environment}
+  - wait_for_idle: {}
+  - type_text: qa
+  - key: enter
+  - wait_for_idle: {}
+  - assert: {pointer: /tree/visible_rows, equals: ["env:local", "env:qa", "env:staging"]}
+  # Live switch through the same method Cmd+E uses.
+  - command: {command: set_environment, name: staging}
+  - wait_for_idle: {}
+  - assert: {pointer: /active_environment, equals: staging}
+  # Add a secret variable: the table masks it.
+  - click_element: {id: row-env:staging}
+  - wait_for_idle: {}
+  - click_element: {id: var-add-env}
+  - wait_for_idle: {}
+  - type_text: api_token=abc123
+  - key: enter
+  - wait_for_idle: {}
+  - assert_find: {text: api_token, ids: [var-env-api_token]}

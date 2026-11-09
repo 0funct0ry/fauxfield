@@ -7,7 +7,7 @@ use fauxfield_store::{Background, Store};
 
 use crate::api::LocalControl;
 use crate::host::{HostInfo, HostLock, control_socket_path};
-use crate::reload::attach_store;
+use crate::reload::attach_store_with_env;
 use crate::rpc::serve;
 
 #[derive(Debug, thiserror::Error)]
@@ -22,6 +22,8 @@ pub enum HostError {
 pub struct HostOptions {
     pub port_offset: u16,
     pub host_override: Option<String>,
+    /// Active Environment at start (`run --env`); default is the manifest's.
+    pub env: Option<String>,
     /// Watch the workspace folder and hot-reload external edits.
     pub watch: bool,
     /// Serve the control socket and write `host.json`. Off for throwaway engines in tests.
@@ -124,7 +126,7 @@ impl Host {
                 handle.spawn(serve(first, name, control.clone()));
             }
         }
-        attach_store(&engine, &store);
+        attach_store_with_env(&engine, &store, opts.env.clone());
         let background = if opts.watch {
             store
                 .start_background(Duration::from_millis(300))

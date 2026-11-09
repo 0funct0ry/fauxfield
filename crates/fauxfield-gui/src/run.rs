@@ -96,6 +96,12 @@ impl Shell {
                 .map(|h| h.control() as std::sync::Arc<dyn fauxfield_control::ControlApi>),
         );
         self.engine_events = host.as_ref().map(|h| h.engine().subscribe());
+        if let Some(h) = &host {
+            let a = h.engine().var_context().active_env;
+            if !a.is_empty() {
+                self.active_env = a;
+            }
+        }
         self.host = host;
         self.sync_running();
     }
