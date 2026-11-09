@@ -13,6 +13,8 @@ actions!(
         CommandPalette,
         SelectTheme,
         SwitchEnvironment,
+        SwitchNetworkProfile,
+        ToggleChaos,
         ToggleLeftDock,
         ToggleBottomDock,
         ToggleRightDock,
@@ -144,6 +146,12 @@ pub static ACTIONS: &[ActionInfo] = &[
         "Environment: Switch…",
         SwitchEnvironment
     ),
+    row!(
+        "switch_network_profile",
+        "Network: Switch Profile…",
+        SwitchNetworkProfile
+    ),
+    row!("toggle_chaos", "Server: Toggle Chaos", ToggleChaos),
     row!("toggle_left_dock", "View: Toggle Left Dock", ToggleLeftDock),
     row!(
         "show_sidebar_servers",

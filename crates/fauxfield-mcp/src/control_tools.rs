@@ -54,6 +54,20 @@ struct ResetState {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct SetNetwork {
+    /// `none`, `fast-3g`, `slow-3g`, `flaky-wifi` or `offline`. Omit to read the current profile.
+    profile: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct SetChaos {
+    /// Server ID, name or file slug. Omit for every Server.
+    server: Option<String>,
+    /// Fault rate 0 to 1 to turn chaos on; 0 or omitted turns it off.
+    rate: Option<f64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct SendTest {
     /// Server ID, name, or file slug. It must be running.
     server: String,
@@ -158,6 +172,50 @@ pub fn register_control_tools(r: &mut Registry, provider: ControlProvider) {
                     .await
                     .map_err(fail)?;
                 Ok(json!({ "reset": true, "server": a.server, "dataset": a.dataset }))
+            })
+        },
+    ));
+
+    let p = provider.clone();
+    r.register(ToolDef::new::<SetNetwork>(
+        "set_network_profile",
+        "Read or set the workspace network profile (runtime only, not written to files): none, fast-3g, slow-3g, flaky-wifi or offline. A profile overrides every Server's [network]; offline refuses connections.",
+        ToolClass::Execute,
+        move |m| -> ToolFuture {
+            let p = p.clone();
+            Box::pin(async move {
+                let a = parse::<SetNetwork>(m)?;
+                let c = host(&p)?;
+                let profile = match a.profile {
+                    None => c.network_get().await,
+                    Some(n) => {
+                        let prof = fauxfield_engine::NetworkProfile::parse(&n).ok_or_else(|| {
+                            format!("`{n}` is not a profile; use none, fast-3g, slow-3g, flaky-wifi or offline")
+                        })?;
+                        c.network_set(prof).await
+                    }
+                }
+                .map_err(fail)?;
+                Ok(json!({ "profile": profile.slug(), "label": profile.label() }))
+            })
+        },
+    ));
+
+    let p = provider.clone();
+    r.register(ToolDef::new::<SetChaos>(
+        "set_chaos",
+        "Turn the chaos switch on or off (runtime only): with a rate above 0 that fraction of requests gets a random fault (reset, close, empty, malformed or 500).",
+        ToolClass::Execute,
+        move |m| -> ToolFuture {
+            let p = p.clone();
+            Box::pin(async move {
+                let a = parse::<SetChaos>(m)?;
+                if a.rate.is_some_and(|r| !(0.0..=1.0).contains(&r)) {
+                    return Err("rate must be between 0 and 1".into());
+                }
+                let rate = a.rate.filter(|r| *r > 0.0);
+                let servers = host(&p)?.chaos_set(a.server, rate).await.map_err(fail)?;
+                Ok(json!({ "servers": servers }))
             })
         },
     ));

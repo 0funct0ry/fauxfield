@@ -900,6 +900,28 @@ impl Shell {
                         None
                     )
                 }))
+                .children((!resp.fault.is_empty()).then(|| {
+                    let tip = format!(
+                        "{}{}",
+                        crate::network_ui::fault_tip(&resp.fault),
+                        if resp.fault_rate.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" · rate {}", resp.fault_rate)
+                        }
+                    );
+                    crate::dev_id!(
+                        div()
+                            .id(crate::ui::eid(format!("resp-fault-icon-{}", resp.id)))
+                            .flex_none()
+                            .tooltip(crate::ui::tooltip(tip.clone()))
+                            .child(icon("zap", 12., t.deleted)),
+                        format!("resp-fault-icon-{}", resp.id),
+                        Text,
+                        tip,
+                        None
+                    )
+                }))
                 .children(resp.default.then(|| {
                     crate::dev_id!(
                         div()
@@ -1110,6 +1132,12 @@ impl Shell {
                     .gap(px(2.))
                     .child(self.server_general(t, s, cx))
                     .children(SERVER_SECTIONS.iter().enumerate().skip(1).map(|(i, name)| {
+                        if i == 3 {
+                            return self.server_network_section(t, s, cx);
+                        }
+                        if i == 4 {
+                            return self.server_rate_limit_section(t, s, cx);
+                        }
                         if i == 6 {
                             return self.server_datasets_section(t, s, cx);
                         }
@@ -1692,8 +1720,43 @@ impl Shell {
         let mut col = col
             .child(section("TIMING"))
             .child(line("Match".into(), format!("{} µs", rec.timing.match_us)))
-            .child(line("Delay".into(), format!("{} ms", rec.timing.delay_ms)))
+            .child(line(
+                "Render".into(),
+                format!("{} µs", rec.timing.render_us),
+            ))
+            .child(line(
+                "Delay".into(),
+                format!(
+                    "{} ms ({} network, {} response)",
+                    rec.timing.delay_ms,
+                    rec.timing.network_ms,
+                    rec.timing.delay_ms.saturating_sub(rec.timing.network_ms)
+                ),
+            ))
+            .child(line(
+                "Transfer".into(),
+                format!("{} ms", rec.timing.transfer_ms),
+            ))
             .child(line("Total".into(), format!("{} ms", rec.timing.total_ms)))
+            .children(rec.fault.as_ref().map(|f| {
+                crate::dev_id!(
+                    div()
+                        .id("inspector-fault")
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap(px(4.))
+                        .pt(px(2.))
+                        .text_size(px(11.))
+                        .text_color(t.deleted)
+                        .child(icon("zap", 11., t.deleted))
+                        .child(format!("Injected fault: {f}")),
+                    "inspector-fault",
+                    Text,
+                    format!("Injected fault: {f}"),
+                    None
+                )
+            }))
             .child(section("REQUEST"));
         for (k, v) in &rec.request_headers {
             col = col.child(line(format!("{k}:"), v.clone()));

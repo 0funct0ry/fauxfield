@@ -494,3 +494,16 @@ fn data_commands_are_stable() {
     let (code, _, _) = run(&["data", "show", "example-api", "nope", "-w", p]);
     assert_eq!(code, 1);
 }
+
+#[test]
+fn run_rejects_bad_network_and_chaos_values_with_exit_2() {
+    let (code, _, err) = run(&["run", "--network", "dialup"]);
+    assert_eq!(code, 2);
+    assert!(
+        err.contains("fast-3g") && err.contains("flaky-wifi"),
+        "{err}"
+    );
+    let (code, _, err) = run(&["run", "--chaos", "1.5"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("between 0 and 1"), "{err}");
+}

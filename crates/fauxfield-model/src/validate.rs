@@ -61,6 +61,32 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                 format!("port {} on {} is already used by {prev}", s.port, s.host),
             ));
         }
+        if let Some(rl) = &s.rate_limit {
+            if rl.requests == 0 {
+                out.push(Diagnostic::error(
+                    file,
+                    "rate_limit.requests",
+                    "E080",
+                    "requests must be at least 1",
+                ));
+            }
+            if crate::parse_window(&rl.window).is_none() {
+                out.push(Diagnostic::error(
+                    file,
+                    "rate_limit.window",
+                    "E081",
+                    format!("window `{}` is not like 30s, 1m or 2h", rl.window),
+                ));
+            }
+            if !crate::valid_rate_key(&rl.key) {
+                out.push(Diagnostic::error(
+                    file,
+                    "rate_limit.key",
+                    "E082",
+                    format!("key `{}` must be ip, header:<name> or query:<name>", rl.key),
+                ));
+            }
+        }
         for (i, f) in s.folders.iter().enumerate() {
             if let Some(prev) = ids.insert(&f.id, file) {
                 out.push(Diagnostic::error(
@@ -229,6 +255,44 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                         "E040",
                         format!("status {} is not 100-599", resp.status),
                     ));
+                }
+                if let Some(d) = &resp.delay_ms
+                    && d.bounds().is_none()
+                {
+                    out.push(Diagnostic::error(
+                        file,
+                        format!("{sp}.delay_ms"),
+                        "E083",
+                        format!(
+                            "delay `{}` is not milliseconds or a range like 200..800",
+                            d.text()
+                        ),
+                    ));
+                }
+                if let Some(f) = resp.fault.as_deref()
+                    && !crate::FAULTS.contains(&f)
+                {
+                    out.push(Diagnostic::error(
+                        file,
+                        format!("{sp}.fault"),
+                        "E084",
+                        format!("unknown fault `{f}`"),
+                    ));
+                }
+                if let Some(r) = resp.fault_rate
+                    && !(0.0..=1.0).contains(&r)
+                {
+                    out.push(Diagnostic::error(
+                        file,
+                        format!("{sp}.fault_rate"),
+                        "E085",
+                        format!("fault_rate {r} is not between 0 and 1"),
+                    ));
+                }
+                if resp.fault.as_deref() == Some("slow_body")
+                    && s.network.as_ref().is_none_or(|n| n.bandwidth_kbps == 0)
+                {
+                    out.push(Diagnostic::warning(file, format!("{sp}.fault"), "W060", "slow_body needs `network.bandwidth_kbps` (or a network profile) to throttle"));
                 }
                 if let Some(l) = resp.rules_logic.as_deref()
                     && l != "and"

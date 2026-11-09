@@ -11,6 +11,15 @@ pub struct Timing {
     pub match_us: u64,
     /// Configured response delay, milliseconds.
     pub delay_ms: u64,
+    /// Template rendering and file reads, microseconds.
+    #[serde(default)]
+    pub render_us: u64,
+    /// Simulated network latency (profile or server `[network]`), milliseconds; part of `delay_ms`.
+    #[serde(default)]
+    pub network_ms: u64,
+    /// Sending the body (throttled bodies take longer), milliseconds.
+    #[serde(default)]
+    pub transfer_ms: u64,
     /// Whole request, milliseconds.
     pub total_ms: u64,
 }
@@ -51,6 +60,10 @@ pub struct Recording {
     /// Template or file error that turned this response into a 500 (shown in Traffic).
     #[serde(default)]
     pub error: Option<String>,
+    /// Injected failure: `timeout`, `reset`, `close`, `empty`, `malformed`, `slow_body`,
+    /// `rate_limited`, `offline`, with a `chaos:` or `profile:` prefix when not from the Response.
+    #[serde(default)]
+    pub fault: Option<String>,
     /// `mock` for real clients, `test` for Send test.
     pub source: String,
 }
@@ -138,6 +151,7 @@ mod tests {
             timing: Timing::default(),
             truncated: false,
             error: None,
+            fault: None,
             source: "mock".into(),
         };
         let c = to_curl(&rec, "http://127.0.0.1:1");

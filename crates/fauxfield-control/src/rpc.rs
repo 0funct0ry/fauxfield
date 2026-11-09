@@ -83,6 +83,14 @@ async fn dispatch(
             .reset_state(param(params, "server")?, param(params, "dataset")?)
             .await
             .map(|_| json!({})),
+        "network.get" => api.network_get().await.map(|p| json!({"profile": p})),
+        "network.set" => api
+            .network_set(param(params, "profile")?)
+            .await
+            .map(|p| json!({"profile": p})),
+        "chaos.set" => to(api
+            .chaos_set(param(params, "server")?, param(params, "rate")?)
+            .await),
         "shutdown" => api.shutdown().await.map(|_| json!({})),
         other => Err(ControlError::new(
             "method_not_found",
@@ -276,6 +284,31 @@ impl ControlApi for RemoteControl {
             .call("test.send", json!({"server": server, "request": request}))
             .await?;
         serde_json::from_value(v).map_err(|e| ControlError::new("transport", e.to_string()))
+    }
+    async fn network_get(&self) -> Result<fauxfield_engine::NetworkProfile, ControlError> {
+        let v = self.call("network.get", Value::Null).await?;
+        serde_json::from_value(v["profile"].clone())
+            .map_err(|e| ControlError::new("transport", e.to_string()))
+    }
+    async fn network_set(
+        &self,
+        profile: fauxfield_engine::NetworkProfile,
+    ) -> Result<fauxfield_engine::NetworkProfile, ControlError> {
+        let v = self
+            .call("network.set", json!({"profile": profile}))
+            .await?;
+        serde_json::from_value(v["profile"].clone())
+            .map_err(|e| ControlError::new("transport", e.to_string()))
+    }
+    async fn chaos_set(
+        &self,
+        server: Option<String>,
+        rate: Option<f64>,
+    ) -> Result<Vec<ServerInfo>, ControlError> {
+        Self::servers(
+            self.call("chaos.set", json!({"server": server, "rate": rate}))
+                .await?,
+        )
     }
     async fn env_active(&self) -> Result<String, ControlError> {
         let v = self.call("env.active", Value::Null).await?;

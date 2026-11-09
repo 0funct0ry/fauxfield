@@ -1,0 +1,6 @@
+# UI state fixture (M9): captured by `ui.screenshot {state: "network-profile-open"}`. The status-bar network profile picker open.
+steps:
+  - reset
+  - invoke: switch_network_profile
+  - wait_for: {condition: {pointer: /network_picker/open, equals: true}}
+  - wait_idle

@@ -783,3 +783,35 @@ async fn upsert_dataset_and_reset_state() {
     let r = call("reset_state", json!({})).await.unwrap();
     assert_eq!(r.structured_content.unwrap()["reset"], true);
 }
+
+/// M9: the network profile and chaos switch are runtime state set through MCP.
+#[tokio::test]
+async fn network_profile_and_chaos_tools() {
+    let dir = init_ws();
+    let p = dir.path().to_str().unwrap();
+    let mut child = spawn(&[p]);
+    let c = ().serve((child.stdout.take().unwrap(), child.stdin.take().unwrap())).await.unwrap();
+    let call = |name: &'static str, args: serde_json::Value| {
+        let c = &c;
+        async move {
+            c.call_tool(
+                CallToolRequestParams::new(name).with_arguments(args.as_object().unwrap().clone()),
+            )
+            .await
+        }
+    };
+    let r = call("set_network_profile", json!({"profile": "Slow 3G"}))
+        .await
+        .unwrap();
+    assert_eq!(r.structured_content.unwrap()["profile"], "slow-3g");
+    let r = call("set_network_profile", json!({})).await.unwrap();
+    assert_eq!(r.structured_content.unwrap()["profile"], "slow-3g");
+    let bad = call("set_network_profile", json!({"profile": "dialup"})).await;
+    assert!(bad.is_err() || bad.unwrap().is_error == Some(true));
+    let r = call("set_chaos", json!({"rate": 0.5})).await.unwrap();
+    assert_eq!(r.structured_content.unwrap()["servers"][0]["chaos"], 0.5);
+    let r = call("set_chaos", json!({"rate": 0})).await.unwrap();
+    assert!(r.structured_content.unwrap()["servers"][0]["chaos"].is_null());
+    let bad = call("set_chaos", json!({"rate": 3})).await;
+    assert!(bad.is_err() || bad.unwrap().is_error == Some(true));
+}

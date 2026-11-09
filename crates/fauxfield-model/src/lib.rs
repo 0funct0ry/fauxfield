@@ -12,8 +12,9 @@ pub mod vars;
 pub use diagnostic::{Diagnostic, Severity};
 pub use id::new_id;
 pub use types::{
-    Dataset, Environment, Folder, ID_STRATEGIES, Manifest, ROUTE_KINDS, Response, Route, Rule,
-    SCHEMA_VERSION, Server, parse_environment, parse_manifest, parse_server,
+    Dataset, Delay, Environment, FAULTS, Folder, ID_STRATEGIES, Manifest, Network, ROUTE_KINDS,
+    RateLimit, Response, Route, Rule, SCHEMA_VERSION, Server, parse_delay, parse_environment,
+    parse_manifest, parse_server, parse_window, valid_rate_key,
 };
 pub use validate::{validate_environment_names, validate_servers};
 
@@ -94,5 +95,58 @@ mod validator_tests {
             validate_prefix("/api/{{ v }}").unwrap().unwrap(),
             "/api/{{ v }}"
         );
+    }
+
+    #[test]
+    fn simulation_fields_validate() {
+        assert_eq!(parse_delay("200..800"), Some((200, 800)));
+        assert_eq!(parse_delay(" 250 "), Some((250, 250)));
+        assert_eq!(parse_delay("800..200"), None);
+        assert_eq!(parse_delay("a..b"), None);
+        assert_eq!(parse_window("30s"), Some(30));
+        assert_eq!(parse_window("2h"), Some(7200));
+        assert_eq!(parse_window("0m"), None);
+        assert_eq!(parse_window("5d"), None);
+        assert!(
+            valid_rate_key("ip") && valid_rate_key("header:x-key") && valid_rate_key("query:u")
+        );
+        assert!(!valid_rate_key("cookie:a") && !valid_rate_key("header:"));
+
+        let s = parse_server(
+            r#"
+id = "srv_a"
+name = "A"
+port = 4000
+[rate_limit]
+enabled = true
+requests = 0
+window = "soon"
+key = "body"
+[[routes]]
+id = "rte_a"
+path = "/x"
+[[routes.responses]]
+id = "rsp_a"
+delay_ms = "9..1"
+fault = "boom"
+fault_rate = 2.0
+"#,
+        )
+        .unwrap();
+        let codes: Vec<String> = validate_servers(&[("servers/a.toml".into(), s)])
+            .into_iter()
+            .map(|d| d.code)
+            .collect();
+        for c in ["E080", "E081", "E082", "E083", "E084", "E085"] {
+            assert!(codes.contains(&c.to_string()), "{c} in {codes:?}");
+        }
+        // A range written as TOML text and an integer both parse.
+        let r = parse_server("id=\"srv_b\"\nname=\"B\"\nport=1\n[[routes]]\nid=\"r\"\npath=\"/\"\n[[routes.responses]]\nid=\"p\"\ndelay_ms = 120\nfault = \"slow_body\"\n").unwrap();
+        assert_eq!(r.routes[0].responses[0].delay_ms, Some(Delay::Ms(120)));
+        let codes: Vec<String> = validate_servers(&[("servers/b.toml".into(), r)])
+            .into_iter()
+            .map(|d| d.code)
+            .collect();
+        assert!(codes.contains(&"W060".to_string()), "{codes:?}");
     }
 }

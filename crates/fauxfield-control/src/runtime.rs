@@ -28,6 +28,10 @@ pub struct HostOptions {
     pub watch: bool,
     /// Serve the control socket and write `host.json`. Off for throwaway engines in tests.
     pub publish: bool,
+    /// Runtime network profile at start (`run --network`).
+    pub network: Option<fauxfield_engine::NetworkProfile>,
+    /// Chaos fault rate for every Server at start (`run --chaos`).
+    pub chaos: Option<f64>,
 }
 
 /// The one host process per workspace (SPEC §3.1): engine, control socket, `host.json`, and
@@ -88,6 +92,8 @@ impl Host {
                 port_offset: opts.port_offset,
                 host_override: opts.host_override.clone(),
                 buffer: 0,
+                network: opts.network,
+                chaos: opts.chaos,
             },
         );
         let control = Arc::new(LocalControl::new(engine.clone()));

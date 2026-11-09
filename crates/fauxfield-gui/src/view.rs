@@ -14,7 +14,12 @@ pub struct Response {
     pub rules_logic: String,
     pub rules: Vec<fauxfield_model::Rule>,
     pub content_type: String,
-    pub delay_ms: u32,
+    /// Delay as written: milliseconds or a range such as `200..800`; empty = none.
+    pub delay: String,
+    /// Fault kind (SPEC §5.5); empty = none.
+    pub fault: String,
+    /// Fault probability as text (`1`, `0.3`); empty = always.
+    pub fault_rate: String,
     pub body: String,
     /// Workspace-relative file served as the body instead of `body`.
     pub body_file: Option<String>,
@@ -80,6 +85,12 @@ pub struct Server {
     pub strict_slash: bool,
     /// Seed for fake data (SPEC §8.3); `None` means random output.
     pub fake_seed: Option<u64>,
+    /// `[network]` (latency, jitter, bandwidth).
+    pub network: fauxfield_model::Network,
+    /// `[rate_limit]` as written (defaults filled in), `None` when absent.
+    pub rate_limit: Option<fauxfield_model::RateLimit>,
+    /// Chaos fault rate while the chaos switch is on (runtime only, SPEC §5.6).
+    pub chaos: Option<f64>,
     pub running: bool,
     /// `host:port` while running (engine status).
     pub listen: Option<String>,
@@ -310,7 +321,9 @@ impl Workspace {
                     rules_logic: x.rules_logic.clone().unwrap_or_else(|| "and".into()),
                     rules: x.rules.clone(),
                     content_type: x.content_type.clone().unwrap_or_default(),
-                    delay_ms: x.delay_ms.unwrap_or(0) as u32,
+                    delay: x.delay_ms.as_ref().map(|d| d.text()).unwrap_or_default(),
+                    fault: x.fault.clone().filter(|f| f != "none").unwrap_or_default(),
+                    fault_rate: x.fault_rate.map(|r| r.to_string()).unwrap_or_default(),
                     body: x.body.clone().unwrap_or_default(),
                     body_file: x.body_file.clone(),
                     template: x.template.unwrap_or(true),
@@ -360,6 +373,9 @@ impl Workspace {
                     unmatched_hint: s.unmatched_hint.unwrap_or(true),
                     strict_slash: s.strict_slash.unwrap_or(false),
                     fake_seed: s.fake_seed,
+                    network: s.network.clone().unwrap_or_default(),
+                    rate_limit: s.rate_limit.clone(),
+                    chaos: None,
                     running: false,
                     listen: None,
                     error: None,

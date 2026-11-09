@@ -118,6 +118,8 @@ fixtures!(
     "sidebar-environments-empty",
     "sidebar-datasets-empty",
     "sidebar-many-servers",
+    "server-network",
+    "network-profile-open",
 );
 
 pub fn named_steps(name: &str) -> Result<Vec<Step>, String> {

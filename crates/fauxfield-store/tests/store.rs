@@ -521,3 +521,48 @@ fn route_headers_seed_and_template_round_trip() {
         None
     );
 }
+
+#[test]
+fn network_tables_and_fault_presets_round_trip_without_losing_comments() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("fauxfield.toml"),
+        "schema = 1\nname = \"W\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.path().join("servers")).unwrap();
+    std::fs::write(
+        dir.path().join("servers/a.toml"),
+        "# keep me\nschema = 1\nid = \"srv_a\"\nname = \"A\"\nport = 4100\n[[routes]]\nid = \"rte_1\"\npath = \"/x\"\n",
+    )
+    .unwrap();
+    let s = fauxfield_store::Store::open(dir.path()).unwrap();
+    s.set_server_table_int("srv_a", "network", "latency_ms", Some(40))
+        .unwrap();
+    s.set_server_table_bool("srv_a", "rate_limit", "enabled", true)
+        .unwrap();
+    s.set_server_table_str("srv_a", "rate_limit", "window", Some("30s"))
+        .unwrap();
+    s.create_fault_preset("rte_1", "502-after-10s").unwrap();
+    s.create_fault_preset("rte_1", "reset").unwrap();
+    s.flush().unwrap();
+    let t = std::fs::read_to_string(dir.path().join("servers/a.toml")).unwrap();
+    assert!(t.contains("# keep me") && t.contains("[network]") && t.contains("latency_ms = 40"));
+    assert!(
+        t.contains("delay_ms = 10000") && t.contains("fault = \"reset\""),
+        "{t}"
+    );
+    let snap = s.snapshot();
+    let srv = &snap.servers[0].1;
+    assert!(srv.rate_limit.as_ref().unwrap().enabled);
+    assert_eq!(srv.routes[0].responses.len(), 2);
+    s.set_server_table_int("srv_a", "network", "latency_ms", None)
+        .unwrap();
+    s.flush().unwrap();
+    assert!(
+        !std::fs::read_to_string(dir.path().join("servers/a.toml"))
+            .unwrap()
+            .contains("[network]")
+    );
+    assert!(s.create_fault_preset("rte_1", "nope").is_err());
+}

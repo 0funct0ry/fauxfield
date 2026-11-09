@@ -444,6 +444,8 @@ pub fn build_menus(ctx: &MenuContext) -> Vec<MenuDef> {
             act("edit_server_port", "Change Port…"),
             MenuEntry::Separator,
             act("switch_environment", "Switch Environment…"),
+            act("switch_network_profile", "Switch Network Profile…"),
+            act("toggle_chaos", "Toggle Chaos"),
             MenuEntry::Separator,
             act("new_crud_resource", "New CRUD Resource…"),
             act("reset_state", "Reset State"),
@@ -580,7 +582,8 @@ pub fn enabled(id: &str, ctx: &MenuContext) -> bool {
         "run_all" => ctx.servers_enabled > 0,
         // A disabled server stays startable on purpose: starting it explains itself with the
         // M3.1 "Enable and start" toast (SPEC §20.14).
-        "toggle_server" => ctx.current_server.is_some(),
+        "toggle_server" | "toggle_chaos" => ctx.current_server.is_some(),
+        "switch_network_profile" => ctx.workspace_open,
         "restart_server" => ctx.current_server_running,
         "edit_server_port" => ctx.current_server.is_some(),
         "clear_traffic" => ctx.traffic_rows > 0,
@@ -660,6 +663,7 @@ pub fn why_disabled(id: &str, ctx: &MenuContext) -> &'static str {
             | "rename_workspace"
             | "reveal_workspace"
             | "switch_environment"
+            | "switch_network_profile"
             | "new_crud_resource"
             | "reset_state"
             | "show_sidebar_servers"
@@ -669,7 +673,7 @@ pub fn why_disabled(id: &str, ctx: &MenuContext) -> &'static str {
         "no workspace open"
     } else if matches!(
         id,
-        "new_route" | "new_folder" | "edit_server_port" | "toggle_server"
+        "new_route" | "new_folder" | "edit_server_port" | "toggle_server" | "toggle_chaos"
     ) {
         "no server selected"
     } else if id == "undo" || id == "redo" {

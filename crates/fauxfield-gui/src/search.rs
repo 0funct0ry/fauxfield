@@ -36,6 +36,8 @@ pub enum Target {
     Action(String),
     Theme(String),
     SwitchEnvironment(String),
+    /// A network profile slug (`slow-3g`), SPEC §5.6.
+    NetworkProfile(String),
     /// Confirm the open Prompt with the typed value.
     Prompt,
 }
@@ -50,6 +52,7 @@ pub enum Kind {
     Variable,
     Command,
     Theme,
+    Network,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

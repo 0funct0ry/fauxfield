@@ -20,6 +20,7 @@ pub mod lifecycle;
 pub mod menu;
 pub mod menu_shell;
 pub mod menubar;
+pub mod network_ui;
 pub mod overlay;
 pub mod preview;
 pub mod response_pane;

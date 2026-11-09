@@ -88,6 +88,19 @@ pub trait ControlApi: Send + Sync {
         server: Option<String>,
         dataset: Option<String>,
     ) -> Result<(), ControlError>;
+    /// The workspace network profile (SPEC §5.6).
+    async fn network_get(&self) -> Result<fauxfield_engine::NetworkProfile, ControlError>;
+    /// Set the workspace network profile (runtime only).
+    async fn network_set(
+        &self,
+        profile: fauxfield_engine::NetworkProfile,
+    ) -> Result<fauxfield_engine::NetworkProfile, ControlError>;
+    /// Chaos switch: a rate (0..=1) turns it on, `None` off; no server means every Server.
+    async fn chaos_set(
+        &self,
+        server: Option<String>,
+        rate: Option<f64>,
+    ) -> Result<Vec<ServerInfo>, ControlError>;
     /// Asks the host to exit (graceful drain happens in the host).
     async fn shutdown(&self) -> Result<(), ControlError>;
 }
@@ -244,6 +257,27 @@ impl ControlApi for LocalControl {
             )),
             (s, None) => Ok(self.engine.reset_state(s.as_deref())?),
         }
+    }
+
+    async fn network_get(&self) -> Result<fauxfield_engine::NetworkProfile, ControlError> {
+        Ok(self.engine.network_profile())
+    }
+
+    async fn network_set(
+        &self,
+        profile: fauxfield_engine::NetworkProfile,
+    ) -> Result<fauxfield_engine::NetworkProfile, ControlError> {
+        self.engine.set_network_profile(profile);
+        Ok(profile)
+    }
+
+    async fn chaos_set(
+        &self,
+        server: Option<String>,
+        rate: Option<f64>,
+    ) -> Result<Vec<ServerInfo>, ControlError> {
+        self.engine.set_chaos(server.as_deref(), rate)?;
+        Ok(self.engine.list())
     }
 
     async fn shutdown(&self) -> Result<(), ControlError> {

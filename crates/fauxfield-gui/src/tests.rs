@@ -1298,7 +1298,7 @@ fn response_menu_body_editor_and_headers(cx: &mut TestAppContext) {
     type_field(&view, cx, I::Delay(r.clone()), "250");
     type_field(&view, cx, I::Status(r.clone()), "42"); // rejected
     let x = read(&view, cx, |s| s.find_response(&r).unwrap().2);
-    assert_eq!((x.status, x.delay_ms), (503, 250));
+    assert_eq!((x.status, x.delay.as_str()), (503, "250"));
     // Body from a file, then back to inline.
     view.update_in(cx, |s, w, cx| s.set_body_file_mode(&r, true, w, cx));
     view.update_in(cx, |s, w, cx| {
@@ -1941,4 +1941,108 @@ fn crud_wizard_prompts_chain_and_create_the_resource(cx: &mut TestAppContext) {
         read(&view, cx, |s| s.tabs.active().map(|t| t.kind)),
         Some(TabKind::Dataset)
     );
+}
+
+/// M9: delay ranges, faults, the Server's Network and Rate limit fields, the network profile
+/// switcher and the chaos switch.
+#[gpui::test]
+fn network_and_fault_controls(cx: &mut TestAppContext) {
+    use crate::network_ui::NetField;
+    use crate::response_pane::{InlineTarget as I, Nav};
+    use crate::tree::MenuAct;
+    let (view, cx) = setup(cx, None);
+    let r = "rsp_users_get_2".to_string();
+    let sid = read(&view, cx, |s| s.ws.servers[0].id.clone());
+    let type_field = |view: &Entity<Shell>, cx: &mut VisualTestContext, t: I, text: &str| {
+        view.update_in(cx, |s, w, cx| {
+            s.begin_inline(t, "", false, w, cx);
+            s.inline.as_mut().unwrap().buf = crate::editor::TextBuf::new(text);
+            s.commit_inline(Nav::Stay, w, cx);
+        });
+    };
+    let resp = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
+        read(view, cx, |s| s.find_response("rsp_users_get_2").unwrap().2)
+    };
+
+    // Delay accepts a range; garbage and inverted ranges are rejected.
+    type_field(&view, cx, I::Delay(r.clone()), "200..800");
+    assert_eq!(resp(&view, cx).delay, "200..800");
+    type_field(&view, cx, I::Delay(r.clone()), "800..200");
+    assert_eq!(resp(&view, cx).delay, "200..800");
+    type_field(&view, cx, I::Delay(r.clone()), "0");
+    assert_eq!(resp(&view, cx).delay, "");
+
+    // Fault cycles none -> timeout -> reset…; the rate is validated.
+    view.update(cx, |s, cx| s.cycle_response_fault(&r, cx));
+    assert_eq!(resp(&view, cx).fault, "timeout");
+    type_field(&view, cx, I::FaultRate(r.clone()), "0.3");
+    assert_eq!(resp(&view, cx).fault_rate, "0.3");
+    type_field(&view, cx, I::FaultRate(r.clone()), "7");
+    assert_eq!(resp(&view, cx).fault_rate, "0.3");
+    for _ in 0..6 {
+        view.update(cx, |s, cx| s.cycle_response_fault(&r, cx));
+    }
+    assert_eq!(resp(&view, cx).fault, "");
+    assert_eq!(resp(&view, cx).fault_rate, "");
+
+    // Fault preset adds a Response with the fault set.
+    view.update_in(cx, |s, w, cx| {
+        s.open_picker_menu(
+            "rt_users_get",
+            crate::tree::RowKind::ErrorPresets,
+            0.,
+            0.,
+            cx,
+        );
+        s.run_menu(MenuAct::FaultPreset(0), w, cx);
+    });
+    let (st, d) = read(&view, cx, |s| {
+        let x =
+            s.ws.find_route("rt_users_get")
+                .unwrap()
+                .1
+                .responses
+                .last()
+                .unwrap()
+                .clone();
+        (x.status, x.delay)
+    });
+    assert_eq!((st, d.as_str()), (502, "10000"));
+
+    // Server tab fields.
+    let net = |f| I::Net {
+        server: sid.clone(),
+        field: f,
+    };
+    type_field(&view, cx, net(NetField::Latency), "120");
+    type_field(&view, cx, net(NetField::Bandwidth), "400");
+    type_field(&view, cx, net(NetField::Window), "30s");
+    type_field(&view, cx, net(NetField::Window), "soon"); // rejected
+    type_field(&view, cx, net(NetField::Key), "header:x-api-key");
+    view.update(cx, |s, cx| s.toggle_rate_limit(&sid, cx));
+    let (n, rl) = read(&view, cx, |s| {
+        let x = &s.ws.servers[0];
+        (x.network.clone(), x.rate_limit.clone().unwrap())
+    });
+    assert_eq!((n.latency_ms, n.bandwidth_kbps), (120, 400));
+    assert!(rl.enabled);
+    assert_eq!(
+        (rl.window.as_str(), rl.key.as_str()),
+        ("30s", "header:x-api-key")
+    );
+    type_field(&view, cx, net(NetField::Latency), "");
+    assert_eq!(read(&view, cx, |s| s.ws.servers[0].network.latency_ms), 0);
+
+    // Status bar profile and chaos switch (no host in tests: state only).
+    view.update(cx, |s, cx| {
+        s.set_network_profile(fauxfield_engine::NetworkProfile::Slow3g, cx)
+    });
+    assert_eq!(
+        read(&view, cx, |s| s.network_profile),
+        fauxfield_engine::NetworkProfile::Slow3g
+    );
+    view.update(cx, |s, cx| s.toggle_chaos_at(0, cx));
+    assert_eq!(read(&view, cx, |s| s.ws.servers[0].chaos), Some(0.2));
+    view.update(cx, |s, cx| s.toggle_chaos_at(0, cx));
+    assert_eq!(read(&view, cx, |s| s.ws.servers[0].chaos), None);
 }

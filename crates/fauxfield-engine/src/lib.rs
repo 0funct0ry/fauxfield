@@ -8,6 +8,7 @@ mod recording;
 pub mod render;
 mod router;
 mod rules;
+mod sim;
 pub mod template;
 mod testreq;
 mod time;
@@ -22,6 +23,7 @@ pub use recording::{Recording, Timing, to_curl};
 pub use render::{Preview, SampleRequest, preview, preview_with};
 pub use router::{Match, RouteTable};
 pub use rules::{ResponseTrace, RuleTrace, Trace};
+pub use sim::{DEFAULT_CHAOS_RATE, Fault, NetworkProfile, PROFILES};
 pub use testreq::{TestRequest, TestResponse};
 pub use vars::{EnvData, VarContext};
 

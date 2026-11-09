@@ -32,3 +32,25 @@ pub fn server_error(detail: &str, path: &str) -> Value {
         "instance": path,
     })
 }
+
+/// RFC 9457 body for a rate-limited request.
+pub fn too_many_requests(path: &str, retry_after: u64) -> Value {
+    json!({
+        "type": "about:blank",
+        "title": "Too Many Requests",
+        "status": 429,
+        "detail": format!("Rate limit exceeded. Retry after {retry_after} s."),
+        "instance": path,
+    })
+}
+
+/// Body of a chaos-injected 500.
+pub fn chaos_error(path: &str) -> Value {
+    json!({
+        "type": "about:blank",
+        "title": "Chaos fault",
+        "status": 500,
+        "detail": "Injected by the chaos switch.",
+        "instance": path,
+    })
+}

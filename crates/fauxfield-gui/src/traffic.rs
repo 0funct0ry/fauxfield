@@ -18,6 +18,8 @@ pub struct TrafficRow {
     pub route: String,
     pub duration_ms: f32,
     pub size: u32,
+    /// Injected fault or rate limit (M9): `reset`, `chaos:close`, `rate_limited`…
+    pub fault: Option<String>,
 }
 
 impl TrafficRow {
@@ -32,6 +34,7 @@ impl TrafficRow {
             route: r.route.clone(),
             duration_ms: r.timing.total_ms as f32,
             size: r.response_body.len() as u32,
+            fault: r.fault.clone(),
             rec: Some(Box::new(r.clone())),
         }
     }
@@ -77,6 +80,7 @@ pub fn synthetic(n: usize) -> Vec<TrafficRow> {
                 route: route.into(),
                 duration_ms: ((r >> 50) % 4000) as f32 / 100.0,
                 size: ((r >> 12) % 9000) as u32 + 20,
+                fault: None,
             }
         })
         .collect()

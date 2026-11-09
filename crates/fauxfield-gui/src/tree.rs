@@ -85,6 +85,8 @@ pub enum RowKind {
         port: u16,
         running: bool,
         enabled: bool,
+        /// Chaos switch is on (runtime only).
+        chaos: bool,
     },
     /// The workspace root header (rendered above the tree, not part of `flatten`).
     Workspace,
@@ -249,6 +251,7 @@ pub fn flatten(
                     port: s.port,
                     running: s.running,
                     enabled: s.enabled,
+                    chaos: s.chaos.is_some(),
                 },
                 true,
             );
@@ -336,6 +339,10 @@ pub enum MenuAct {
     ToggleResponseDisabled,
     /// Add the RFC 9457 error preset for this status to the Route.
     ErrorPreset(u16),
+    /// Add the fault preset at this index of `fauxfield_store::FAULT_PRESETS` (M9).
+    FaultPreset(usize),
+    /// Server: switch the chaos fault injection on or off (runtime only).
+    ToggleChaos,
     /// Index into `fauxfield_model::rules::TARGETS` / `OPS` / `RESPONSE_MODES`.
     SetRuleTarget(usize),
     SetRuleOp(usize),
@@ -382,6 +389,8 @@ impl MenuAct {
             SetDefaultResponse => "set-default-response".into(),
             ToggleResponseDisabled => "toggle-response-disabled".into(),
             ErrorPreset(c) => format!("error-preset-{c}"),
+            FaultPreset(i) => format!("fault-preset-{}", fauxfield_store::FAULT_PRESETS[i].id),
+            ToggleChaos => "toggle-chaos".into(),
             SetRuleTarget(i) => format!("rule-target-{i}"),
             SetRuleOp(i) => format!("rule-op-{i}"),
             SetResponseMode(i) => format!("response-mode-{i}"),
@@ -441,10 +450,22 @@ pub const ERROR_PRESET_ITEMS: [(&str, MenuAct); 11] = [
     ("504 Gateway Timeout", MenuAct::ErrorPreset(504)),
 ];
 
+/// Error presets followed by the fault variants ("502 after 10 s", "Connection reset"…).
+pub fn error_preset_items() -> Vec<(&'static str, MenuAct)> {
+    let mut v = ERROR_PRESET_ITEMS.to_vec();
+    v.extend(
+        fauxfield_store::FAULT_PRESETS
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (p.label, MenuAct::FaultPreset(i))),
+    );
+    v
+}
+
 pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, MenuAct)> {
     use MenuAct::*;
     match kind {
-        RowKind::Server { enabled, .. } => {
+        RowKind::Server { enabled, chaos, .. } => {
             let mut v = vec![(if server_running { "Stop" } else { "Start" }, StartStop)];
             if server_running {
                 v.push(("Restart", Restart));
@@ -456,6 +477,7 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
                 ("Change Port…", ChangePort),
                 ("Change Host…", ChangeHost),
                 ("Change Prefix…", ChangePrefix),
+                (if *chaos { "Chaos off" } else { "Chaos on" }, ToggleChaos),
                 ("Rename…", Rename),
                 ("Duplicate", Duplicate),
                 ("Delete", Delete),
@@ -540,7 +562,7 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
             ]);
             v
         }
-        RowKind::ErrorPresets => ERROR_PRESET_ITEMS.to_vec(),
+        RowKind::ErrorPresets => error_preset_items(),
         RowKind::RuleTarget => fauxfield_model::rules::TARGETS
             .iter()
             .enumerate()
@@ -654,6 +676,7 @@ mod tests {
             port: 1,
             running: true,
             enabled: true,
+            chaos: false,
         };
         assert_eq!(
             labels(&srv, true),
@@ -666,6 +689,7 @@ mod tests {
                 "Change Port…",
                 "Change Host…",
                 "Change Prefix…",
+                "Chaos on",
                 "Rename…",
                 "Duplicate",
                 "Delete"
@@ -676,6 +700,7 @@ mod tests {
             port: 1,
             running: false,
             enabled: false,
+            chaos: false,
         };
         let l = labels(&off, false);
         assert_eq!((l[0], l[1], l[2]), ("Start", "New route…", "New folder…"));

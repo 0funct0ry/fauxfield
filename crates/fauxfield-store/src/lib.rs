@@ -13,6 +13,7 @@ pub use datasets::{DatasetSpec, confined, state_path};
 pub use init::{discover, init_workspace, slugify};
 pub use recent::{clear_recent, load_recent, push_recent, remove_recent};
 pub use store::{
-    Event, RouteOpts, Snapshot, Store, StoreError, Target, load_ui_state, save_ui_state,
+    Event, FAULT_PRESETS, FaultPreset, RouteOpts, Snapshot, Store, StoreError, Target,
+    load_ui_state, save_ui_state,
 };
 pub use watch::Background;

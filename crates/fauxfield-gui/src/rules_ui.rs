@@ -480,6 +480,8 @@ impl Shell {
                 self.store_op(cx, |s| s.delete_rule(&rid, i));
             }
             "resp-template" => self.toggle_response_template(&id, cx),
+            "resp-fault" => self.cycle_response_fault(&id, cx),
+            "rate-enabled" => self.toggle_rate_limit(&id, cx),
             "seed-mode" => self.set_seed_mode(&id, need()? == 1, cx),
             "route-header-add" => {
                 let at = self.ws.find_route(&id).map_or(0, |(_, r)| r.headers.len());

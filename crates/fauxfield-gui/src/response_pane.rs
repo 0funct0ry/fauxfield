@@ -69,6 +69,13 @@ pub enum InlineTarget {
     },
     /// The Server's `fake_seed` (Inspector); digits only.
     Seed(String),
+    /// A Network or Rate limit field of a Server (M9).
+    Net {
+        server: String,
+        field: crate::network_ui::NetField,
+    },
+    /// A Response's `fault_rate` (M9).
+    FaultRate(String),
 }
 
 impl InlineTarget {
@@ -203,6 +210,31 @@ impl Shell {
         self.find_response(id).map(|(_, _, r)| r)
     }
 
+    /// Save a Response delay: empty or 0 clears it, `250` is milliseconds, `200..800` a range.
+    pub(crate) fn set_delay_text(&mut self, id: &str, v: &str, cx: &mut Context<Self>) {
+        use fauxfield_store::Target as T;
+        let v = v.trim();
+        let id = id.to_string();
+        match fauxfield_model::parse_delay(if v.is_empty() { "0" } else { v }) {
+            Some((0, 0)) => {
+                self.store_op(cx, |s| s.set_int(&T::Response(id), "delay_ms", None));
+            }
+            Some((a, b)) if a == b => {
+                self.store_op(cx, |s| {
+                    s.set_int(&T::Response(id), "delay_ms", Some(a as i64))
+                });
+            }
+            Some(_) => {
+                let v = v.replace(' ', "");
+                self.store_op(cx, |s| s.set_str(&T::Response(id), "delay_ms", Some(&v)));
+            }
+            None => self.notify(
+                "Delay is milliseconds (250) or a range such as 200..800.".into(),
+                cx,
+            ),
+        }
+    }
+
     /// Write the active field, then follow `nav` (header cells only).
     pub(crate) fn commit_inline(&mut self, nav: Nav, window: &mut Window, cx: &mut Context<Self>) {
         use fauxfield_store::Target as T;
@@ -220,15 +252,7 @@ impl Shell {
                 _ => self.notify("A status code is a number from 100 to 599.".into(), cx),
             },
             InlineTarget::Delay(id) => {
-                let v = if v.is_empty() { "0".into() } else { v };
-                match v.parse::<u64>() {
-                    Ok(n) => {
-                        self.store_op(cx, |s| {
-                            s.set_int(&T::Response(id), "delay_ms", (n > 0).then_some(n as i64))
-                        });
-                    }
-                    Err(_) => self.notify("Delay is a number of milliseconds.".into(), cx),
-                }
+                self.set_delay_text(&id, &v, cx);
             }
             InlineTarget::BodyFile(id) => {
                 if v.is_empty() {
@@ -292,6 +316,8 @@ impl Shell {
             InlineTarget::RouteHeaderValue { route, row } => {
                 self.commit_route_header_value(&route, row, &edit.buf.text, nav, window, cx)
             }
+            InlineTarget::Net { server, field } => self.commit_net_field(&server, field, &v, cx),
+            InlineTarget::FaultRate(id) => self.commit_fault_rate(&id, &v, cx),
             InlineTarget::Seed(server) => match v.parse::<u64>() {
                 Ok(n) => {
                     self.store_op(cx, |s| s.set_fake_seed(&server, Some(n)));
@@ -319,7 +345,10 @@ impl Shell {
         );
         let numeric = matches!(
             self.inline.as_ref().map(|i| &i.target),
-            Some(InlineTarget::Status(_) | InlineTarget::Delay(_) | InlineTarget::Seed(_))
+            Some(InlineTarget::Status(_) | InlineTarget::Seed(_))
+        ) || matches!(
+            self.inline.as_ref().map(|i| &i.target),
+            Some(InlineTarget::Net { field, .. }) if field.numeric()
         );
         match key {
             "escape" => {
@@ -962,13 +991,22 @@ impl Shell {
                             t,
                             "resp-delay".into(),
                             InlineTarget::Delay(resp.id.clone()),
-                            &resp.delay_ms.to_string(),
+                            &resp.delay,
                             "0",
-                            110.,
+                            100.,
                             true,
                             cx,
                         ),
                     ))
+                    .child({
+                        let (kind, rate) = self.response_fault_fields(t, resp, cx);
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap(px(8.))
+                            .child(field("Fault", kind))
+                            .when(!resp.fault.is_empty(), |d| d.child(field("Rate", rate)))
+                    })
                     .child(field("Template", {
                         let (rid, on) = (resp.id.clone(), resp.template);
                         crate::dev_id!(
@@ -1009,7 +1047,7 @@ impl Shell {
                             InlineTarget::Description(resp.id.clone()),
                             &resp.description,
                             "Only on the 3rd call",
-                            260.,
+                            140.,
                             false,
                             cx,
                         ),

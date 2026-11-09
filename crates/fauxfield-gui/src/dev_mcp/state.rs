@@ -46,6 +46,9 @@ pub struct UiState {
     /// Label of the button beside the toast (for example `Change port`), if any.
     pub toast_action: Option<String>,
     pub active_environment: String,
+    /// Workspace network profile slug (M9): `none`, `slow-3g`…
+    pub network_profile: &'static str,
+    pub network_picker: PickerState,
     pub window: WindowState,
     pub theme: String,
     /// The application menu exactly as built (native menus cannot be seen or screenshotted).
@@ -461,6 +464,22 @@ pub struct ServerState {
     pub address: Option<String>,
     /// Why the last start failed, while it is in `failed`.
     pub error: Option<String>,
+    /// `[network]` latency, jitter and bandwidth (M9).
+    pub latency_ms: u64,
+    pub jitter_ms: u64,
+    pub bandwidth_kbps: u64,
+    /// `[rate_limit]` as written; absent when the table is.
+    pub rate_limit: Option<RateLimitState>,
+    /// Chaos fault rate while the switch is on (runtime only).
+    pub chaos: Option<f64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct RateLimitState {
+    pub enabled: bool,
+    pub requests: u64,
+    pub window: String,
+    pub key: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -689,10 +708,22 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
                     status,
                     address,
                     error,
+                    latency_ms: s.network.latency_ms,
+                    jitter_ms: s.network.jitter_ms,
+                    bandwidth_kbps: s.network.bandwidth_kbps,
+                    rate_limit: s.rate_limit.as_ref().map(|r| RateLimitState {
+                        enabled: r.enabled,
+                        requests: r.requests,
+                        window: r.window.clone(),
+                        key: r.key.clone(),
+                    }),
+                    chaos: s.chaos,
                 }
             })
             .collect(),
         active_environment: shell.active_env.clone(),
+        network_profile: shell.network_profile.slug(),
+        network_picker: picker(shell, PickerKind::Network),
         window: WindowState {
             width: f32::from(size.width),
             height: f32::from(size.height),

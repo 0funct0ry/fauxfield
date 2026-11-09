@@ -559,6 +559,38 @@ impl Shell {
                                     ))
                                 },
                             )
+                            .when(
+                                self.ws
+                                    .servers
+                                    .iter()
+                                    .any(|s| s.id == r.id && s.chaos.is_some()),
+                                |d| {
+                                    let tip = self
+                                        .ws
+                                        .servers
+                                        .iter()
+                                        .find(|s| s.id == r.id)
+                                        .and_then(|s| s.chaos)
+                                        .map(|c| {
+                                            format!(
+                                                "Chaos on: {:.0} % of requests get a random fault",
+                                                c * 100.0
+                                            )
+                                        })
+                                        .unwrap_or_default();
+                                    d.child(crate::dev_id!(
+                                        div()
+                                            .id(crate::ui::eid(format!("chaos-{}", r.id)))
+                                            .flex_none()
+                                            .tooltip(crate::ui::tooltip(tip.clone()))
+                                            .child(icon("zap", 12., t.modified)),
+                                        format!("tree-chaos-{}", r.id),
+                                        Text,
+                                        tip,
+                                        None
+                                    ))
+                                },
+                            )
                             .when(!enabled, |d| {
                                 d.child(crate::dev_id!(
                                     div()

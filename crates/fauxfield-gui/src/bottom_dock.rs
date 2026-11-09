@@ -222,8 +222,33 @@ impl Shell {
                     div()
                         .w(px(COLS[3]))
                         .flex_none()
-                        .text_color(t.status_color(r.status))
-                        .child(r.status.to_string()),
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap(px(3.))
+                        .text_color(if r.status == 0 {
+                            t.deleted
+                        } else {
+                            t.status_color(r.status)
+                        })
+                        .children(r.fault.as_ref().map(|f| {
+                            crate::dev_id!(
+                                div()
+                                    .id(crate::ui::eid(format!("fault-{i}")))
+                                    .flex_none()
+                                    .tooltip(crate::ui::tooltip(format!("Injected: {f}")))
+                                    .child(crate::ui::icon("zap", 11., t.deleted)),
+                                format!("traffic-fault-{i}"),
+                                Text,
+                                format!("Injected: {f}"),
+                                None
+                            )
+                        }))
+                        .child(if r.status == 0 {
+                            "—".to_string()
+                        } else {
+                            r.status.to_string()
+                        }),
                 )
                 .child(cell(COLS[4], r.route.clone()))
                 .child(cell(

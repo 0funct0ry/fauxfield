@@ -79,6 +79,12 @@ pub struct Server {
     pub strict_slash: Option<bool>,
     #[serde(default)]
     pub docs: Option<String>,
+    /// Server-wide latency simulation (SPEC §5.6).
+    #[serde(default)]
+    pub network: Option<Network>,
+    /// Request rate limit (SPEC §5.6).
+    #[serde(default)]
+    pub rate_limit: Option<RateLimit>,
     /// Seed for fake data and random functions; unset means random (SPEC §8.3).
     #[serde(default)]
     pub fake_seed: Option<u64>,
@@ -222,8 +228,15 @@ pub struct Response {
     /// false: body, body_file and header values are sent verbatim (default true).
     #[serde(default)]
     pub template: Option<bool>,
+    /// Milliseconds, or a range such as `"200..800"` (SPEC §5.5).
     #[serde(default)]
-    pub delay_ms: Option<u64>,
+    pub delay_ms: Option<Delay>,
+    /// `none`, `timeout`, `reset`, `close`, `empty`, `malformed` or `slow_body`.
+    #[serde(default)]
+    pub fault: Option<String>,
+    /// 0.0-1.0 probability that `fault` applies (default 1.0).
+    #[serde(default)]
+    pub fault_rate: Option<f64>,
     /// In file order (rows of the Response headers editor keep the order they were written in).
     #[serde(default)]
     #[schemars(with = "BTreeMap<String, String>")]
@@ -248,6 +261,114 @@ pub struct Rule {
     #[serde(flatten)]
     #[schemars(skip)]
     pub extra: Extra,
+}
+
+/// Fault kinds a Response can inject (SPEC §5.5).
+pub const FAULTS: &[&str] = &[
+    "none",
+    "timeout",
+    "reset",
+    "close",
+    "empty",
+    "malformed",
+    "slow_body",
+];
+
+/// A fixed delay in ms, or a `"min..max"` range.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum Delay {
+    Ms(u64),
+    Range(String),
+}
+
+impl Delay {
+    /// `(min, max)` in ms; `None` when the text is not a number or `a..b` with a <= b.
+    pub fn bounds(&self) -> Option<(u64, u64)> {
+        match self {
+            Delay::Ms(n) => Some((*n, *n)),
+            Delay::Range(s) => parse_delay(s),
+        }
+    }
+    /// Text for editing: `200` or `200..800`.
+    pub fn text(&self) -> String {
+        match self {
+            Delay::Ms(n) => n.to_string(),
+            Delay::Range(s) => s.clone(),
+        }
+    }
+}
+
+/// Parse `"250"` or `"200..800"` (min <= max).
+pub fn parse_delay(s: &str) -> Option<(u64, u64)> {
+    let s = s.trim();
+    match s.split_once("..") {
+        Some((a, b)) => {
+            let (a, b) = (a.trim().parse().ok()?, b.trim().parse().ok()?);
+            (a <= b).then_some((a, b))
+        }
+        None => s.parse().ok().map(|n| (n, n)),
+    }
+}
+
+/// Server `[network]` table: simulated latency and bandwidth.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Network {
+    #[serde(default)]
+    pub latency_ms: u64,
+    #[serde(default)]
+    pub jitter_ms: u64,
+    /// 0 = unlimited.
+    #[serde(default)]
+    pub bandwidth_kbps: u64,
+}
+
+/// Server `[rate_limit]` table.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RateLimit {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "rl_requests")]
+    pub requests: u64,
+    /// `30s`, `1m`, `2h`.
+    #[serde(default = "rl_window")]
+    pub window: String,
+    /// `ip`, `header:<name>` or `query:<name>`.
+    #[serde(default = "rl_key")]
+    pub key: String,
+}
+fn rl_requests() -> u64 {
+    100
+}
+fn rl_window() -> String {
+    "1m".into()
+}
+fn rl_key() -> String {
+    "ip".into()
+}
+
+/// Window text (`30s`, `1m`, `2h`) in seconds.
+pub fn parse_window(s: &str) -> Option<u64> {
+    let s = s.trim();
+    let (n, unit) = s.split_at(s.len().checked_sub(1)?);
+    let n: u64 = n.parse().ok().filter(|n| *n > 0)?;
+    Some(
+        n * match unit {
+            "s" => 1,
+            "m" => 60,
+            "h" => 3600,
+            _ => return None,
+        },
+    )
+}
+
+/// True for `ip`, `header:<name>`, `query:<name>`.
+pub fn valid_rate_key(k: &str) -> bool {
+    k == "ip"
+        || k.strip_prefix("header:")
+            .is_some_and(|n| !n.trim().is_empty())
+        || k.strip_prefix("query:")
+            .is_some_and(|n| !n.trim().is_empty())
 }
 
 pub fn parse_manifest(text: &str) -> Result<Manifest, String> {

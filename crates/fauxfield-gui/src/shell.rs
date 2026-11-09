@@ -52,6 +52,8 @@ pub enum PickerKind {
     Palette,
     Theme,
     Environment,
+    /// Workspace network profile (status bar, SPEC §5.6).
+    Network,
     /// A one-line text prompt (rename, new item, field edit).
     Prompt,
 }
@@ -370,6 +372,8 @@ pub struct Shell {
     pub(crate) quit_confirmed: bool,
     pub(crate) select_next_test: bool,
     pub(crate) port_offset: u16,
+    /// Workspace network profile (runtime only, SPEC §5.6); mirrors the engine.
+    pub(crate) network_profile: fauxfield_engine::NetworkProfile,
     pub(crate) focus: FocusHandle,
     pub(crate) picker_focus: FocusHandle,
     /// The Response body being edited inline (committed on blur or Cmd/Ctrl+Enter).
@@ -587,6 +591,7 @@ impl Shell {
             quit_confirmed: false,
             select_next_test: false,
             port_offset: opts.port_offset,
+            network_profile: Default::default(),
             focus,
             picker_focus: cx.focus_handle(),
             body_edit: None,
@@ -1271,6 +1276,21 @@ impl Shell {
                     self.resp_sel.insert(route, n);
                 }
             }
+            MenuAct::FaultPreset(i) => {
+                let route = m.row_id.clone();
+                let kind = fauxfield_store::FAULT_PRESETS[i].id;
+                if let Some(id) = self.store_op(cx, |s| s.create_fault_preset(&route, kind))
+                    && let Some((_, r)) = self.ws.find_route(&route)
+                {
+                    let n = r.responses.iter().position(|x| x.id == id).unwrap_or(0);
+                    self.resp_sel.insert(route, n);
+                }
+            }
+            MenuAct::ToggleChaos => {
+                if let Some(i) = self.ws.servers.iter().position(|s| s.id == m.row_id) {
+                    self.toggle_chaos_at(i, cx);
+                }
+            }
             MenuAct::SetRuleTarget(i) | MenuAct::SetRuleOp(i) | MenuAct::SetResponseMode(i)
                 if i >= 64 => {}
             MenuAct::SetRuleTarget(i) => {
@@ -1383,6 +1403,43 @@ impl Shell {
         }
     }
 
+    /// Switch the workspace network profile (runtime only, SPEC §5.6).
+    pub fn set_network_profile(
+        &mut self,
+        p: fauxfield_engine::NetworkProfile,
+        cx: &mut Context<Self>,
+    ) {
+        self.network_profile = p;
+        if let Some(h) = &self.host {
+            h.engine().set_network_profile(p);
+        }
+        self.notify(format!("Network: {}", p.label()), cx);
+    }
+
+    /// Chaos switch of one Server: off, else on at the default rate (runtime only).
+    pub fn toggle_chaos_at(&mut self, i: usize, cx: &mut Context<Self>) {
+        let Some(s) = self.ws.servers.get_mut(i) else {
+            return;
+        };
+        let next = if s.chaos.is_some() {
+            None
+        } else {
+            Some(fauxfield_engine::DEFAULT_CHAOS_RATE)
+        };
+        s.chaos = next;
+        let (id, name) = (s.id.clone(), s.name.clone());
+        if let Some(h) = &self.host {
+            let _ = h.engine().set_chaos(Some(&id), next);
+        }
+        self.notify(
+            match next {
+                Some(r) => format!("Chaos on for {name} ({:.0} % of requests)", r * 100.0),
+                None => format!("Chaos off for {name}"),
+            },
+            cx,
+        );
+    }
+
     // ---- picker ------------------------------------------------------------------------
 
     fn picker_hits(&self, kind: PickerKind, query: &str) -> Vec<Hit> {
@@ -1428,6 +1485,29 @@ impl Shell {
                     &detail,
                     Target::Prompt,
                 )]
+            }
+            PickerKind::Network => {
+                let all: Vec<String> = fauxfield_engine::PROFILES
+                    .iter()
+                    .map(|p| p.label().to_string())
+                    .collect();
+                search::filter_labels(query, &all)
+                    .into_iter()
+                    .map(|i| {
+                        let p = fauxfield_engine::PROFILES[i];
+                        let detail = if p == self.network_profile {
+                            "active".to_string()
+                        } else {
+                            p.describe()
+                        };
+                        simple_hit(
+                            Kind::Network,
+                            p.label(),
+                            &detail,
+                            Target::NetworkProfile(p.slug().to_string()),
+                        )
+                    })
+                    .collect()
             }
             PickerKind::Environment => {
                 let names: Vec<String> = self
@@ -1677,6 +1757,12 @@ impl Shell {
             Target::SwitchEnvironment(name) => {
                 self.close_picker(true, window, cx);
                 self.set_environment(name, cx);
+            }
+            Target::NetworkProfile(slug) => {
+                self.close_picker(true, window, cx);
+                if let Some(p) = fauxfield_engine::NetworkProfile::parse(slug) {
+                    self.set_network_profile(p, cx);
+                }
             }
             Target::Prompt => {
                 let value = self
@@ -2442,7 +2528,7 @@ impl Shell {
                     return self.begin_inline(I::Status(id), &v, true, window, cx);
                 }
                 (FieldEdit::ResponseDelay, Some(x)) => {
-                    let v = x.delay_ms.to_string();
+                    let v = x.delay.clone();
                     return self.begin_inline(I::Delay(id), &v, true, window, cx);
                 }
                 (FieldEdit::ResponseHeader, _) => {
@@ -2485,10 +2571,9 @@ impl Shell {
                         PromptAction::ResponseContentType { response },
                         x.content_type.clone(),
                     ),
-                    FieldEdit::ResponseDelay => (
-                        PromptAction::ResponseDelay { response },
-                        x.delay_ms.to_string(),
-                    ),
+                    FieldEdit::ResponseDelay => {
+                        (PromptAction::ResponseDelay { response }, x.delay.clone())
+                    }
                     FieldEdit::ResponseHeader => {
                         (PromptAction::ResponseHeader { response }, String::new())
                     }
@@ -2749,14 +2834,7 @@ impl Shell {
                 }
                 Err(_) => self.notify("Status is a number such as 200.".into(), cx),
             },
-            PromptAction::ResponseDelay { response } => match v.parse::<i64>() {
-                Ok(n) if n >= 0 => {
-                    self.store_op(cx, |s| {
-                        s.set_int(&T::Response(response), "delay_ms", (n > 0).then_some(n))
-                    });
-                }
-                _ => self.notify("Delay is a number of milliseconds.".into(), cx),
-            },
+            PromptAction::ResponseDelay { response } => self.set_delay_text(&response, &v, cx),
             PromptAction::ResponseName { response } => {
                 self.store_op(cx, |s| s.set_str(&T::Response(response), "name", Some(&v)));
             }
@@ -2937,6 +3015,13 @@ impl Render for Shell {
             CommandPalette => |this, w, cx| this.open_picker(PickerKind::Palette, w, cx),
             SelectTheme => |this, w, cx| this.open_picker(PickerKind::Theme, w, cx),
             SwitchEnvironment => |this, w, cx| this.open_picker(PickerKind::Environment, w, cx),
+            SwitchNetworkProfile => |this, w, cx| this.open_picker(PickerKind::Network, w, cx),
+            ToggleChaos => |this, _w, cx| {
+                match this.current_server() {
+                    Some(i) => this.toggle_chaos_at(i, cx),
+                    None => this.notify("Select a server or route first.".into(), cx),
+                }
+            },
             ToggleLeftDock => |this, _w, cx| this.toggle_left(cx),
             ToggleBottomDock => |this, _w, cx| this.toggle_bottom(cx),
             ToggleRightDock => |this, _w, cx| this.toggle_right(cx),

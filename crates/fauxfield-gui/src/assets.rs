@@ -13,6 +13,9 @@ macro_rules! embed {
 
 const FILES: &[(&str, &[u8])] = embed![
     "icons/check.svg",
+    "icons/zap.svg",
+    "icons/wifi.svg",
+    "icons/wifi-off.svg",
     "icons/dice.svg",
     "icons/star.svg",
     "icons/chevron-down.svg",

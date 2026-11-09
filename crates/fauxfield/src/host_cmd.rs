@@ -38,6 +38,12 @@ pub struct RunArgs {
     /// Active Environment for this run (default: `default_environment`).
     #[arg(long, value_name = "NAME")]
     pub env: Option<String>,
+    /// Network profile for this run: none, fast-3g, slow-3g, flaky-wifi or offline.
+    #[arg(long, value_name = "PROFILE", value_parser = parse_profile)]
+    pub network: Option<fauxfield_engine::NetworkProfile>,
+    /// Chaos switch: inject random faults into this fraction (0 to 1) of requests on every Server.
+    #[arg(long, value_name = "RATE", value_parser = parse_rate)]
+    pub chaos: Option<f64>,
     /// Hot-reload external edits (default when attached to a terminal).
     #[arg(long, overrides_with = "no_watch")]
     pub watch: bool,
@@ -123,6 +129,19 @@ pub fn log_line(r: &Recording, format: LogFormat) -> String {
     }
 }
 
+fn parse_profile(s: &str) -> Result<fauxfield_engine::NetworkProfile, String> {
+    fauxfield_engine::NetworkProfile::parse(s).ok_or_else(|| {
+        format!("`{s}` is not a profile; use none, fast-3g, slow-3g, flaky-wifi or offline")
+    })
+}
+
+fn parse_rate(s: &str) -> Result<f64, String> {
+    s.parse::<f64>()
+        .ok()
+        .filter(|r| (0.0..=1.0).contains(r))
+        .ok_or_else(|| format!("`{s}` is not a rate between 0 and 1"))
+}
+
 pub fn run(a: RunArgs) -> i32 {
     if let Some(p) = &a.path
         && !p.is_dir()
@@ -143,6 +162,8 @@ pub fn run(a: RunArgs) -> i32 {
             env: a.env.clone(),
             watch,
             publish: true,
+            network: a.network,
+            chaos: a.chaos,
         },
     ) {
         Ok(h) => h,

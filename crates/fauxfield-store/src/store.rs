@@ -961,6 +961,18 @@ impl Store {
     pub fn set_str(&self, target: &Target, key: &str, val: Option<&str>) -> Result<(), StoreError> {
         self.set_item(target, key, val.map(value))
     }
+    /// Remove `key` from an item.
+    pub fn set_item_none(&self, target: &Target, key: &str) -> Result<(), StoreError> {
+        self.set_item(target, key, None)
+    }
+    pub fn set_float(
+        &self,
+        target: &Target,
+        key: &str,
+        val: Option<f64>,
+    ) -> Result<(), StoreError> {
+        self.set_item(target, key, val.map(value))
+    }
     pub fn set_int(&self, target: &Target, key: &str, val: Option<i64>) -> Result<(), StoreError> {
         self.set_item(target, key, val.map(value))
     }
@@ -1060,6 +1072,105 @@ impl Store {
             "fake_seed",
             seed.map(|s| s as i64),
         )
+    }
+
+    /// Set (or with `None`, remove) one key of a Server sub-table such as `network` or
+    /// `rate_limit`. An emptied table is removed so defaults are never written (SPEC §4.1).
+    pub fn set_server_table(
+        &self,
+        server_id: &str,
+        table: &str,
+        key: &str,
+        val: Option<Item>,
+    ) -> Result<(), StoreError> {
+        let t = Target::Server(server_id.into());
+        let file = self
+            .file_of(&t)
+            .ok_or_else(|| StoreError::NotFound(server_id.into()))?;
+        self.edit(&file, |d| {
+            let root = d.as_table_mut();
+            match val {
+                Some(v) => {
+                    if !root.get(table).is_some_and(Item::is_table) {
+                        root.insert(table, Item::Table(toml_edit::Table::new()));
+                    }
+                    root[table][key] = v;
+                }
+                None => {
+                    if let Some(tb) = root.get_mut(table).and_then(Item::as_table_mut) {
+                        tb.remove(key);
+                        if tb.is_empty() {
+                            root.remove(table);
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })
+    }
+
+    pub fn set_server_table_int(
+        &self,
+        server_id: &str,
+        table: &str,
+        key: &str,
+        val: Option<i64>,
+    ) -> Result<(), StoreError> {
+        self.set_server_table(server_id, table, key, val.map(value))
+    }
+
+    pub fn set_server_table_str(
+        &self,
+        server_id: &str,
+        table: &str,
+        key: &str,
+        val: Option<&str>,
+    ) -> Result<(), StoreError> {
+        self.set_server_table(server_id, table, key, val.map(value))
+    }
+
+    pub fn set_server_table_bool(
+        &self,
+        server_id: &str,
+        table: &str,
+        key: &str,
+        val: bool,
+    ) -> Result<(), StoreError> {
+        self.set_server_table(server_id, table, key, Some(value(val)))
+    }
+
+    /// Fault presets for *Add error preset* (SPEC §5.6): a Response with a `fault` or a slow
+    /// error. `kind` is one of [`FAULT_PRESETS`]'s ids.
+    pub fn create_fault_preset(&self, route_id: &str, kind: &str) -> Result<String, StoreError> {
+        let p = FAULT_PRESETS
+            .iter()
+            .find(|p| p.id == kind)
+            .ok_or_else(|| StoreError::Invalid(format!("no fault preset `{kind}`")))?;
+        let id = self.create_response(route_id)?;
+        let t = Target::Response(id.clone());
+        self.set_str(&t, "name", Some(p.label))?;
+        self.set_int(&t, "status", Some(i64::from(p.status)))?;
+        if let Some((title, detail)) = error_preset(p.status).filter(|_| p.status >= 400) {
+            self.set_str(&t, "content_type", Some("application/problem+json"))?;
+            let body = format!(
+                "{{\n  \"type\": \"about:blank\",\n  \"title\": \"{title}\",\n  \"status\": {},\n  \"detail\": \"{detail}\"\n}}",
+                p.status
+            );
+            self.set_str(&t, "body", Some(&body))?;
+        } else {
+            self.set_str(
+                &t,
+                "body",
+                Some("{\"ok\": true, \"data\": \"0123456789abcdefghijklmnopqrstuvwxyz\"}"),
+            )?;
+        }
+        if p.delay_ms > 0 {
+            self.set_int(&t, "delay_ms", Some(p.delay_ms as i64))?;
+        }
+        if let Some(f) = p.fault {
+            self.set_str(&t, "fault", Some(f))?;
+        }
+        Ok(id)
     }
 
     /// Set whether a Response is rendered as a template (`template = false` sends it verbatim).
@@ -1371,6 +1482,74 @@ fn validate_pattern(path: &str, mode: Option<&str>) -> Result<(), StoreError> {
         .map(|_| ())
         .map_err(StoreError::Invalid)
 }
+
+/// An *Add error preset* entry that simulates a failure rather than just an error status.
+pub struct FaultPreset {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub status: u16,
+    pub delay_ms: u64,
+    pub fault: Option<&'static str>,
+}
+
+pub const FAULT_PRESETS: &[FaultPreset] = &[
+    FaultPreset {
+        id: "502-after-10s",
+        label: "502 after 10 s",
+        status: 502,
+        delay_ms: 10_000,
+        fault: None,
+    },
+    FaultPreset {
+        id: "504-after-30s",
+        label: "504 after 30 s",
+        status: 504,
+        delay_ms: 30_000,
+        fault: None,
+    },
+    FaultPreset {
+        id: "timeout",
+        label: "Timeout (no response)",
+        status: 200,
+        delay_ms: 0,
+        fault: Some("timeout"),
+    },
+    FaultPreset {
+        id: "reset",
+        label: "Connection reset",
+        status: 200,
+        delay_ms: 0,
+        fault: Some("reset"),
+    },
+    FaultPreset {
+        id: "close",
+        label: "Closed after headers",
+        status: 200,
+        delay_ms: 0,
+        fault: Some("close"),
+    },
+    FaultPreset {
+        id: "empty",
+        label: "Empty body",
+        status: 200,
+        delay_ms: 0,
+        fault: Some("empty"),
+    },
+    FaultPreset {
+        id: "malformed",
+        label: "Truncated body",
+        status: 200,
+        delay_ms: 0,
+        fault: Some("malformed"),
+    },
+    FaultPreset {
+        id: "slow-body",
+        label: "Slow body",
+        status: 200,
+        delay_ms: 0,
+        fault: Some("slow_body"),
+    },
+];
 
 pub fn error_preset(status: u16) -> Option<(&'static str, &'static str)> {
     Some(match status {

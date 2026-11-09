@@ -111,7 +111,9 @@ impl Shell {
         self.sync_dataset_counts();
         let Some(h) = &self.host else { return };
         let list = h.engine().list();
+        self.network_profile = h.engine().network_profile();
         for s in &mut self.ws.servers {
+            s.chaos = list.iter().find(|x| x.id == s.id).and_then(|x| x.chaos);
             let st = list.iter().find(|x| x.id == s.id).map(|x| &x.status);
             s.running = matches!(st, Some(ServerStatus::Running { .. }));
             s.listen = match st {
@@ -171,6 +173,11 @@ impl Shell {
                     }
                 }
                 EngineEvent::Dataset { .. } => {}
+                EngineEvent::Network { profile } => {
+                    self.network_profile = profile;
+                    self.push_log(format!("Network profile: {}", profile.label()));
+                }
+                EngineEvent::Chaos { .. } => {}
                 EngineEvent::Status { server_id, status } => {
                     let name = self
                         .ws

@@ -216,6 +216,10 @@ pub enum ResponseAction {
         /// Add the RFC 9457 problem+json preset for this status instead (400, 401, ... 504).
         #[arg(long, value_name = "STATUS", conflicts_with_all = ["name", "status", "body", "content_type"])]
         preset: Option<u16>,
+        /// Add a fault preset instead: 502-after-10s, 504-after-30s, timeout, reset, close, empty,
+        /// malformed, slow-body.
+        #[arg(long, value_name = "ID", conflicts_with = "preset")]
+        fault_preset: Option<String>,
         #[command(flatten)]
         ws: WsArgs,
     },
@@ -253,6 +257,7 @@ pub fn response(action: ResponseAction) -> i32 {
             content_type,
             default,
             preset,
+            fault_preset,
             ws,
         } => {
             let store = match open_store(&ws) {
@@ -265,9 +270,10 @@ pub fn response(action: ResponseAction) -> i32 {
                 eprintln!("error: status {s} is not 100-599");
                 return EXIT_USAGE;
             }
-            let created = match preset {
-                Some(p) => store.create_error_preset(&route, p),
-                None => store.create_response(&route).and_then(|id| {
+            let created = match (preset, fault_preset) {
+                (Some(p), _) => store.create_error_preset(&route, p),
+                (None, Some(f)) => store.create_fault_preset(&route, &f),
+                (None, None) => store.create_response(&route).and_then(|id| {
                     let t = Target::Response(id.clone());
                     store.set_str(&t, "name", Some(name.as_deref().unwrap_or("New response")))?;
                     if let Some(s) = status {

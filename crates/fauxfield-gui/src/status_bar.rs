@@ -85,7 +85,37 @@ impl Shell {
                     Action("toast_action")
                 )
             }))
-            .child(div().id("status-network").child("Network: no throttling"))
+            .child({
+                let p = self.network_profile;
+                let col = if p == fauxfield_engine::NetworkProfile::None {
+                    t.icon_muted
+                } else {
+                    t.modified
+                };
+                crate::dev_id!(
+                    toolbar_button(t, "status-network")
+                        .child(icon(
+                            if p == fauxfield_engine::NetworkProfile::Offline {
+                                "wifi-off"
+                            } else {
+                                "wifi"
+                            },
+                            12.,
+                            col,
+                        ))
+                        .child(format!("Network: {}", p.label()))
+                        .tooltip(crate::ui::tooltip(
+                            "Network profile for every Server (runtime only)".into(),
+                        ))
+                        .on_click(cx.listener(|this, _, w, cx| {
+                            this.open_picker(PickerKind::Network, w, cx)
+                        })),
+                    "status-network",
+                    Button,
+                    format!("Network: {}", p.label()),
+                    Action("switch_network_profile")
+                )
+            })
             .child(crate::dev_id!(
                 toolbar_button(t, "status-environment")
                     .child(icon("layers", 12., t.icon_muted))

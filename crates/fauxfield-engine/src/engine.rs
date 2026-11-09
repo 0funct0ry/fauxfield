@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -8,11 +7,10 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use fauxfield_model::Server;
-use http_body_util::{BodyExt, Full};
+use http_body_util::BodyExt;
 use hyper::body::Incoming;
 use hyper::service::service_fn;
 use hyper::{Request, Response as HyperResponse, StatusCode};
-use hyper_util::rt::TokioIo;
 use hyper_util::server::graceful::GracefulShutdown;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
@@ -22,6 +20,7 @@ use tokio::task::JoinHandle;
 use crate::problem;
 use crate::recording::{Recording, Timing, body_text, redact};
 use crate::router::RouteTable;
+use crate::sim::{self, BodyMode, Fault, FaultIo, Limiter, NetworkProfile, SimBody};
 use crate::testreq::{self, TEST_HEADER, TestRequest, TestResponse};
 use crate::time::{now_ms, rfc3339};
 
@@ -39,6 +38,10 @@ pub struct EngineConfig {
     pub host_override: Option<String>,
     /// Ring buffer size per server; 0 means the default (2000).
     pub buffer: usize,
+    /// Runtime network profile at start (`fauxfield run --network`).
+    pub network: Option<NetworkProfile>,
+    /// Chaos fault rate for every Server at start (`fauxfield run --chaos`).
+    pub chaos: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -68,10 +71,22 @@ pub struct ServerInfo {
     pub enabled: bool,
     pub routes: usize,
     pub status: ServerStatus,
+    /// Chaos fault rate while the chaos switch is on (runtime only, SPEC §5.6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chaos: Option<f64>,
 }
 
 #[derive(Debug, Clone)]
 pub enum EngineEvent {
+    /// The workspace network profile changed.
+    Network {
+        profile: NetworkProfile,
+    },
+    /// A Server's chaos switch changed.
+    Chaos {
+        server_id: String,
+        rate: Option<f64>,
+    },
     Status {
         server_id: String,
         status: ServerStatus,
@@ -145,6 +160,8 @@ struct ServerRt {
     compiled: crate::rules::Compiled,
     seq: crate::template::Sequences,
     data: Mutex<crate::data::DataStore>,
+    limiter: Limiter,
+    chaos: Mutex<Option<f64>>,
 }
 
 struct Inner {
@@ -154,6 +171,8 @@ struct Inner {
     events: broadcast::Sender<EngineEvent>,
     handle: tokio::runtime::Handle,
     vars: RwLock<crate::vars::VarContext>,
+    profile: RwLock<NetworkProfile>,
+    offline: watch::Sender<bool>,
 }
 
 /// The mock engine. Cheap to clone; shared by the GUI, the headless runner and MCP.
@@ -166,8 +185,11 @@ impl Engine {
     /// `handle` is the host's Tokio runtime; listeners are spawned on it.
     pub fn new(handle: tokio::runtime::Handle, cfg: EngineConfig) -> Engine {
         let (events, _) = broadcast::channel(4096);
+        let profile = cfg.network.unwrap_or_default();
         Engine {
             inner: Arc::new(Inner {
+                profile: RwLock::new(profile),
+                offline: watch::channel(profile == NetworkProfile::Offline).0,
                 cfg,
                 servers: Mutex::new(vec![]),
                 seq: AtomicU64::new(1),
@@ -263,6 +285,8 @@ impl Engine {
                             counters: Default::default(),
                             compiled: Default::default(),
                             seq: Default::default(),
+                            limiter: Default::default(),
+                            chaos: Mutex::new(self.inner.cfg.chaos),
                         }),
                     ));
                 }
@@ -294,6 +318,7 @@ impl Engine {
                 let d = rt.def.lock().unwrap();
                 let (host, port) = self.bind_of(&d);
                 ServerInfo {
+                    chaos: *rt.chaos.lock().unwrap(),
                     id: id.clone(),
                     name: d.name.clone(),
                     host,
@@ -459,6 +484,7 @@ impl Engine {
         for (id, rt) in &targets {
             rt.counters.reset();
             rt.seq.lock().unwrap().clear();
+            rt.limiter.clear();
             self.reset_datasets(id, rt, None);
         }
         if server.is_none() {
@@ -667,6 +693,43 @@ impl Engine {
         Ok(self.inner.vars.read().unwrap().resolve(&def, route_id))
     }
 
+    /// The workspace-wide runtime network profile.
+    pub fn network_profile(&self) -> NetworkProfile {
+        *self.inner.profile.read().unwrap()
+    }
+
+    /// Override every Server's `[network]` at runtime; `Offline` refuses new connections.
+    pub fn set_network_profile(&self, p: NetworkProfile) {
+        *self.inner.profile.write().unwrap() = p;
+        self.inner
+            .offline
+            .send_replace(p == NetworkProfile::Offline);
+        let _ = self.inner.events.send(EngineEvent::Network { profile: p });
+    }
+
+    /// Chaos fault rate of a Server (None = off).
+    pub fn chaos(&self, key: &str) -> Result<Option<f64>, EngineError> {
+        let (_, rt) = self.find(key)?;
+        Ok(*rt.chaos.lock().unwrap())
+    }
+
+    /// Turn a Server's chaos switch on (rate 0..=1) or off. `key` `None` means every Server.
+    pub fn set_chaos(&self, key: Option<&str>, rate: Option<f64>) -> Result<(), EngineError> {
+        let rate = rate.map(|r| r.clamp(0.0, 1.0));
+        let targets: Vec<(String, Arc<ServerRt>)> = match key {
+            Some(k) => vec![self.find(k)?],
+            None => self.inner.servers.lock().unwrap().clone(),
+        };
+        for (id, rt) in targets {
+            *rt.chaos.lock().unwrap() = rate;
+            let _ = self.inner.events.send(EngineEvent::Chaos {
+                server_id: id,
+                rate,
+            });
+        }
+        Ok(())
+    }
+
     pub fn clear_traffic(&self) {
         for (_, rt) in self.inner.servers.lock().unwrap().iter() {
             rt.ring.lock().unwrap().clear();
@@ -769,21 +832,50 @@ async fn serve(
     mut stop: watch::Receiver<bool>,
 ) {
     let graceful = GracefulShutdown::new();
+    let addr = listener.local_addr().ok();
+    let mut offline = engine.inner.offline.subscribe();
+    let mut listener = if *offline.borrow() {
+        None
+    } else {
+        Some(listener)
+    };
     loop {
         tokio::select! {
             _ = stop.changed() => break,
-            accepted = listener.accept() => {
+            _ = offline.changed() => {
+                if *offline.borrow() {
+                    // Offline: really refuse connections until it is lifted.
+                    listener = None;
+                } else if listener.is_none() {
+                    for _ in 0..40 {
+                        if let Some(a) = addr
+                            && let Ok(l) = TcpListener::bind(a).await
+                        {
+                            listener = Some(l);
+                            break;
+                        }
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                }
+            }
+            accepted = async {
+                match &listener {
+                    Some(l) => l.accept().await,
+                    None => std::future::pending().await,
+                }
+            } => {
                 let Ok((stream, peer)) = accepted else { continue };
                 let ip = peer.ip().to_string();
                 let eng = engine.clone();
                 let rt2 = rt.clone();
                 let id2 = id.clone();
+                let (io, reset) = FaultIo::new(stream);
                 let svc = service_fn(move |req| {
-                    let (eng, rt, id, ip) = (eng.clone(), rt2.clone(), id2.clone(), ip.clone());
-                    async move { Ok::<_, Infallible>(handle(eng, id, rt, ip, req).await) }
+                    let (eng, rt, id, ip, reset) =
+                        (eng.clone(), rt2.clone(), id2.clone(), ip.clone(), reset.clone());
+                    async move { handle(eng, id, rt, ip, reset, req).await }
                 });
-                let conn = hyper::server::conn::http1::Builder::new()
-                    .serve_connection(TokioIo::new(stream), svc);
+                let conn = hyper::server::conn::http1::Builder::new().serve_connection(io, svc);
                 let watched = graceful.watch(conn);
                 tokio::spawn(async move {
                     let _ = watched.await;
@@ -794,6 +886,16 @@ async fn serve(
     drop(listener);
     let _ = tokio::time::timeout(DRAIN, graceful.shutdown()).await;
 }
+
+/// Returned by the service to abort a connection (fault `reset`).
+#[derive(Debug)]
+struct ConnAbort;
+impl std::fmt::Display for ConnAbort {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("connection aborted by fault injection")
+    }
+}
+impl std::error::Error for ConnAbort {}
 
 pub(crate) fn json_response(
     status: u16,
@@ -812,8 +914,9 @@ async fn handle(
     id: String,
     rt: Arc<ServerRt>,
     ip: String,
+    reset: Arc<std::sync::atomic::AtomicBool>,
     req: Request<Incoming>,
-) -> HyperResponse<Full<Bytes>> {
+) -> Result<HyperResponse<SimBody>, ConnAbort> {
     let started = Instant::now();
     let (parts, body) = req.parse_body().await;
     let method = parts.method.as_str().to_string();
@@ -855,11 +958,37 @@ async fn handle(
         .unwrap_or_default();
     let match_us = match_start.elapsed().as_micros() as u64;
 
+    let profile = engine.network_profile();
+    let (server_net, rate_cfg) = {
+        let d = rt.def.lock().unwrap();
+        (d.network.clone(), d.rate_limit.clone())
+    };
+    let rate = rate_cfg.as_ref().and_then(|c| {
+        sim::rate_key(c, &ip, &req_headers, &url).and_then(|k| rt.limiter.check(c, &k))
+    });
+    let rate_limited = rate.as_ref().is_some_and(|r| r.limited);
+    let mut fault: Option<(Fault, &'static str)> = None;
+    let mut render_us = 0u64;
     let mut delay_ms = 0;
     let mut trace = None;
     let mut chosen: (String, String) = Default::default();
     let mut render_error: Option<String> = None;
-    let (route_id, (status, headers, bytes)) = match &route {
+    let (route_id, (mut status, mut headers, mut bytes)) = match &route {
+        _ if rate_limited => {
+            let st = rate.clone().unwrap_or_else(|| unreachable!());
+            let mut out = json_response(
+                429,
+                problem::too_many_requests(&path, st.reset_s),
+                "application/problem+json",
+            );
+            out.1.extend(st.headers());
+            (
+                route
+                    .as_ref()
+                    .map_or("unmatched".to_string(), |r| r.id.clone()),
+                out,
+            )
+        }
         None => {
             let closest = table.closest(&method, &path);
             (
@@ -1000,13 +1129,25 @@ async fn handle(
                 None => (200, vec![], Bytes::new()),
                 Some(resp) => {
                     chosen = (resp.id.clone(), resp.name.clone().unwrap_or_default());
-                    delay_ms = resp.delay_ms.unwrap_or(0);
+                    let (lo, hi) = resp
+                        .delay_ms
+                        .as_ref()
+                        .and_then(fauxfield_model::Delay::bounds)
+                        .unwrap_or((0, 0));
+                    delay_ms = sim::sample(lo, hi);
                     if delay_ms > 0 {
                         tokio::time::sleep(Duration::from_millis(delay_ms)).await;
                     }
+                    if let Some(f) = resp.fault.as_deref().and_then(Fault::parse)
+                        && sim::roll(resp.fault_rate.unwrap_or(1.0))
                     {
+                        fault = Some((f, ""));
+                    }
+                    {
+                        let t0 = Instant::now();
                         let out =
                             crate::render::build(&engine.inner.cfg.root, r, resp, &tpl, &path);
+                        render_us = t0.elapsed().as_micros() as u64;
                         render_error = out.error;
                         (out.status, out.headers, out.body)
                     }
@@ -1014,6 +1155,63 @@ async fn handle(
             };
             (r.id.clone(), out)
         }
+    };
+
+    let mut fault_label: Option<String> = rate_limited.then(|| "rate_limited".to_string());
+    if !rate_limited {
+        if fault.is_none() {
+            let chaos = *rt.chaos.lock().unwrap();
+            if let Some(rate) = chaos
+                && sim::roll(rate)
+            {
+                fault = Some((sim::chaos_fault(), "chaos:"));
+            } else if sim::roll(profile.drop_rate()) {
+                fault = Some((Fault::Reset, "profile:"));
+            }
+        }
+        if let Some((f, prefix)) = fault {
+            fault_label = Some(format!("{prefix}{}", f.name()));
+        }
+    }
+    if let Some(r) = &rate
+        && !r.limited
+    {
+        headers.extend(r.headers());
+    }
+    let net = profile.network().or(server_net);
+    let network_ms = net.as_ref().map_or(0, sim::latency_ms);
+    if network_ms > 0 {
+        tokio::time::sleep(Duration::from_millis(network_ms)).await;
+    }
+    let mut mode = match net.as_ref().map(|n| n.bandwidth_kbps) {
+        Some(k) if k > 0 => BodyMode::Throttle(k * 125),
+        _ => BodyMode::Full,
+    };
+    let mut wire_status = status;
+    if let Some((f, _)) = fault {
+        match f {
+            Fault::Empty => bytes = Bytes::new(),
+            Fault::ServerError => {
+                (status, headers, bytes) =
+                    json_response(500, problem::chaos_error(&path), "application/problem+json");
+                wire_status = status;
+            }
+            Fault::Close => mode = BodyMode::Abort,
+            Fault::Malformed => mode = BodyMode::Truncate,
+            Fault::SlowBody => {
+                let k = net
+                    .as_ref()
+                    .map(|n| n.bandwidth_kbps)
+                    .filter(|k| *k > 0)
+                    .unwrap_or(sim::DEFAULT_SLOW_KBPS);
+                mode = BodyMode::Throttle(k * 125);
+            }
+            Fault::Timeout | Fault::Reset => wire_status = 0,
+        }
+    }
+    let transfer_ms = match mode {
+        BodyMode::Throttle(bps) if bps > 0 => bytes.len() as u64 * 1000 / bps,
+        _ => 0,
     };
 
     let (server_name, _) = {
@@ -1041,28 +1239,48 @@ async fn handle(
             url,
             request_headers: redact(req_headers),
             request_body: req_body,
-            status,
+            status: wire_status,
             response_headers: redact(headers.clone()),
             response_body: resp_body,
             timing: Timing {
                 match_us,
-                delay_ms,
-                total_ms: started.elapsed().as_millis() as u64,
+                delay_ms: delay_ms + network_ms,
+                render_us,
+                network_ms,
+                transfer_ms,
+                total_ms: started.elapsed().as_millis() as u64 + transfer_ms,
             },
             truncated: req_cut || resp_cut,
             error: render_error,
+            fault: fault_label,
             source: if is_test { "test" } else { "mock" }.into(),
         },
     );
+
+    match fault.map(|f| f.0) {
+        Some(Fault::Timeout) => {
+            // Hold the request until the client gives up (bounded so tasks never leak).
+            tokio::time::sleep(Duration::from_secs(600)).await;
+        }
+        Some(Fault::Reset) => {
+            reset.store(true, Ordering::SeqCst);
+            return Err(ConnAbort);
+        }
+        _ => {}
+    }
 
     let mut b = HyperResponse::builder()
         .status(StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR));
     for (k, v) in &headers {
         b = b.header(k.as_str(), v.as_str());
     }
-    b.body(Full::new(bytes)).unwrap_or_else(|_| {
-        HyperResponse::new(Full::new(Bytes::from_static(b"invalid response headers")))
-    })
+    Ok(b.body(SimBody::new(bytes, mode, None)).unwrap_or_else(|_| {
+        HyperResponse::new(SimBody::new(
+            Bytes::from_static(b"invalid response headers"),
+            BodyMode::Full,
+            None,
+        ))
+    }))
 }
 
 pub(crate) fn read_confined(root: &std::path::Path, file: &str) -> Result<Vec<u8>, String> {

@@ -1,0 +1,5 @@
+# UI state fixture (M9): captured by `ui.screenshot {state: "server-network"}`. Server tab with the Network and Rate limit sections after setting a latency.
+steps:
+  - reset
+  - open: {kind: server, id: srv_users}
+  - wait_idle
