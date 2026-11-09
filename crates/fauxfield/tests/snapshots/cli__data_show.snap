@@ -1,0 +1,14 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+[
+  {
+    "id": 1,
+    "name": "Ann"
+  },
+  {
+    "id": 2,
+    "name": "Bob"
+  }
+]

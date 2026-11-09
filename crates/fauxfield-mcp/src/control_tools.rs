@@ -46,6 +46,14 @@ struct ServerRef {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct ResetState {
+    /// Server ID, name or file slug. Omit to reset every Server.
+    server: Option<String>,
+    /// Only this Dataset (needs `server`).
+    dataset: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct SendTest {
     /// Server ID, name, or file slug. It must be running.
     server: String,
@@ -132,6 +140,24 @@ pub fn register_control_tools(r: &mut Registry, provider: ControlProvider) {
                 let a = parse::<ServerRef>(m)?;
                 let servers = host(&p)?.restart(a.server).await.map_err(fail)?;
                 Ok(json!({ "servers": servers }))
+            })
+        },
+    ));
+
+    let p = provider.clone();
+    r.register(ToolDef::new::<ResetState>(
+        "reset_state",
+        "Reset state: Datasets back to their seed (persisted state deleted), response counters, sequence cursors and runtime variables. Scope with `server` and optionally `dataset`; omit both to reset the whole workspace.",
+        ToolClass::Execute,
+        move |m| -> ToolFuture {
+            let p = p.clone();
+            Box::pin(async move {
+                let a = parse::<ResetState>(m)?;
+                host(&p)?
+                    .reset_state(a.server.clone(), a.dataset.clone())
+                    .await
+                    .map_err(fail)?;
+                Ok(json!({ "reset": true, "server": a.server, "dataset": a.dataset }))
             })
         },
     ));

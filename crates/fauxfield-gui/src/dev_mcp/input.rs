@@ -239,6 +239,7 @@ pub fn open_tab(
         TabKindArg::Route => (TabKind::Route, id.to_string()),
         TabKindArg::Server => (TabKind::Server, id.to_string()),
         TabKindArg::Environment => (TabKind::Environment, format!("env:{id}")),
+        TabKindArg::Dataset => (TabKind::Dataset, format!("ds:{id}")),
     };
     match shell.tab_for_row(&row_id) {
         Some((k, _)) if k == kind => {}

@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use fauxfield_engine::{Recording, ServerInfo, TestRequest, TestResponse, TrafficFilter};
+use fauxfield_engine::{
+    DatasetInfo, Recording, ServerInfo, TestRequest, TestResponse, TrafficFilter,
+};
 use fauxfield_model::vars::ResolvedVar;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -61,6 +63,26 @@ async fn dispatch(
             .vars(param(params, "server")?, param(params, "route")?)
             .await
             .map(|v| json!({"vars": v})),
+        "data.list" => api
+            .data_list(param(params, "server")?)
+            .await
+            .map(|v| json!({"datasets": v})),
+        "data.show" => api
+            .data_show(param(params, "server")?, param(params, "dataset")?)
+            .await
+            .map(|v| json!({"rows": v})),
+        "data.set" => api
+            .data_set(
+                param(params, "server")?,
+                param(params, "dataset")?,
+                param(params, "rows")?,
+            )
+            .await
+            .map(|_| json!({})),
+        "state.reset" => api
+            .reset_state(param(params, "server")?, param(params, "dataset")?)
+            .await
+            .map(|_| json!({})),
         "shutdown" => api.shutdown().await.map(|_| json!({})),
         other => Err(ControlError::new(
             "method_not_found",
@@ -278,6 +300,39 @@ impl ControlApi for RemoteControl {
             .await?;
         serde_json::from_value(v["vars"].clone())
             .map_err(|e| ControlError::new("transport", e.to_string()))
+    }
+    async fn data_list(&self, server: Option<String>) -> Result<Vec<DatasetInfo>, ControlError> {
+        let v = self.call("data.list", json!({"server": server})).await?;
+        serde_json::from_value(v["datasets"].clone())
+            .map_err(|e| ControlError::new("transport", e.to_string()))
+    }
+    async fn data_show(&self, server: String, dataset: String) -> Result<Value, ControlError> {
+        let v = self
+            .call("data.show", json!({"server": server, "dataset": dataset}))
+            .await?;
+        Ok(v["rows"].clone())
+    }
+    async fn data_set(
+        &self,
+        server: String,
+        dataset: String,
+        rows: Value,
+    ) -> Result<(), ControlError> {
+        self.call(
+            "data.set",
+            json!({"server": server, "dataset": dataset, "rows": rows}),
+        )
+        .await
+        .map(|_| ())
+    }
+    async fn reset_state(
+        &self,
+        server: Option<String>,
+        dataset: Option<String>,
+    ) -> Result<(), ControlError> {
+        self.call("state.reset", json!({"server": server, "dataset": dataset}))
+            .await
+            .map(|_| ())
     }
     async fn shutdown(&self) -> Result<(), ControlError> {
         self.call("shutdown", Value::Null).await.map(|_| ())

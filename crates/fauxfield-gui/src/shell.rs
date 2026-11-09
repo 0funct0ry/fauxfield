@@ -60,6 +60,32 @@ pub enum PickerKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PromptAction {
     NewServer,
+    /// New CRUD resource wizard, step 1 (name), 2 (path) and 3 (fields).
+    NewCrudName {
+        server: String,
+    },
+    NewCrudPath {
+        server: String,
+        name: String,
+    },
+    NewCrudFields {
+        server: String,
+        name: String,
+        path: String,
+    },
+    /// Edit one cell of a Dataset's live rows (value is JSON, or plain text for a string).
+    EditCell {
+        key: String,
+        index: usize,
+        col: String,
+    },
+    /// Append a row to a Dataset's live rows (value is a JSON object).
+    AddRow {
+        key: String,
+    },
+    ExportDataset {
+        key: String,
+    },
     NewEnvironment,
     RenameEnvironment {
         name: String,
@@ -153,6 +179,10 @@ impl PromptAction {
             }
             PromptAction::ServerPrefix { .. } => "Starts with /, no trailing /. Empty removes it.",
             PromptAction::SetVariable { .. } => "Use ${env:NAME} to read the process environment.",
+            PromptAction::NewCrudFields { .. } => {
+                "Fake kinds (name, internet.email, ...) or int, float, bool, uuid. An id field is added."
+            }
+            PromptAction::EditCell { .. } => "Changes live data only; Reset restores the seed.",
             _ => "",
         }
     }
@@ -160,6 +190,12 @@ impl PromptAction {
     pub fn title(&self) -> &'static str {
         match self {
             PromptAction::NewServer => "New server name",
+            PromptAction::NewCrudName { .. } => "New CRUD resource name (e.g. products)",
+            PromptAction::NewCrudPath { .. } => "Path (e.g. /products)",
+            PromptAction::NewCrudFields { .. } => "Fields (name:kind, ...)",
+            PromptAction::EditCell { .. } => "Value (JSON, or text)",
+            PromptAction::AddRow { .. } => "New row (JSON object)",
+            PromptAction::ExportDataset { .. } => "Export to file",
             PromptAction::NewEnvironment => "New environment name",
             PromptAction::RenameEnvironment { .. } => "Environment name",
             PromptAction::SetVariable { key: None, .. } => "Variable (KEY=value)",
@@ -303,6 +339,10 @@ pub struct Shell {
     pub(crate) picker_scroll: UniformListScrollHandle,
     pub(crate) traffic: Vec<TrafficRow>,
     pub(crate) traffic_scroll: UniformListScrollHandle,
+    pub(crate) ds_scroll: UniformListScrollHandle,
+    pub(crate) ds_json_mode: bool,
+    /// Prompt to open right after the current one is applied (wizard steps).
+    pub(crate) next_prompt: Option<(PromptAction, String)>,
     pub(crate) traffic_selected: Option<usize>,
     pub(crate) route_sub: HashMap<String, usize>,
     /// Route Settings "Test a path" input per Route (runtime-only).
@@ -523,6 +563,9 @@ impl Shell {
             // Real rows come from the engine; synthetic ones feed tests and dev-mcp scenarios.
             traffic: initial_traffic(),
             traffic_scroll: UniformListScrollHandle::new(),
+            ds_scroll: UniformListScrollHandle::new(),
+            ds_json_mode: false,
+            next_prompt: None,
             traffic_selected: None,
             route_sub: HashMap::new(),
             test_path: HashMap::new(),
@@ -861,6 +904,10 @@ impl Shell {
         if let Some(s) = self.ws.find_server(id) {
             return Some((TabKind::Server, s.name.clone()));
         }
+        if let Some(key) = id.strip_prefix("ds:") {
+            let d = self.ws.find_dataset(key)?;
+            return Some((TabKind::Dataset, d.name.clone()));
+        }
         let name = id.strip_prefix("env:")?;
         self.ws.find_environment(name)?;
         Some((TabKind::Environment, name.to_string()))
@@ -876,6 +923,7 @@ impl Shell {
             TabKind::Server => self.ws.find_server(id).map(|s| s.name.clone()),
             TabKind::Folder => self.ws.find_folder(id).map(|(_, f)| f.name.clone()),
             TabKind::Environment => self.ws.find_environment(id).map(|e| e.name.clone()),
+            TabKind::Dataset => self.ws.find_dataset(id).map(|d| d.name.clone()),
         }
     }
 
@@ -907,6 +955,7 @@ impl Shell {
         }
         self.selected = Some(match kind {
             TabKind::Environment => tree::env_row_id(id),
+            TabKind::Dataset => tree::dataset_row_id(id),
             _ => id.to_string(),
         });
         if let Some(sel) = &self.selected {
@@ -920,11 +969,15 @@ impl Shell {
     /// Row click: routes, servers and environments open tabs; folders and sections fold.
     pub fn click_row(&mut self, row_id: &str, clicks: usize, cx: &mut Context<Self>) {
         self.selected = Some(row_id.to_string());
-        if let Some((kind, title)) = self.tab_for_row(row_id) {
-            let tab_id = row_id.strip_prefix("env:").unwrap_or(row_id).to_string();
+        // A crud Route's operation rows open the Route.
+        let tab_row = tree::crud_route_of(row_id).unwrap_or(row_id).to_string();
+        if let Some((kind, title)) = self.tab_for_row(&tab_row) {
+            let tab_id = tab_row
+                .strip_prefix("env:")
+                .or_else(|| tab_row.strip_prefix("ds:"))
+                .unwrap_or(&tab_row)
+                .to_string();
             self.open_tab(&tab_id, kind, &title, clicks >= 2);
-        } else if row_id.starts_with("ds:") {
-            self.notify("Dataset tabs arrive in M8.".into(), cx);
         } else if let Some((_, f)) = self
             .ws
             .find_folder(row_id)
@@ -1003,6 +1056,7 @@ impl Shell {
         if let Some(t) = self.tabs.active() {
             self.selected = Some(match t.kind {
                 TabKind::Environment => tree::env_row_id(&t.id),
+                TabKind::Dataset => tree::dataset_row_id(&t.id),
                 _ => t.id.clone(),
             });
         }
@@ -1253,7 +1307,16 @@ impl Shell {
                     self.store_op(cx, |s| s.set_response_mode(&route, mode));
                 }
             }
-            MenuAct::ResetDataset => self.stub("Resetting dataset state", "M8", cx),
+            MenuAct::ResetDataset => {
+                if let Some(k) = m.row_id.strip_prefix("ds:") {
+                    self.reset_dataset(k, cx);
+                }
+            }
+            MenuAct::ExportDataset => {
+                if let Some(k) = m.row_id.strip_prefix("ds:") {
+                    self.begin_export(k, window, cx);
+                }
+            }
             MenuAct::Restart => self.restart_server_id(&m.row_id, cx),
             MenuAct::ToggleEnabled => self.toggle_enabled(&m.row_id, cx),
             MenuAct::ChangePort => self.change_port(&m.row_id, window, cx),
@@ -1294,10 +1357,14 @@ impl Shell {
             .active()
             .map(|t| t.id.clone())
             .or_else(|| self.selected.clone())?;
-        self.ws
-            .servers
-            .iter()
-            .position(|s| s.id == id || s.all_routes().any(|r| r.id == id))
+        self.ws.servers.iter().position(|s| {
+            s.id == id
+                || s.all_routes().any(|r| r.id == id)
+                || id
+                    .strip_prefix("ds:")
+                    .unwrap_or(&id)
+                    .starts_with(&format!("{}:", s.id))
+        })
     }
 
     pub fn set_environment(&mut self, name: &str, cx: &mut Context<Self>) {
@@ -1630,6 +1697,9 @@ impl Shell {
                 if let Some(action) = action {
                     self.apply_prompt(action, value.trim(), cx);
                 }
+                if let Some((next, initial)) = self.next_prompt.take() {
+                    self.begin_prompt(next, &initial, window, cx);
+                }
             }
             Target::Action(id) => {
                 self.close_picker(true, window, cx);
@@ -1647,7 +1717,7 @@ impl Shell {
         cx.notify();
     }
 
-    fn open_target(&mut self, target: &Target, mode: OpenMode, cx: &mut Context<Self>) {
+    fn open_target(&mut self, target: &Target, mode: OpenMode, _cx: &mut Context<Self>) {
         let (row, tab) = match target {
             Target::Route(id) => (
                 id.clone(),
@@ -1670,19 +1740,20 @@ impl Shell {
                 Some((n.clone(), TabKind::Environment, n.clone())),
             ),
             Target::Folder(id) => (id.clone(), None),
-            Target::Dataset(n) => (tree::dataset_row_id(n), None),
+            Target::Dataset(k) => (
+                tree::dataset_row_id(k),
+                self.ws
+                    .find_dataset(k)
+                    .map(|d| (k.clone(), TabKind::Dataset, d.name.clone())),
+            ),
             _ => return,
         };
         self.reveal_row(&row);
         if mode == OpenMode::Reveal {
             return;
         }
-        match tab {
-            Some((id, kind, title)) => self.open_tab(&id, kind, &title, mode == OpenMode::Pinned),
-            None if matches!(target, Target::Dataset(_)) => {
-                self.notify("Dataset tabs arrive in M8.".into(), cx);
-            }
-            None => {}
+        if let Some((id, kind, title)) = tab {
+            self.open_tab(&id, kind, &title, mode == OpenMode::Pinned);
         }
     }
 
@@ -2436,6 +2507,59 @@ impl Shell {
         use fauxfield_store::Target as T;
         let v = value.to_string();
         match action {
+            PromptAction::NewCrudName { server } => {
+                let n = v.trim().to_string();
+                self.next_prompt = Some((
+                    PromptAction::NewCrudPath {
+                        server,
+                        name: n.clone(),
+                    },
+                    format!("/{n}"),
+                ));
+            }
+            PromptAction::NewCrudPath { server, name } => {
+                self.next_prompt = Some((
+                    PromptAction::NewCrudFields {
+                        server,
+                        name,
+                        path: v.clone(),
+                    },
+                    "name:name, email:internet.email, price:float".into(),
+                ));
+            }
+            PromptAction::NewCrudFields { server, name, path } => {
+                self.create_crud_resource(&server, &name, &path, &v, cx)
+            }
+            PromptAction::EditCell { key, index, col } => {
+                let val = serde_json::from_str::<serde_json::Value>(&v)
+                    .unwrap_or_else(|_| serde_json::Value::String(v.clone()));
+                self.edit_dataset(&key, cx, move |rows| {
+                    let item = match rows {
+                        serde_json::Value::Array(a) => a.get_mut(index),
+                        other => Some(other),
+                    }
+                    .ok_or_else(|| "That row no longer exists.".to_string())?;
+                    item[col.as_str()] = val;
+                    Ok(())
+                });
+            }
+            PromptAction::AddRow { key } => {
+                let val: serde_json::Value = match serde_json::from_str(&v) {
+                    Ok(x @ serde_json::Value::Object(_)) => x,
+                    _ => {
+                        self.notify("A row must be a JSON object.".into(), cx);
+                        return;
+                    }
+                };
+                self.edit_dataset(&key, cx, move |rows| match rows {
+                    serde_json::Value::Array(a) => {
+                        a.push(val);
+                        Ok(())
+                    }
+                    _ => Err("This dataset is a single object.".into()),
+                });
+            }
+            PromptAction::ExportDataset { key } => self.export_dataset(&key, &v, cx),
             PromptAction::NewEnvironment => {
                 let n = v.trim().to_string();
                 if self.store_op(cx, |s| s.create_environment(&n)).is_some() {
@@ -2669,10 +2793,6 @@ impl Shell {
             }
         }
     }
-
-    fn stub(&mut self, what: &str, milestone: &str, cx: &mut Context<Self>) {
-        self.notify(format!("{what} arrives in {milestone}."), cx);
-    }
 }
 
 /// Synthetic rows in test and dev-mcp builds only; a release build starts empty.
@@ -2704,6 +2824,7 @@ fn tab_exists(ws: &Workspace, kind: TabKind, id: &str) -> bool {
         TabKind::Server => ws.find_server(id).is_some(),
         TabKind::Folder => ws.find_folder(id).is_some(),
         TabKind::Environment => ws.find_environment(id).is_some(),
+        TabKind::Dataset => ws.find_dataset(id).is_some(),
     }
 }
 
@@ -2958,15 +3079,8 @@ impl Render for Shell {
                 None => this.notify("Select something to duplicate.".into(), cx),
             },
             EditSampleRequest => |this, _w, cx| this.open_sample_dialog(cx),
-            ResetState => |this, _w, cx| {
-                if let Some(h) = &this.host {
-                    h.engine().reset_state();
-                }
-                this.notify(
-                    "Reset response counters (dataset state arrives in M8)".into(),
-                    cx,
-                );
-            },
+            ResetState => |this, _w, cx| this.reset_state_action(cx),
+            NewCrudResource => |this, w, cx| this.begin_new_crud(w, cx),
             RestartServer => |this, _w, cx| this.restart_current(cx),
             ClearTraffic => |this, _w, cx| this.clear_traffic(cx),
             CopyAsCurl => |this, _w, cx| this.copy_curl(cx),

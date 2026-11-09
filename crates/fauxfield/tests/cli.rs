@@ -441,3 +441,56 @@ fn env_and_var_commands_are_stable() {
     let (code, _, _) = run(&["var", "set", "x", "1", "--scope", "runtime", "-w", p]);
     assert_eq!(code, 4, "runtime scope needs a host");
 }
+
+#[test]
+fn data_commands_are_stable() {
+    let dir = workspace();
+    let p = dir.path().to_str().unwrap();
+    std::fs::write(
+        dir.path().join("data/people.json"),
+        r#"[{"id":1,"name":"Ann"},{"id":2,"name":"Bob"}]"#,
+    )
+    .unwrap();
+    let f = dir.path().join("servers/example-api.toml");
+    let mut t = std::fs::read_to_string(&f).unwrap();
+    t.push_str("\n[[datasets]]\nname = \"people\"\nseed = \"data/people.json\"\nid_strategy = \"increment\"\n");
+    std::fs::write(&f, t).unwrap();
+    let json = |args: &[&str]| -> serde_json::Value {
+        let mut a = args.to_vec();
+        a.extend(["-w", p, "--json"]);
+        let (code, out, err) = run(&a);
+        assert_eq!(code, 0, "{args:?}: {err}");
+        serde_json::from_str(&out).unwrap()
+    };
+    snap_json(Some("data_list"), &json(&["data", "list"]));
+    snap_json(
+        Some("data_show"),
+        &json(&["data", "show", "example-api", "people"]),
+    );
+    let out = dir.path().join("out.json");
+    let v = json(&[
+        "data",
+        "export",
+        "example-api",
+        "people",
+        "--out",
+        out.to_str().unwrap(),
+    ]);
+    assert_eq!(v["rows"], 2);
+    let src = dir.path().join("in.json");
+    std::fs::write(&src, r#"[{"id":7,"name":"Zed"}]"#).unwrap();
+    snap_json(
+        Some("data_import"),
+        &json(&[
+            "data",
+            "import",
+            "example-api",
+            "people",
+            src.to_str().unwrap(),
+        ]),
+    );
+    assert_eq!(json(&["data", "list"])["datasets"][0]["rows"], 1);
+    snap_json(Some("data_reset"), &json(&["data", "reset"]));
+    let (code, _, _) = run(&["data", "show", "example-api", "nope", "-w", p]);
+    assert_eq!(code, 1);
+}

@@ -747,3 +747,39 @@ async fn set_variable_writes_and_hides_secrets() {
     let bad = call(json!({"scope": "runtime", "key": "x", "value": "1"})).await;
     assert!(bad.is_err() || bad.unwrap().is_error == Some(true));
 }
+
+/// M8: `upsert_dataset` writes seed, dataset and CRUD route; `reset_state` runs on a host.
+#[tokio::test]
+async fn upsert_dataset_and_reset_state() {
+    let dir = init_ws();
+    let p = dir.path().to_str().unwrap();
+    let mut child = spawn(&[p]);
+    let c = ().serve((child.stdout.take().unwrap(), child.stdin.take().unwrap())).await.unwrap();
+    let call = |name: &'static str, args: serde_json::Value| {
+        let c = &c;
+        async move {
+            c.call_tool(
+                CallToolRequestParams::new(name).with_arguments(args.as_object().unwrap().clone()),
+            )
+            .await
+        }
+    };
+    let r = call(
+        "upsert_dataset",
+        json!({"server": "example-api", "name": "products", "seed": "[{\"id\":1}]",
+               "crud_path": "/products", "persist": true}),
+    )
+    .await
+    .unwrap();
+    assert!(r.structured_content.unwrap()["route"].is_string());
+    assert!(dir.path().join("data/products.json").exists());
+    let t = std::fs::read_to_string(dir.path().join("servers/example-api.toml")).unwrap();
+    assert!(
+        t.contains("[[datasets]]") && t.contains("kind = \"crud\""),
+        "{t}"
+    );
+    let bad = call("upsert_dataset", json!({"server": "nope", "name": "x"})).await;
+    assert!(bad.is_err() || bad.unwrap().is_error == Some(true));
+    let r = call("reset_state", json!({})).await.unwrap();
+    assert_eq!(r.structured_content.unwrap()["reset"], true);
+}

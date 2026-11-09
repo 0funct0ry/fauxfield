@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use fauxfield_model::pattern::{self, Pattern, Seg, effective_routes, split_path};
+use fauxfield_model::pattern::{self, Pattern, Seg, effective_routes_of, split_path};
 use fauxfield_model::{Route, Server};
 use regex::{Regex, RegexSet};
 
@@ -100,6 +100,38 @@ pub fn mask_param(name: &str, value: &str) -> String {
     }
 }
 
+/// The six operations a `crud` Route generates (SPEC §6.2), as `(method, path suffix)`.
+pub const CRUD_OPS: [(&str, &str); 6] = [
+    ("GET", ""),
+    ("POST", ""),
+    ("GET", "/:id"),
+    ("PUT", "/:id"),
+    ("PATCH", "/:id"),
+    ("DELETE", "/:id"),
+];
+
+/// Effective routes with every `crud` Route expanded into one synthetic Route per operation
+/// (same id, kind and priority; an `http` Route of higher priority overrides one of them).
+fn expand(server: &Server) -> Vec<Route> {
+    let mut out = Vec::new();
+    for r in effective_routes_of(server, &["http", "crud"]) {
+        if r.kind != "crud" {
+            out.push(r.clone());
+            continue;
+        }
+        let base = r.path.trim_end_matches('/');
+        for (m, suffix) in CRUD_OPS {
+            let mut c = r.clone();
+            c.method = m.into();
+            c.path = format!("{base}{suffix}");
+            c.match_mode = None;
+            c.response_mode = None;
+            out.push(c);
+        }
+    }
+    out
+}
+
 impl RouteTable {
     pub fn compile(server: &Server) -> RouteTable {
         let prefix = server.prefix.clone().unwrap_or_default();
@@ -111,7 +143,7 @@ impl RouteTable {
             ..Default::default()
         };
         let mut regex_src = Vec::new();
-        for r in effective_routes(server) {
+        for r in &expand(server) {
             if r.response_mode.as_deref() == Some("disabled") {
                 continue;
             }

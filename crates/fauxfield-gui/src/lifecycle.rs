@@ -679,6 +679,25 @@ impl Shell {
             PromptAction::ServerPrefix { .. } => {
                 fauxfield_model::validate_prefix(value).map(|_| ())
             }
+            PromptAction::NewCrudName { .. } => {
+                let ok = !value.is_empty()
+                    && value
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == '-');
+                ok.then_some(())
+                    .ok_or_else(|| "Use letters, digits, `_` and `-`.".to_string())
+            }
+            PromptAction::NewCrudPath { .. } => value
+                .starts_with('/')
+                .then_some(())
+                .ok_or_else(|| "Path must start with `/`.".to_string()),
+            PromptAction::NewCrudFields { .. } => {
+                crate::dataset_ui::parse_fields(value).map(|_| ())
+            }
+            PromptAction::AddRow { .. } => match serde_json::from_str::<serde_json::Value>(value) {
+                Ok(serde_json::Value::Object(_)) => Ok(()),
+                _ => Err("A row must be a JSON object.".into()),
+            },
             _ => Ok(()),
         }
     }

@@ -58,6 +58,7 @@ fn tab_icon(kind: TabKind) -> &'static str {
         TabKind::Server => "server",
         TabKind::Folder => "folder",
         TabKind::Environment => "layers",
+        TabKind::Dataset => "table",
     }
 }
 
@@ -122,6 +123,7 @@ impl Shell {
             TabKind::Server => t.created,
             TabKind::Folder => t.icon_muted,
             TabKind::Environment => t.modified,
+            TabKind::Dataset => t.modified,
         };
         crate::dev_id!(
             div()
@@ -196,6 +198,9 @@ impl Shell {
         };
         match tab.kind {
             TabKind::Route => match self.ws.find_route(&tab.id) {
+                Some((s, r)) if r.is_crud() => {
+                    self.render_crud_route_tab(t, s, r, cx).into_any_element()
+                }
                 Some((s, r)) => self.render_route_tab(t, s, r, cx).into_any_element(),
                 None => self.render_empty(t).into_any_element(),
             },
@@ -209,6 +214,10 @@ impl Shell {
             },
             TabKind::Environment => match self.ws.find_environment(&tab.id) {
                 Some(e) => self.render_environment_tab(t, e, cx).into_any_element(),
+                None => self.render_empty(t).into_any_element(),
+            },
+            TabKind::Dataset => match self.ws.find_dataset(&tab.id).cloned() {
+                Some(d) => self.render_dataset_tab(t, &d, cx).into_any_element(),
                 None => self.render_empty(t).into_any_element(),
             },
         }
@@ -1101,6 +1110,9 @@ impl Shell {
                     .gap(px(2.))
                     .child(self.server_general(t, s, cx))
                     .children(SERVER_SECTIONS.iter().enumerate().skip(1).map(|(i, name)| {
+                        if i == 6 {
+                            return self.server_datasets_section(t, s, cx);
+                        }
                         if i == 7 {
                             return div().mt(px(14.)).flex().flex_col().child(
                                 self.render_var_section(
@@ -1125,6 +1137,148 @@ impl Shell {
                                 ),
                             ))
                     })),
+            )
+    }
+
+    /// Server tab "Datasets" section: this Server's Datasets and the New CRUD resource button.
+    fn server_datasets_section(&self, t: &Theme, s: &Server, cx: &mut Context<Self>) -> gpui::Div {
+        let hover = t.element_hover;
+        let border = t.border;
+        let sid = s.id.clone();
+        div()
+            .mt(px(14.))
+            .flex()
+            .flex_col()
+            .gap(px(4.))
+            .child(section_heading(t, "Datasets"))
+            .children(
+                self.ws
+                    .datasets
+                    .iter()
+                    .filter(|d| d.server_id == s.id)
+                    .map(|d| {
+                        let key = d.key();
+                        div()
+                            .id(crate::ui::eid(format!("server-ds-{}", d.name)))
+                            .h(px(ROW_H + 2.))
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .text_size(px(12.))
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(hover))
+                            .child(icon("table", 13., t.icon_muted))
+                            .child(d.label())
+                            .child(div().text_color(t.text_muted).child(format!(
+                                "key {} · {}{}",
+                                d.key,
+                                d.id_strategy,
+                                if d.persist { " · persisted" } else { "" }
+                            )))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.click_row(&crate::tree::dataset_row_id(&key), 2, cx)
+                            }))
+                    }),
+            )
+            .child(div().flex().child(crate::dev_id!(
+                    div()
+                        .id(crate::ui::eid(format!("server-new-crud-{sid}")))
+                        .h(px(24.))
+                        .px(px(10.))
+                        .flex()
+                        .items_center()
+                        .rounded(px(4.))
+                        .border_1()
+                        .border_color(border)
+                        .text_size(px(12.))
+                        .cursor_pointer()
+                        .hover(move |s| s.bg(hover))
+                        .on_click(cx.listener(|this, _, w, cx| this.begin_new_crud(w, cx)))
+                        .child("New CRUD resource…"),
+                    format!("server-new-crud-{sid}"),
+                    Button,
+                    "New CRUD resource…",
+                    Action("new_crud_resource")
+                )))
+    }
+
+    /// Route tab of a `kind = "crud"` Route: its Dataset and the six generated operations.
+    fn render_crud_route_tab(
+        &self,
+        t: &Theme,
+        s: &Server,
+        r: &Route,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let key = r.dataset.as_ref().map(|d| format!("{}:{d}", s.id));
+        let base = r.path.trim_end_matches('/').to_string();
+        let prefix = s.prefix.clone();
+        div()
+            .id(crate::ui::eid(format!("route-tab-{}", r.id)))
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .h(px(40.))
+                    .flex_none()
+                    .px(px(12.))
+                    .flex()
+                    .items_center()
+                    .gap(px(10.))
+                    .border_b_1()
+                    .border_color(t.border_variant)
+                    .child(crate::ui::method_badge(t, "CRUD"))
+                    .child(div().text_size(px(14.)).child(r.path.clone()))
+                    .child(div().flex_1())
+                    .when_some(key, |d, key| {
+                        d.child(crate::dev_id!(
+                            toolbar_button(t, "crud-open-dataset")
+                                .child(format!(
+                                    "Open dataset {}",
+                                    r.dataset.clone().unwrap_or_default()
+                                ))
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.click_row(&crate::tree::dataset_row_id(&key), 2, cx)
+                                })),
+                            "crud-open-dataset",
+                            Button,
+                            "Open dataset",
+                            None
+                        ))
+                    }),
+            )
+            .child(
+                div()
+                    .id("crud-tab-body")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .p(px(16.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.))
+                    .text_size(px(12.))
+                    .child(section_heading(t, "Operations"))
+                    .children(crate::tree::CRUD_OPS.iter().map(|(m, suffix)| {
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(10.))
+                            .h(px(ROW_H))
+                            .child(crate::ui::method_badge(t, m))
+                            .child(format!("{}{}{}", prefix, base, suffix))
+                    }))
+                    .child(section_heading(t, "Settings"))
+                    .child(format!(
+                        "Dataset: {} · schema validation: {}",
+                        r.dataset.clone().unwrap_or_else(|| "(none)".into()),
+                        r.validate.clone().unwrap_or_else(|| "off".into())
+                    ))
+                    .child(div().text_color(t.text_muted).child(
+                        "List supports _page, _limit, _sort, _order, q and field filters (age_gte, age_lte, role_ne, name_like). \
+                         An http route with a higher priority overrides one operation.",
+                    )),
             )
     }
 

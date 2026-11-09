@@ -10,6 +10,8 @@ pub enum TabKind {
     Server,
     Folder,
     Environment,
+    /// A Dataset; the tab id is `<server id>:<name>`.
+    Dataset,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

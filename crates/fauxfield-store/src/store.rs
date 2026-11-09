@@ -205,6 +205,21 @@ impl Store {
                     }
                 }
             }
+            for (i, d) in s.datasets.iter().enumerate() {
+                for (k, f) in [("seed", &d.seed), ("seed_template", &d.seed_template)] {
+                    if let Some(f) = f
+                        && crate::datasets::confined(f)
+                        && !st.root.join(f).exists()
+                    {
+                        diags.push(Diagnostic::warning(
+                            file,
+                            format!("datasets[{i}].{k}"),
+                            "W071",
+                            format!("{k} `{f}` does not exist (dataset {})", d.name),
+                        ));
+                    }
+                }
+            }
         }
         Snapshot {
             root: st.root.clone(),
@@ -1491,7 +1506,7 @@ fn has_id(item: Option<&Item>, id: &str) -> bool {
     })
 }
 
-fn array_mut<'a>(d: &'a mut DocumentMut, key: &str) -> &'a mut ArrayOfTables {
+pub(crate) fn array_mut<'a>(d: &'a mut DocumentMut, key: &str) -> &'a mut ArrayOfTables {
     if d.get(key).and_then(Item::as_array_of_tables).is_none() {
         d[key] = Item::ArrayOfTables(ArrayOfTables::new());
     }

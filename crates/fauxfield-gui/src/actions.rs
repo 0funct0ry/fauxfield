@@ -42,6 +42,7 @@ actions!(
         EditSampleRequest,
         Duplicate,
         ResetState,
+        NewCrudResource,
         NewFolder,
         NewResponse,
         Rename,
@@ -206,6 +207,11 @@ pub static ACTIONS: &[ActionInfo] = &[
     ),
     row!("duplicate", "Edit: Duplicate Response or Route", Duplicate),
     row!("reset_state", "Dataset: Reset State", ResetState),
+    row!(
+        "new_crud_resource",
+        "Dataset: New CRUD Resource…",
+        NewCrudResource
+    ),
     row!("new_folder", "Folder: New…", NewFolder),
     row!("new_response", "Response: New", NewResponse),
     row!("rename", "Edit: Rename…", Rename),

@@ -216,7 +216,6 @@ pub const NOT_IN_MENU: &[(&str, &str)] = &[
         "toggle_strict_slash",
         "context-menu only; not in the spec'd Server menu",
     ),
-    ("reset_state", "placeholder until M8 (dataset state)"),
 ];
 
 fn act(id: &'static str, label: &str) -> MenuEntry {
@@ -446,6 +445,9 @@ pub fn build_menus(ctx: &MenuContext) -> Vec<MenuDef> {
             MenuEntry::Separator,
             act("switch_environment", "Switch Environment…"),
             MenuEntry::Separator,
+            act("new_crud_resource", "New CRUD Resource…"),
+            act("reset_state", "Reset State"),
+            MenuEntry::Separator,
             sub(
                 "traffic",
                 "Traffic",
@@ -563,6 +565,8 @@ pub fn enabled(id: &str, ctx: &MenuContext) -> bool {
         | "rename_workspace"
         | "reveal_workspace"
         | "switch_environment"
+        | "new_crud_resource"
+        | "reset_state"
         | "show_sidebar_servers"
         | "show_sidebar_environments"
         | "show_sidebar_datasets" => ctx.workspace_open,
@@ -656,6 +660,8 @@ pub fn why_disabled(id: &str, ctx: &MenuContext) -> &'static str {
             | "rename_workspace"
             | "reveal_workspace"
             | "switch_environment"
+            | "new_crud_resource"
+            | "reset_state"
             | "show_sidebar_servers"
             | "show_sidebar_environments"
             | "show_sidebar_datasets"
@@ -1142,12 +1148,5 @@ mod tests {
         );
         assert_eq!(links::report_issue(), format!("{repo}/issues/new"));
         assert_eq!(links::license(), format!("{repo}/blob/main/LICENSE"));
-    }
-
-    #[test]
-    fn no_placeholder_ids_in_menu() {
-        for id in all(Platform::Macos) {
-            assert_ne!(id, "reset_state");
-        }
     }
 }

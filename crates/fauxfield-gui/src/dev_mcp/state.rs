@@ -54,6 +54,31 @@ pub struct UiState {
     pub editors: Vec<EditorState>,
     /// The open Route's responses, rules and mode (M5); `None` without a Route tab.
     pub route: Option<RouteState>,
+    /// Every Dataset with its live row count (M8).
+    pub datasets: Vec<DatasetState>,
+    /// The open Dataset tab (M8); `None` without one.
+    pub dataset: Option<DatasetViewState>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct DatasetState {
+    pub key: String,
+    pub name: String,
+    pub server: String,
+    pub rows: usize,
+    pub key_field: String,
+    pub id_strategy: String,
+    pub persist: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct DatasetViewState {
+    pub key: String,
+    /// `table` or `json`.
+    pub view: &'static str,
+    pub rows: usize,
+    pub columns: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -463,7 +488,7 @@ fn tab_dirty(shell: &Shell, kind: TabKind, id: &str) -> bool {
         return false;
     };
     let file = match kind {
-        TabKind::Environment => return false,
+        TabKind::Environment | TabKind::Dataset => return false,
         TabKind::Server => shell.ws.find_server(id).map(|s| s.file.clone()),
         TabKind::Route => shell.ws.find_route(id).map(|(s, _)| s.file.clone()),
         TabKind::Folder => shell.ws.find_folder(id).map(|(s, _)| s.file.clone()),
@@ -677,6 +702,39 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
         menus: menus_state(shell),
         editors: editors_state(shell, cx),
         route: route_state(shell),
+        datasets: shell
+            .ws
+            .datasets
+            .iter()
+            .map(|d| DatasetState {
+                key: d.key(),
+                name: d.name.clone(),
+                server: d.server.clone(),
+                rows: d.rows,
+                key_field: d.key.clone(),
+                id_strategy: d.id_strategy.clone(),
+                persist: d.persist,
+                error: d.error.clone(),
+            })
+            .collect(),
+        dataset: shell
+            .tabs
+            .active()
+            .filter(|t| t.kind == TabKind::Dataset)
+            .and_then(|t| shell.ws.find_dataset(&t.id))
+            .map(|d| {
+                let head = shell
+                    .engine()
+                    .and_then(|e| e.dataset_page(&d.server_id, &d.name, 0, 100).ok())
+                    .map(|(_, r)| r)
+                    .unwrap_or_default();
+                DatasetViewState {
+                    key: d.key(),
+                    view: if shell.ds_json_mode { "json" } else { "table" },
+                    rows: d.rows,
+                    columns: crate::dataset_ui::columns(&head, &d.key),
+                }
+            }),
     }
 }
 

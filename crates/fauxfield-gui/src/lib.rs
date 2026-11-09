@@ -7,6 +7,7 @@ pub mod bottom_dock;
 pub mod center;
 pub mod chord;
 pub mod code_editor;
+pub mod dataset_ui;
 #[cfg(feature = "dev-mcp")]
 pub mod dev_mcp;
 pub mod editor;

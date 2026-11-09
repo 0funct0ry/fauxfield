@@ -1,0 +1,4 @@
+[
+  { "id": "ch_1", "amount": 1200, "currency": "usd", "status": "paid" },
+  { "id": "ch_2", "amount": 450, "currency": "eur", "status": "refunded" }
+]

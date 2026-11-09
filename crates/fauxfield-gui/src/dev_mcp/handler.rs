@@ -40,13 +40,14 @@ pub enum TabKindArg {
     Route,
     Server,
     Environment,
+    Dataset,
 }
 
 #[derive(Deserialize, JsonSchema)]
 pub struct OpenTabInput {
-    /// Tab kind: `route`, `server` or `environment`.
+    /// Tab kind: `route`, `server`, `environment` or `dataset`.
     pub kind: TabKindArg,
-    /// Route id, server id or environment name.
+    /// Route id, server id, environment name or dataset key (`<server id>:<name>`).
     pub id: String,
 }
 

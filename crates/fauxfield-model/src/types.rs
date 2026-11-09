@@ -86,6 +86,8 @@ pub struct Server {
     #[schemars(with = "BTreeMap<String, serde_json::Value>")]
     pub variables: BTreeMap<String, toml::Value>,
     #[serde(default)]
+    pub datasets: Vec<Dataset>,
+    #[serde(default)]
     pub folders: Vec<Folder>,
     #[serde(default)]
     pub routes: Vec<Route>,
@@ -93,6 +95,44 @@ pub struct Server {
     #[schemars(skip)]
     pub extra: Extra,
 }
+
+/// A named JSON collection backing stateful `crud` routes (SPEC §6.1).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct Dataset {
+    pub name: String,
+    /// Static JSON seed file (workspace-relative).
+    #[serde(default)]
+    pub seed: Option<String>,
+    /// Tera template rendering to JSON (workspace-relative).
+    #[serde(default)]
+    pub seed_template: Option<String>,
+    /// Field holding each item's identifier (default `id`).
+    #[serde(default)]
+    pub key: Option<String>,
+    /// `uuid` (default), `increment` or `ulid`.
+    #[serde(default)]
+    pub id_strategy: Option<String>,
+    /// true: mutations are written to `.fauxfield/state/` and reloaded on start.
+    #[serde(default)]
+    pub persist: bool,
+    #[serde(flatten)]
+    #[schemars(skip)]
+    pub extra: Extra,
+}
+
+impl Dataset {
+    pub fn key_name(&self) -> &str {
+        self.key
+            .as_deref()
+            .filter(|k| !k.is_empty())
+            .unwrap_or("id")
+    }
+}
+
+/// Id strategies for new dataset items (SPEC §4.4).
+pub const ID_STRATEGIES: &[&str] = &["uuid", "increment", "ulid"];
+/// Known Route kinds.
+pub const ROUTE_KINDS: &[&str] = &["http", "crud", "static", "websocket"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Folder {
@@ -142,6 +182,12 @@ pub struct Route {
     pub variables: BTreeMap<String, toml::Value>,
     #[serde(default)]
     pub responses: Vec<Response>,
+    /// `crud` routes: the Dataset this Route serves.
+    #[serde(default)]
+    pub dataset: Option<String>,
+    /// `crud` routes: JSON Schema file (workspace-relative) checked on POST/PUT/PATCH.
+    #[serde(default)]
+    pub validate: Option<String>,
     #[serde(flatten)]
     #[schemars(skip)]
     pub extra: Extra,

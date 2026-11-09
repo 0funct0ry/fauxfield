@@ -1,0 +1,10 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "dataset": null,
+  "live": false,
+  "reset": true,
+  "server": null
+}

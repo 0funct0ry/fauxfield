@@ -1,9 +1,10 @@
 ---
 source: crates/fauxfield-gui/src/dev_mcp/tree.rs
+assertion_line: 650
 expression: a
 ---
 {
-  "frame_nodes": 71,
+  "frame_nodes": 86,
   "elements": [
     {
       "id": "title-bar",
@@ -881,9 +882,9 @@ expression: a
       "parent": "row-rt_health"
     },
     {
-      "id": "row-srv_payments",
+      "id": "row-rt_users_crud",
       "role": "row",
-      "label": "Payments",
+      "label": "/v2/users",
       "enabled": true,
       "visible": true,
       "clipped": false,
@@ -906,9 +907,9 @@ expression: a
       "parent": "tree"
     },
     {
-      "id": "chev-srv_payments",
+      "id": "chev-rt_users_crud",
       "role": "button",
-      "label": "Toggle Payments",
+      "label": "Toggle /v2/users",
       "enabled": true,
       "visible": true,
       "clipped": false,
@@ -916,7 +917,7 @@ expression: a
       "z": 0,
       "order": 36,
       "bounds": {
-        "x": 6.0,
+        "x": 18.0,
         "y": 302.0,
         "w": 20.0,
         "h": 20.0
@@ -928,12 +929,12 @@ expression: a
         "truncates": false,
         "keyboard": null
       },
-      "parent": "row-srv_payments"
+      "parent": "row-rt_users_crud"
     },
     {
-      "id": "dots-srv_payments",
+      "id": "dots-rt_users_crud",
       "role": "button",
-      "label": "Menu for Payments",
+      "label": "Menu for /v2/users",
       "enabled": true,
       "visible": true,
       "clipped": false,
@@ -953,12 +954,12 @@ expression: a
         "truncates": false,
         "keyboard": null
       },
-      "parent": "row-srv_payments"
+      "parent": "row-rt_users_crud"
     },
     {
-      "id": "row-fld_charges",
+      "id": "row-rt_users_crud#0",
       "role": "row",
-      "label": "Charges",
+      "label": "/v2/users",
       "enabled": true,
       "visible": true,
       "clipped": false,
@@ -981,6 +982,381 @@ expression: a
       "parent": "tree"
     },
     {
+      "id": "dots-rt_users_crud#0",
+      "role": "button",
+      "label": "Menu for /v2/users",
+      "enabled": true,
+      "visible": true,
+      "clipped": false,
+      "focused": false,
+      "z": 0,
+      "order": 39,
+      "bounds": {
+        "x": 232.0,
+        "y": 326.0,
+        "w": 20.0,
+        "h": 20.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
+      "parent": "row-rt_users_crud#0"
+    },
+    {
+      "id": "row-rt_users_crud#1",
+      "role": "row",
+      "label": "/v2/users",
+      "enabled": true,
+      "visible": true,
+      "clipped": false,
+      "focused": false,
+      "z": 0,
+      "order": 40,
+      "bounds": {
+        "x": 0.0,
+        "y": 348.0,
+        "w": 260.0,
+        "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
+      "parent": "tree"
+    },
+    {
+      "id": "dots-rt_users_crud#1",
+      "role": "button",
+      "label": "Menu for /v2/users",
+      "enabled": true,
+      "visible": true,
+      "clipped": false,
+      "focused": false,
+      "z": 0,
+      "order": 41,
+      "bounds": {
+        "x": 232.0,
+        "y": 350.0,
+        "w": 20.0,
+        "h": 20.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
+      "parent": "row-rt_users_crud#1"
+    },
+    {
+      "id": "row-rt_users_crud#2",
+      "role": "row",
+      "label": "/v2/users/:id",
+      "enabled": true,
+      "visible": true,
+      "clipped": false,
+      "focused": false,
+      "z": 0,
+      "order": 42,
+      "bounds": {
+        "x": 0.0,
+        "y": 372.0,
+        "w": 260.0,
+        "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
+      "parent": "tree"
+    },
+    {
+      "id": "dots-rt_users_crud#2",
+      "role": "button",
+      "label": "Menu for /v2/users/:id",
+      "enabled": true,
+      "visible": true,
+      "clipped": false,
+      "focused": false,
+      "z": 0,
+      "order": 43,
+      "bounds": {
+        "x": 232.0,
+        "y": 374.0,
+        "w": 20.0,
+        "h": 20.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
+      "parent": "row-rt_users_crud#2"
+    },
+    {
+      "id": "row-rt_users_crud#3",
+      "role": "row",
+      "label": "/v2/users/:id",
+      "enabled": true,
+      "visible": true,
+      "clipped": false,
+      "focused": false,
+      "z": 0,
+      "order": 44,
+      "bounds": {
+        "x": 0.0,
+        "y": 396.0,
+        "w": 260.0,
+        "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
+      "parent": "tree"
+    },
+    {
+      "id": "dots-rt_users_crud#3",
+      "role": "button",
+      "label": "Menu for /v2/users/:id",
+      "enabled": true,
+      "visible": true,
+      "clipped": false,
+      "focused": false,
+      "z": 0,
+      "order": 45,
+      "bounds": {
+        "x": 232.0,
+        "y": 398.0,
+        "w": 20.0,
+        "h": 20.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
+      "parent": "row-rt_users_crud#3"
+    },
+    {
+      "id": "row-rt_users_crud#4",
+      "role": "row",
+      "label": "/v2/users/:id",
+      "enabled": true,
+      "visible": true,
+      "clipped": false,
+      "focused": false,
+      "z": 0,
+      "order": 46,
+      "bounds": {
+        "x": 0.0,
+        "y": 420.0,
+        "w": 260.0,
+        "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
+      "parent": "tree"
+    },
+    {
+      "id": "dots-rt_users_crud#4",
+      "role": "button",
+      "label": "Menu for /v2/users/:id",
+      "enabled": true,
+      "visible": true,
+      "clipped": false,
+      "focused": false,
+      "z": 0,
+      "order": 47,
+      "bounds": {
+        "x": 232.0,
+        "y": 422.0,
+        "w": 20.0,
+        "h": 20.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
+      "parent": "row-rt_users_crud#4"
+    },
+    {
+      "id": "row-rt_users_crud#5",
+      "role": "row",
+      "label": "/v2/users/:id",
+      "enabled": true,
+      "visible": true,
+      "clipped": false,
+      "focused": false,
+      "z": 0,
+      "order": 48,
+      "bounds": {
+        "x": 0.0,
+        "y": 444.0,
+        "w": 260.0,
+        "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
+      "parent": "tree"
+    },
+    {
+      "id": "dots-rt_users_crud#5",
+      "role": "button",
+      "label": "Menu for /v2/users/:id",
+      "enabled": true,
+      "visible": true,
+      "clipped": false,
+      "focused": false,
+      "z": 0,
+      "order": 49,
+      "bounds": {
+        "x": 232.0,
+        "y": 446.0,
+        "w": 20.0,
+        "h": 20.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
+      "parent": "row-rt_users_crud#5"
+    },
+    {
+      "id": "row-srv_payments",
+      "role": "row",
+      "label": "Payments",
+      "enabled": true,
+      "visible": true,
+      "clipped": false,
+      "focused": false,
+      "z": 0,
+      "order": 50,
+      "bounds": {
+        "x": 0.0,
+        "y": 468.0,
+        "w": 260.0,
+        "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
+      "parent": "tree"
+    },
+    {
+      "id": "chev-srv_payments",
+      "role": "button",
+      "label": "Toggle Payments",
+      "enabled": true,
+      "visible": true,
+      "clipped": false,
+      "focused": false,
+      "z": 0,
+      "order": 51,
+      "bounds": {
+        "x": 6.0,
+        "y": 470.0,
+        "w": 20.0,
+        "h": 20.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
+      "parent": "row-srv_payments"
+    },
+    {
+      "id": "dots-srv_payments",
+      "role": "button",
+      "label": "Menu for Payments",
+      "enabled": true,
+      "visible": true,
+      "clipped": false,
+      "focused": false,
+      "z": 0,
+      "order": 52,
+      "bounds": {
+        "x": 232.0,
+        "y": 470.0,
+        "w": 20.0,
+        "h": 20.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
+      "parent": "row-srv_payments"
+    },
+    {
+      "id": "row-fld_charges",
+      "role": "row",
+      "label": "Charges",
+      "enabled": true,
+      "visible": true,
+      "clipped": false,
+      "focused": false,
+      "z": 0,
+      "order": 53,
+      "bounds": {
+        "x": 0.0,
+        "y": 492.0,
+        "w": 260.0,
+        "h": 24.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": false,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": null
+      },
+      "parent": "tree"
+    },
+    {
       "id": "chev-fld_charges",
       "role": "button",
       "label": "Toggle Charges",
@@ -989,10 +1365,10 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 39,
+      "order": 54,
       "bounds": {
         "x": 18.0,
-        "y": 326.0,
+        "y": 494.0,
         "w": 20.0,
         "h": 20.0
       },
@@ -1014,10 +1390,10 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 40,
+      "order": 55,
       "bounds": {
         "x": 232.0,
-        "y": 326.0,
+        "y": 494.0,
         "w": 20.0,
         "h": 20.0
       },
@@ -1039,10 +1415,10 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 41,
+      "order": 56,
       "bounds": {
         "x": 0.0,
-        "y": 348.0,
+        "y": 516.0,
         "w": 260.0,
         "h": 24.0
       },
@@ -1064,10 +1440,10 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 42,
+      "order": 57,
       "bounds": {
         "x": 232.0,
-        "y": 350.0,
+        "y": 518.0,
         "w": 20.0,
         "h": 20.0
       },
@@ -1089,10 +1465,10 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 43,
+      "order": 58,
       "bounds": {
         "x": 0.0,
-        "y": 372.0,
+        "y": 540.0,
         "w": 260.0,
         "h": 24.0
       },
@@ -1114,10 +1490,10 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 44,
+      "order": 59,
       "bounds": {
         "x": 232.0,
-        "y": 374.0,
+        "y": 542.0,
         "w": 20.0,
         "h": 20.0
       },
@@ -1139,10 +1515,10 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 45,
+      "order": 60,
       "bounds": {
         "x": 0.0,
-        "y": 396.0,
+        "y": 564.0,
         "w": 260.0,
         "h": 24.0
       },
@@ -1164,10 +1540,10 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 46,
+      "order": 61,
       "bounds": {
         "x": 232.0,
-        "y": 398.0,
+        "y": 566.0,
         "w": 20.0,
         "h": 20.0
       },
@@ -1189,7 +1565,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 47,
+      "order": 62,
       "bounds": {
         "x": 261.0,
         "y": 26.0,
@@ -1214,7 +1590,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 48,
+      "order": 63,
       "bounds": {
         "x": 0.0,
         "y": 798.0,
@@ -1239,7 +1615,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 49,
+      "order": 64,
       "bounds": {
         "x": 6.0,
         "y": 799.5,
@@ -1264,7 +1640,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 50,
+      "order": 65,
       "bounds": {
         "x": 115.0,
         "y": 799.5,
@@ -1289,7 +1665,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 51,
+      "order": 66,
       "bounds": {
         "x": 207.0,
         "y": 799.5,
@@ -1314,7 +1690,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 52,
+      "order": 67,
       "bounds": {
         "x": 1894.0,
         "y": 801.5,
@@ -1339,7 +1715,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 53,
+      "order": 68,
       "bounds": {
         "x": 0.0,
         "y": 826.0,
@@ -1365,7 +1741,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 54,
+      "order": 69,
       "bounds": {
         "x": 0.0,
         "y": 850.0,
@@ -1390,7 +1766,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 55,
+      "order": 70,
       "bounds": {
         "x": 0.0,
         "y": 872.0,
@@ -1415,7 +1791,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 56,
+      "order": 71,
       "bounds": {
         "x": 0.0,
         "y": 894.0,
@@ -1440,7 +1816,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 57,
+      "order": 72,
       "bounds": {
         "x": 0.0,
         "y": 916.0,
@@ -1465,7 +1841,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 58,
+      "order": 73,
       "bounds": {
         "x": 0.0,
         "y": 938.0,
@@ -1490,7 +1866,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 59,
+      "order": 74,
       "bounds": {
         "x": 0.0,
         "y": 960.0,
@@ -1515,7 +1891,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 60,
+      "order": 75,
       "bounds": {
         "x": 0.0,
         "y": 982.0,
@@ -1540,7 +1916,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 61,
+      "order": 76,
       "bounds": {
         "x": 0.0,
         "y": 1004.0,
@@ -1565,7 +1941,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 62,
+      "order": 77,
       "bounds": {
         "x": 0.0,
         "y": 1026.0,
@@ -1590,7 +1966,7 @@ expression: a
       "clipped": true,
       "focused": false,
       "z": 0,
-      "order": 63,
+      "order": 78,
       "bounds": {
         "x": 0.0,
         "y": 1048.0,
@@ -1615,7 +1991,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 64,
+      "order": 79,
       "bounds": {
         "x": 0.0,
         "y": 1058.0,
@@ -1640,7 +2016,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 65,
+      "order": 80,
       "bounds": {
         "x": 6.0,
         "y": 1059.5,
@@ -1665,7 +2041,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 66,
+      "order": 81,
       "bounds": {
         "x": 36.0,
         "y": 1059.5,
@@ -1690,7 +2066,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 67,
+      "order": 82,
       "bounds": {
         "x": 66.0,
         "y": 1059.5,
@@ -1715,7 +2091,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 68,
+      "order": 83,
       "bounds": {
         "x": 226.0,
         "y": 1069.5,
@@ -1740,7 +2116,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 69,
+      "order": 84,
       "bounds": {
         "x": 1810.0,
         "y": 1059.5,
@@ -1765,7 +2141,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 70,
+      "order": 85,
       "bounds": {
         "x": 1878.0,
         "y": 1059.5,

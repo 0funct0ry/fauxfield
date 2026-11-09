@@ -354,7 +354,7 @@ fn sequential_cycles_and_reset_state_restarts_it() {
             .status
     };
     assert_eq!([get(), get(), get(), get()], [200, 401, 202, 200]);
-    e.reset_state();
+    e.reset_state(None).unwrap();
     assert_eq!(get(), 200);
 }
 
@@ -436,7 +436,7 @@ fn templates_render_seeded_data_route_headers_and_errors() {
     let v: serde_json::Value = serde_json::from_str(&a.body).unwrap();
     assert_eq!(v.as_array().unwrap().len(), 20);
     // Same seed + same request counter after a state reset => identical output.
-    e.reset_state();
+    e.reset_state(None).unwrap();
     assert_eq!(get("/users/9").body, a.body);
     assert_eq!(get("/verbatim").body, "{{ not rendered }}");
     let bad = get("/bad");
@@ -506,6 +506,347 @@ fn switching_environment_changes_response_and_prefix_without_restart() {
             .as_str(),
         "runtime"
     );
-    e.reset_state();
+    e.reset_state(None).unwrap();
     e.stop("srv_a").unwrap();
+}
+
+// ---------------------------------------------------------------- M8 datasets and CRUD
+
+const PEOPLE: &str = r#"[
+ {"id":1,"name":"Ann","age":30,"role":"admin","city":"Oslo"},
+ {"id":2,"name":"Bob","age":25,"role":"user","city":"Rome"},
+ {"id":3,"name":"Anders","age":41,"role":"user","city":"Oslo"},
+ {"id":4,"name":"Cy","age":19,"role":"user","city":"Paris"},
+ {"id":5,"name":"Dee","age":30,"role":"admin","city":"Rome"}
+]"#;
+
+fn crud_server(
+    port: u16,
+    ds_extra: &str,
+    route_extra: &str,
+    more: &str,
+) -> fauxfield_model::Server {
+    parse_server(&format!(
+        r#"
+id = "srv_d"
+name = "Data"
+port = {port}
+[[datasets]]
+name = "people"
+seed = "data/people.json"
+{ds_extra}
+[[routes]]
+id = "rte_crud"
+kind = "crud"
+path = "/people"
+dataset = "people"
+{route_extra}
+{more}
+"#
+    ))
+    .unwrap()
+}
+
+fn crud_engine(
+    rt: &tokio::runtime::Runtime,
+    dir: &tempfile::TempDir,
+    ds_extra: &str,
+    route_extra: &str,
+    more: &str,
+) -> Engine {
+    std::fs::create_dir_all(dir.path().join("data")).unwrap();
+    std::fs::write(dir.path().join("data/people.json"), PEOPLE).unwrap();
+    let e = engine(rt, dir.path());
+    e.apply(vec![crud_server(free_port(), ds_extra, route_extra, more)]);
+    e.start("srv_d").unwrap();
+    e
+}
+
+fn call(
+    rt: &tokio::runtime::Runtime,
+    e: &Engine,
+    method: &str,
+    path: &str,
+    body: &str,
+) -> (u16, Vec<(String, String)>, serde_json::Value) {
+    let mut r = req(method, path);
+    r.body = body.into();
+    if !body.is_empty() {
+        r.headers
+            .push(("content-type".into(), "application/json".into()));
+    }
+    let res = rt.block_on(e.send_test("srv_d", &r)).unwrap();
+    let v = serde_json::from_str(&res.body).unwrap_or(serde_json::Value::Null);
+    (res.status, res.headers, v)
+}
+
+fn ids(v: &serde_json::Value) -> Vec<i64> {
+    v.as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["id"].as_i64().unwrap())
+        .collect()
+}
+
+fn header<'a>(h: &'a [(String, String)], k: &str) -> Option<&'a str> {
+    h.iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case(k))
+        .map(|(_, v)| v.as_str())
+}
+
+#[test]
+fn crud_list_filters_sort_search_and_paging() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let e = crud_engine(&rt, &dir, "", "", "");
+    let list = |q: &str| call(&rt, &e, "GET", &format!("/people{q}"), "");
+    let (s, h, v) = list("");
+    assert_eq!(s, 200);
+    assert_eq!(ids(&v), [1, 2, 3, 4, 5]);
+    assert_eq!(header(&h, "x-total-count"), Some("5"));
+    assert!(header(&h, "link").is_none());
+    assert_eq!(ids(&list("?role=admin").2), [1, 5]);
+    assert_eq!(ids(&list("?age_gte=30").2), [1, 3, 5]);
+    assert_eq!(ids(&list("?age_lte=25").2), [2, 4]);
+    assert_eq!(ids(&list("?role_ne=user").2), [1, 5]);
+    assert_eq!(ids(&list("?name_like=an").2), [1, 3]);
+    assert_eq!(ids(&list("?city=Oslo&role=user").2), [3]);
+    assert_eq!(ids(&list("?q=rome").2), [2, 5]);
+    assert_eq!(ids(&list("?_sort=age&_order=desc").2), [3, 1, 5, 2, 4]);
+    assert_eq!(
+        ids(&list("?_sort=age,name&_order=asc,desc").2),
+        [4, 2, 5, 1, 3]
+    );
+    let (_, h, v) = list("?_page=2&_limit=2");
+    assert_eq!(ids(&v), [3, 4]);
+    assert_eq!(header(&h, "x-total-count"), Some("5"));
+    let link = header(&h, "link").unwrap();
+    for rel in ["first", "prev", "next", "last"] {
+        assert!(link.contains(&format!("rel=\"{rel}\"")), "{link}");
+    }
+    assert!(link.contains("_page=3"));
+    // filters narrow the total
+    assert_eq!(
+        header(&list("?role=admin&_limit=1").1, "x-total-count"),
+        Some("2")
+    );
+}
+
+#[test]
+fn crud_page_size_variable_is_the_default_limit() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let e = crud_engine(&rt, &dir, "", "", "");
+    let mut s = crud_server(free_port(), "", "", "");
+    s.variables
+        .insert("page_size".into(), toml::Value::Integer(2));
+    e.apply(vec![s]);
+    e.start("srv_d").unwrap();
+    let (_, _, v) = call(&rt, &e, "GET", "/people", "");
+    assert_eq!(ids(&v), [1, 2]);
+}
+
+#[test]
+fn crud_item_create_replace_patch_delete() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let e = crud_engine(&rt, &dir, "id_strategy = \"increment\"", "", "");
+    let (s, _, v) = call(&rt, &e, "GET", "/people/2", "");
+    assert_eq!((s, v["name"].as_str()), (200, Some("Bob")));
+    assert_eq!(call(&rt, &e, "GET", "/people/99", "").0, 404);
+    let (s, h, v) = call(&rt, &e, "POST", "/people", r#"{"name":"Eve"}"#);
+    assert_eq!((s, v["id"].as_i64()), (201, Some(6)));
+    assert_eq!(header(&h, "location"), Some("/people/6"));
+    assert_eq!(
+        call(&rt, &e, "POST", "/people", r#"{"id":6,"name":"X"}"#).0,
+        409
+    );
+    assert_eq!(call(&rt, &e, "POST", "/people", "[1]").0, 400);
+    let (s, _, v) = call(&rt, &e, "PUT", "/people/6", r#"{"name":"Eva"}"#);
+    assert_eq!(
+        (s, v["id"].as_i64(), v["name"].as_str()),
+        (200, Some(6), Some("Eva"))
+    );
+    // merge patch: replace, add, remove via null, nested merge
+    let (s, _, v) = call(
+        &rt,
+        &e,
+        "PATCH",
+        "/people/1",
+        r#"{"age":31,"city":null,"meta":{"a":1}}"#,
+    );
+    assert_eq!(s, 200);
+    assert_eq!(v["age"], 31);
+    assert!(v.get("city").is_none());
+    assert_eq!(v["name"], "Ann");
+    let (_, _, v) = call(&rt, &e, "PATCH", "/people/1", r#"{"meta":{"b":2}}"#);
+    assert_eq!(v["meta"], serde_json::json!({"a":1,"b":2}));
+    assert_eq!(call(&rt, &e, "PATCH", "/people/77", "{}").0, 404);
+    assert_eq!(call(&rt, &e, "DELETE", "/people/6", "").0, 204);
+    assert_eq!(call(&rt, &e, "DELETE", "/people/6", "").0, 404);
+    assert_eq!(
+        call(&rt, &e, "GET", "/people", "")
+            .2
+            .as_array()
+            .unwrap()
+            .len(),
+        5
+    );
+}
+
+#[test]
+fn crud_uuid_and_ulid_ids_and_a_custom_key() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let e = crud_engine(&rt, &dir, "id_strategy = \"ulid\"\nkey = \"pid\"", "", "");
+    let (_, _, v) = call(&rt, &e, "POST", "/people", r#"{"name":"Z"}"#);
+    assert_eq!(v["pid"].as_str().unwrap().len(), 26);
+    let id = v["pid"].as_str().unwrap().to_string();
+    assert_eq!(call(&rt, &e, "GET", &format!("/people/{id}"), "").0, 200);
+    let dir2 = tempfile::tempdir().unwrap();
+    let e2 = crud_engine(&rt, &dir2, "", "", "");
+    let (_, _, v) = call(&rt, &e2, "POST", "/people", r#"{"name":"Z"}"#);
+    assert_eq!(v["id"].as_str().unwrap().len(), 36);
+}
+
+#[test]
+fn crud_validation_returns_422_problem_json() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("schemas")).unwrap();
+    std::fs::write(
+        dir.path().join("schemas/p.json"),
+        r#"{"type":"object","required":["name"],"properties":{"age":{"type":"integer"}}}"#,
+    )
+    .unwrap();
+    let e = crud_engine(&rt, &dir, "", "validate = \"schemas/p.json\"", "");
+    let (s, h, v) = call(&rt, &e, "POST", "/people", r#"{"age":"x"}"#);
+    assert_eq!(s, 422);
+    assert_eq!(header(&h, "content-type"), Some("application/problem+json"));
+    assert!(!v["errors"].as_array().unwrap().is_empty());
+    assert_eq!(call(&rt, &e, "PUT", "/people/1", r#"{"age":1}"#).0, 422);
+    assert_eq!(
+        call(&rt, &e, "PATCH", "/people/1", r#"{"age":"no"}"#).0,
+        422
+    );
+    assert_eq!(call(&rt, &e, "POST", "/people", r#"{"name":"ok"}"#).0, 201);
+}
+
+#[test]
+fn a_higher_priority_http_route_overrides_one_operation() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let more = r#"
+[[routes]]
+id = "rte_over"
+method = "DELETE"
+path = "/people/:id"
+priority = 5
+[[routes.responses]]
+id = "rsp_o"
+status = 403
+body = "no"
+"#;
+    let e = crud_engine(&rt, &dir, "", "", more);
+    assert_eq!(call(&rt, &e, "DELETE", "/people/1", "").0, 403);
+    assert_eq!(call(&rt, &e, "GET", "/people/1", "").0, 200);
+}
+
+#[test]
+fn reset_restores_the_seed_and_persistence_survives_restart() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let e = crud_engine(&rt, &dir, "persist = true", "", "");
+    call(&rt, &e, "DELETE", "/people/1", "");
+    call(&rt, &e, "POST", "/people", r#"{"id":9,"name":"N"}"#);
+    let state = dir.path().join(".fauxfield/state/srv_d/people.json");
+    assert!(state.exists());
+    assert_eq!(e.datasets(None).unwrap()[0].rows, 5);
+    // a fresh engine on the same workspace reloads the persisted rows
+    let e2 = engine(&rt, dir.path());
+    e2.apply(vec![crud_server(free_port(), "persist = true", "", "")]);
+    assert_eq!(
+        ids(&e2.dataset_rows("srv_d", "people").unwrap()),
+        [2, 3, 4, 5, 9]
+    );
+    // hot reload with an unchanged definition keeps live rows
+    e2.apply(vec![crud_server(free_port(), "persist = true", "", "")]);
+    assert_eq!(e2.datasets(None).unwrap()[0].rows, 5);
+    e.reset_state(Some("srv_d")).unwrap();
+    assert!(!state.exists());
+    assert_eq!(
+        ids(&e.dataset_rows("srv_d", "people").unwrap()),
+        [1, 2, 3, 4, 5]
+    );
+    assert!(matches!(
+        e.reset_state(Some("nope")),
+        Err(EngineError::UnknownServer(_))
+    ));
+    assert!(matches!(
+        e.dataset_reset("srv_d", "zzz"),
+        Err(EngineError::UnknownDataset(_))
+    ));
+}
+
+#[test]
+fn seed_template_renders_and_data_is_visible_to_templates() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("files")).unwrap();
+    std::fs::write(
+        dir.path().join("files/p.json.tera"),
+        r#"[{% for i in range(start=1, end=4) %}{"id":{{ i }},"name":"n{{ i }}"}{% if not loop.last %},{% endif %}{% endfor %}]"#,
+    )
+    .unwrap();
+    let e = engine(&rt, dir.path());
+    let s = parse_server(&format!(
+        r#"
+id = "srv_d"
+name = "Data"
+port = {}
+[[datasets]]
+name = "people"
+seed_template = "files/p.json.tera"
+[[routes]]
+id = "rte_c"
+kind = "crud"
+path = "/people"
+dataset = "people"
+[[routes]]
+id = "rte_n"
+path = "/count"
+[[routes.responses]]
+id = "rsp_n"
+body = "{{{{ data.people | length }}}}"
+"#,
+        free_port()
+    ))
+    .unwrap();
+    e.apply(vec![s]);
+    e.start("srv_d").unwrap();
+    let r = rt
+        .block_on(e.send_test("srv_d", &req("GET", "/count")))
+        .unwrap();
+    assert_eq!(r.body, "3");
+    call(&rt, &e, "DELETE", "/people/1", "");
+    let r = rt
+        .block_on(e.send_test("srv_d", &req("GET", "/count")))
+        .unwrap();
+    assert_eq!(r.body, "2");
+}
+
+#[test]
+fn dataset_events_fire_on_mutation() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let e = crud_engine(&rt, &dir, "", "", "");
+    let mut rx = e.subscribe();
+    call(&rt, &e, "DELETE", "/people/2", "");
+    let mut seen = None;
+    while let Ok(ev) = rx.try_recv() {
+        if let EngineEvent::Dataset { name, rows, .. } = ev {
+            seen = Some((name, rows));
+        }
+    }
+    assert_eq!(seen, Some(("people".into(), 4)));
 }

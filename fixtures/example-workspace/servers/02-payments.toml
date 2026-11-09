@@ -7,6 +7,7 @@ port = 4020
 
 [[datasets]]
 name = "charges"
+seed = "data/charges.json"
 
 [[folders]]
 id = "fld_charges"

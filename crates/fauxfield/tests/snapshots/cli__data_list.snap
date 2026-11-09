@@ -1,0 +1,20 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "datasets": [
+    {
+      "error": null,
+      "id_strategy": "increment",
+      "key": "id",
+      "name": "people",
+      "persist": false,
+      "rows": 2,
+      "seed": "data/people.json",
+      "seed_template": null,
+      "server": "Example API"
+    }
+  ],
+  "live": false
+}

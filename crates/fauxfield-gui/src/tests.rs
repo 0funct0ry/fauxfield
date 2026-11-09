@@ -1840,3 +1840,105 @@ fn templating_preview_route_headers_seed_and_dice(cx: &mut TestAppContext) {
     assert_eq!(read(&view, cx, |s| s.ws.servers[0].fake_seed), Some(42));
     assert!(!read(&view, cx, |s| s.ws.servers[0].random_output()));
 }
+
+#[gpui::test]
+fn dataset_tab_opens_edits_live_rows_and_resets(cx: &mut TestAppContext) {
+    use crate::tree::SidebarTab;
+    let (view, cx) = setup(cx, None);
+    view.update(cx, |s, cx| s.set_sidebar_tab(SidebarTab::Datasets, cx));
+    let labels = read(&view, cx, |s| {
+        crate::tree::flatten(&s.ws, &s.collapsed, &s.active_env, SidebarTab::Datasets)
+            .into_iter()
+            .map(|r| r.label)
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(labels, ["users · 3 rows", "charges · 2 rows"]);
+
+    // A double-click on the row opens a pinned Dataset tab.
+    view.update(cx, |s, cx| s.click_row("ds:srv_users:users", 2, cx));
+    assert_eq!(
+        read(&view, cx, |s| s.tabs.active().map(|t| (
+            t.kind,
+            t.id.clone(),
+            t.title.clone()
+        ))),
+        Some((TabKind::Dataset, "srv_users:users".into(), "users".into()))
+    );
+    assert_eq!(
+        read(&view, cx, |s| s.selected.clone()).as_deref(),
+        Some("ds:srv_users:users")
+    );
+
+    // Live edits go through the engine and show in the row count.
+    view.update(cx, |s, cx| {
+        s.edit_dataset("srv_users:users", cx, |rows| {
+            rows.as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({"id": 4}));
+            Ok(())
+        })
+    });
+    assert_eq!(
+        read(&view, cx, |s| s
+            .ws
+            .find_dataset("srv_users:users")
+            .unwrap()
+            .rows),
+        4
+    );
+    view.update(cx, |s, cx| s.delete_dataset_row("srv_users:users", 0, cx));
+    assert_eq!(
+        read(&view, cx, |s| s
+            .ws
+            .find_dataset("srv_users:users")
+            .unwrap()
+            .rows),
+        3
+    );
+
+    // Reset (the action, with the Dataset tab active) restores the seed.
+    view.update_in(cx, |s, w, cx| s.run_action_id("reset_state", w, cx));
+    cx.run_until_parked();
+    let e = read(&view, cx, |s| s.engine().unwrap());
+    let rows = e.dataset_rows("srv_users", "users").unwrap();
+    assert_eq!(rows.as_array().unwrap().len(), 3);
+    assert_eq!(rows[0]["id"], 1);
+}
+
+#[gpui::test]
+fn crud_wizard_prompts_chain_and_create_the_resource(cx: &mut TestAppContext) {
+    use crate::shell::PromptAction as P;
+    let (view, cx) = setup(cx, None);
+    assert!(
+        P::NewCrudName { server: "s".into() }
+            .title()
+            .contains("CRUD")
+    );
+    assert!(crate::dataset_ui::parse_fields("name:name, price:float, ok:bool").is_ok());
+    assert!(crate::dataset_ui::parse_fields("x:nope").is_err());
+    // Creating through the shell writes the files and opens the Dataset tab.
+    view.update(cx, |s, cx| {
+        s.create_crud_resource(
+            "srv_users",
+            "products",
+            "/products",
+            "name:name, price:float",
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s
+        .ws
+        .find_dataset("srv_users:products")
+        .is_some()));
+    assert!(read(&view, cx, |s| {
+        s.ws.find_server("srv_users")
+            .unwrap()
+            .all_routes()
+            .any(|r| r.is_crud() && r.path == "/products")
+    }));
+    assert_eq!(
+        read(&view, cx, |s| s.tabs.active().map(|t| t.kind)),
+        Some(TabKind::Dataset)
+    );
+}

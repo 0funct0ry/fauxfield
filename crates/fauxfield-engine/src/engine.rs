@@ -77,6 +77,12 @@ pub enum EngineEvent {
         status: ServerStatus,
     },
     Traffic(Box<Recording>),
+    /// A Dataset's rows changed (CRUD request, reset, import).
+    Dataset {
+        server_id: String,
+        name: String,
+        rows: usize,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -93,6 +99,8 @@ pub enum EngineError {
     Disabled(String),
     #[error("{0}")]
     Request(String),
+    #[error("no dataset `{0}`")]
+    UnknownDataset(String),
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -136,6 +144,7 @@ struct ServerRt {
     counters: crate::rules::Counters,
     compiled: crate::rules::Compiled,
     seq: crate::template::Sequences,
+    data: Mutex<crate::data::DataStore>,
 }
 
 struct Inner {
@@ -227,6 +236,10 @@ impl Engine {
                     *rt.def.lock().unwrap() = s.clone();
                     *rt.table.write().unwrap() = table;
                     rt.compiled.clear();
+                    rt.data
+                        .lock()
+                        .unwrap()
+                        .sync(&self.inner.cfg.root, &s.id, &s);
                     if rt.run.lock().unwrap().is_some() {
                         if disabled {
                             to_stop.push((s.id.clone(), rt.clone()));
@@ -236,9 +249,12 @@ impl Engine {
                     }
                 } else {
                     let id = s.id.clone();
+                    let mut data = crate::data::DataStore::default();
+                    data.sync(&self.inner.cfg.root, &id, &s);
                     list.push((
                         id,
                         Arc::new(ServerRt {
+                            data: Mutex::new(data),
                             def: Mutex::new(s),
                             table: RwLock::new(table),
                             ring: Mutex::new(VecDeque::new()),
@@ -257,6 +273,17 @@ impl Engine {
         }
         for id in to_restart {
             let _ = self.restart(&id);
+        }
+        // Row counts may have changed (new or reseeded Datasets): tell the GUI.
+        let all: Vec<(String, Arc<ServerRt>)> = self.inner.servers.lock().unwrap().clone();
+        for (id, rt) in all {
+            for (name, rows) in rt.data.lock().unwrap().counts() {
+                let _ = self.inner.events.send(EngineEvent::Dataset {
+                    server_id: id.clone(),
+                    name,
+                    rows,
+                });
+            }
         }
     }
 
@@ -421,14 +448,140 @@ impl Engine {
         out
     }
 
-    /// Reset runtime state: per-route call counters and sequential cursors (SPEC §5.3).
-    pub fn reset_state(&self) {
-        for (_, rt) in self.inner.servers.lock().unwrap().iter() {
+    /// Reset runtime state (SPEC §6.4): Datasets back to their seed (persisted state deleted),
+    /// per-route call counters, sequential cursors and runtime variables. `server` limits the
+    /// reset to one Server (id, name or slug); runtime variables are cleared only for all.
+    pub fn reset_state(&self, server: Option<&str>) -> Result<(), EngineError> {
+        let targets: Vec<(String, Arc<ServerRt>)> = match server {
+            Some(k) => vec![self.find(k)?],
+            None => self.inner.servers.lock().unwrap().clone(),
+        };
+        for (id, rt) in &targets {
             rt.counters.reset();
             rt.seq.lock().unwrap().clear();
+            self.reset_datasets(id, rt, None);
         }
-        self.inner.vars.write().unwrap().runtime.clear();
+        if server.is_none() {
+            self.inner.vars.write().unwrap().runtime.clear();
+        }
         self.recompile();
+        Ok(())
+    }
+
+    fn reset_datasets(&self, id: &str, rt: &ServerRt, only: Option<&str>) {
+        let def = rt.def.lock().unwrap().clone();
+        let counts: Vec<(String, usize)> = {
+            let mut d = rt.data.lock().unwrap();
+            d.reset(&self.inner.cfg.root, id, &def, only);
+            d.sets
+                .iter()
+                .filter(|s| only.is_none_or(|n| n == s.def.name))
+                .map(|s| (s.def.name.clone(), s.len()))
+                .collect()
+        };
+        for (name, rows) in counts {
+            let _ = self.inner.events.send(EngineEvent::Dataset {
+                server_id: id.to_string(),
+                name,
+                rows,
+            });
+        }
+    }
+
+    /// Reset one Dataset to its seed.
+    pub fn dataset_reset(&self, server: &str, name: &str) -> Result<(), EngineError> {
+        let (id, rt) = self.find(server)?;
+        if rt.data.lock().unwrap().get(name).is_none() {
+            return Err(EngineError::UnknownDataset(name.into()));
+        }
+        self.reset_datasets(&id, &rt, Some(name));
+        Ok(())
+    }
+
+    /// Every Dataset of every Server (or one Server) with its live row count.
+    pub fn datasets(
+        &self,
+        server: Option<&str>,
+    ) -> Result<Vec<crate::data::DatasetInfo>, EngineError> {
+        let list: Vec<(String, Arc<ServerRt>)> = match server {
+            Some(k) => vec![self.find(k)?],
+            None => self.inner.servers.lock().unwrap().clone(),
+        };
+        Ok(list
+            .iter()
+            .flat_map(|(id, rt)| {
+                let name = rt.def.lock().unwrap().name.clone();
+                rt.data.lock().unwrap().info(id, &name)
+            })
+            .collect())
+    }
+
+    /// Live rows of one Dataset.
+    pub fn dataset_rows(&self, server: &str, name: &str) -> Result<serde_json::Value, EngineError> {
+        let (_, rt) = self.find(server)?;
+        rt.data
+            .lock()
+            .unwrap()
+            .get(name)
+            .map(|s| s.rows.clone())
+            .ok_or_else(|| EngineError::UnknownDataset(name.into()))
+    }
+
+    /// A window of a Dataset's rows without cloning the rest: `(total, rows[start..start+limit])`.
+    /// An object (singleton) Dataset is one row.
+    pub fn dataset_page(
+        &self,
+        server: &str,
+        name: &str,
+        start: usize,
+        limit: usize,
+    ) -> Result<(usize, Vec<serde_json::Value>), EngineError> {
+        let (_, rt) = self.find(server)?;
+        let d = rt.data.lock().unwrap();
+        let ds = d
+            .get(name)
+            .ok_or_else(|| EngineError::UnknownDataset(name.into()))?;
+        Ok(match &ds.rows {
+            serde_json::Value::Array(a) => {
+                (a.len(), a.iter().skip(start).take(limit).cloned().collect())
+            }
+            other => (
+                1,
+                if start == 0 {
+                    vec![other.clone()]
+                } else {
+                    vec![]
+                },
+            ),
+        })
+    }
+
+    /// Replace a Dataset's live rows (inline edit, `data import`).
+    pub fn dataset_set(
+        &self,
+        server: &str,
+        name: &str,
+        rows: serde_json::Value,
+    ) -> Result<(), EngineError> {
+        if !rows.is_array() && !rows.is_object() {
+            return Err(EngineError::Request(
+                "Dataset rows must be a JSON array or object.".into(),
+            ));
+        }
+        let (id, rt) = self.find(server)?;
+        let n = {
+            let mut d = rt.data.lock().unwrap();
+            if !d.replace(&self.inner.cfg.root, &id, name, rows) {
+                return Err(EngineError::UnknownDataset(name.into()));
+            }
+            d.get(name).map_or(0, |s| s.len())
+        };
+        let _ = self.inner.events.send(EngineEvent::Dataset {
+            server_id: id,
+            name: name.into(),
+            rows: n,
+        });
+        Ok(())
     }
 
     /// Compile a Route table with the Server `prefix` templated against the current variables
@@ -718,6 +871,85 @@ async fn handle(
                 ),
             )
         }
+        Some(r) if r.kind == "crud" => {
+            let call = rt.counters.bump(&r.id);
+            chosen = (String::new(), format!("CRUD {method}"));
+            let item_id = route_pattern
+                .ends_with("/:id")
+                .then(|| {
+                    params
+                        .iter()
+                        .find(|(k, _)| k == "id")
+                        .map(|(_, v)| v.clone())
+                })
+                .flatten();
+            let ds_name = r.dataset.clone().unwrap_or_default();
+            let page_size = {
+                let def = rt.def.lock().unwrap().clone();
+                engine
+                    .inner
+                    .vars
+                    .read()
+                    .unwrap()
+                    .resolve(&def, Some(&r.id))
+                    .into_iter()
+                    .find(|v| v.key == "page_size")
+                    .and_then(|v| v.value.trim().parse::<usize>().ok())
+            };
+            let query: Vec<(String, String)> = url
+                .split_once('?')
+                .map(|(_, q)| {
+                    form_urlencoded::parse(q.as_bytes())
+                        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let schema = r
+                .validate
+                .as_deref()
+                .and_then(|p| rt.compiled.schema(&engine.inner.cfg.root, p));
+            let _ = call;
+            let (out, changed, rows) = {
+                let mut d = rt.data.lock().unwrap();
+                match d.get_mut(&ds_name) {
+                    None => (
+                        json_response(
+                            500,
+                            problem::server_error(&format!("unknown dataset `{ds_name}`"), &path),
+                            "application/problem+json",
+                        ),
+                        false,
+                        0,
+                    ),
+                    Some(ds) => {
+                        let c = crate::data::Call {
+                            method: &method,
+                            path: &path,
+                            id: item_id.as_deref(),
+                            query: &query,
+                            body: &body,
+                            page_size,
+                            schema,
+                            root: &engine.inner.cfg.root,
+                            server_id: &id,
+                        };
+                        let (out, changed) = crate::data::handle(ds, &c);
+                        (out, changed, ds.len())
+                    }
+                }
+            };
+            if changed {
+                let _ = engine.inner.events.send(EngineEvent::Dataset {
+                    server_id: id.clone(),
+                    name: ds_name,
+                    rows,
+                });
+            }
+            if out.0 >= 500 {
+                render_error = Some(String::from_utf8_lossy(&out.2).into_owned());
+            }
+            (r.id.clone(), out)
+        }
         Some(r) => {
             let call = rt.counters.bump(&r.id);
             let lc_headers: Vec<(String, String)> = req_headers
@@ -726,7 +958,7 @@ async fn handle(
                 .collect();
             let server_def = rt.def.lock().unwrap().clone();
             let req_id = engine.inner.seq.load(Ordering::Relaxed);
-            let tpl = crate::render::TplEnv {
+            let mut tpl = crate::render::TplEnv {
                 context: crate::render::context(
                     &server_def,
                     &method,
@@ -745,6 +977,12 @@ async fn handle(
                 counter: call,
                 seq: Some(rt.seq.clone()),
             };
+            {
+                let snap = rt.data.lock().unwrap().snapshot();
+                if snap.as_object().is_some_and(|m| !m.is_empty()) {
+                    tpl.context["data"] = (*snap).clone();
+                }
+            }
             let mut ctx = crate::rules::Ctx::new(
                 &method,
                 &url,

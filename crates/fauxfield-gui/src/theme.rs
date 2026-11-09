@@ -146,6 +146,7 @@ impl Theme {
             "PUT" => self.syntax_type,
             "PATCH" => self.syntax_constant,
             "DELETE" => self.deleted,
+            "CRUD" => self.accent,
             _ => self.text_muted,
         }
     }

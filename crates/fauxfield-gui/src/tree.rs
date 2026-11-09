@@ -57,7 +57,7 @@ impl SidebarTab {
         match self {
             SidebarTab::Servers => "No servers yet.",
             SidebarTab::Environments => "No environments.",
-            SidebarTab::Datasets => "No datasets. Datasets arrive in M8.",
+            SidebarTab::Datasets => "No datasets. Create a CRUD resource to add one.",
         }
     }
     /// Parses a persisted id; anything unknown falls back to Servers.
@@ -103,7 +103,13 @@ pub enum RowKind {
     Environment {
         active: bool,
     },
-    Dataset,
+    Dataset {
+        rows: usize,
+    },
+    /// One generated operation of a crud Route (child row of the Route node; opens the Route).
+    CrudOp {
+        method: String,
+    },
     /// A Response in the Route tab's list (menu only; never a tree row).
     Response {
         default: bool,
@@ -152,8 +158,66 @@ pub fn env_row_id(name: &str) -> String {
     format!("env:{name}")
 }
 
-pub fn dataset_row_id(name: &str) -> String {
-    format!("ds:{name}")
+/// `key` is `Dataset::key()` (`<server id>:<name>`).
+pub fn dataset_row_id(key: &str) -> String {
+    format!("ds:{key}")
+}
+
+/// Child row of a crud Route node: `<route id>#<n>`; `crud_route_of` maps it back.
+pub fn crud_op_row_id(route: &str, n: usize) -> String {
+    format!("{route}#{n}")
+}
+
+pub fn crud_route_of(row_id: &str) -> Option<&str> {
+    row_id.split_once('#').map(|(r, _)| r)
+}
+
+/// `(method, path suffix)` of the six operations a crud Route generates (SPEC §6.2).
+pub const CRUD_OPS: [(&str, &str); 6] = [
+    ("GET", ""),
+    ("POST", ""),
+    ("GET", "/:id"),
+    ("PUT", "/:id"),
+    ("PATCH", "/:id"),
+    ("DELETE", "/:id"),
+];
+
+/// A Route row; a crud Route is an expandable node whose children are its six operations.
+fn route_rows(
+    rows: &mut Vec<TreeRow>,
+    collapsed: &HashSet<String>,
+    r: &crate::view::Route,
+    depth: u8,
+    disabled: bool,
+) {
+    let crud = r.is_crud();
+    let open = crud && !collapsed.contains(&r.id);
+    rows.push(TreeRow {
+        id: r.id.clone(),
+        depth,
+        label: r.path.clone(),
+        kind: RowKind::Route {
+            method: r.method.clone(),
+            warn: route_warn(r),
+            disabled,
+        },
+        expandable: crud,
+        expanded: open,
+    });
+    if open {
+        for (i, (m, suffix)) in CRUD_OPS.iter().enumerate() {
+            rows.push(TreeRow {
+                id: crud_op_row_id(&r.id, i),
+                depth: depth + 1,
+                label: format!("{}{}", r.path.trim_end_matches('/'), suffix),
+                kind: RowKind::CrudOp {
+                    method: (*m).to_string(),
+                },
+                expandable: false,
+                expanded: false,
+            });
+        }
+    }
 }
 
 pub fn flatten(
@@ -206,34 +270,12 @@ pub fn flatten(
                 );
                 if open {
                     for r in &f.routes {
-                        node(
-                            &mut rows,
-                            &r.id,
-                            2,
-                            &r.path,
-                            RowKind::Route {
-                                method: r.method.clone(),
-                                warn: route_warn(r),
-                                disabled: !f.enabled,
-                            },
-                            false,
-                        );
+                        route_rows(&mut rows, collapsed, r, 2, !f.enabled);
                     }
                 }
             }
             for r in &s.routes {
-                node(
-                    &mut rows,
-                    &r.id,
-                    1,
-                    &r.path,
-                    RowKind::Route {
-                        method: r.method.clone(),
-                        warn: route_warn(r),
-                        disabled: false,
-                    },
-                    false,
-                );
+                route_rows(&mut rows, collapsed, r, 1, false);
             }
         }
     }
@@ -255,7 +297,14 @@ pub fn flatten(
         }
         SidebarTab::Datasets => {
             for d in &ws.datasets {
-                node(&mut rows, &dataset_row_id(d), 0, d, RowKind::Dataset, false);
+                node(
+                    &mut rows,
+                    &dataset_row_id(&d.key()),
+                    0,
+                    &d.label(),
+                    RowKind::Dataset { rows: d.rows },
+                    false,
+                );
             }
         }
     }
@@ -292,6 +341,7 @@ pub enum MenuAct {
     SetRuleOp(usize),
     SetResponseMode(usize),
     ResetDataset,
+    ExportDataset,
     // Server menu (M3.1).
     Restart,
     ToggleEnabled,
@@ -336,6 +386,7 @@ impl MenuAct {
             SetRuleOp(i) => format!("rule-op-{i}"),
             SetResponseMode(i) => format!("response-mode-{i}"),
             ResetDataset => "reset-dataset".into(),
+            ExportDataset => "export-dataset".into(),
             Restart => "restart".into(),
             ToggleEnabled => "toggle-enabled".into(),
             ChangePort => "change-port".into(),
@@ -464,7 +515,13 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
             ]);
             v
         }
-        RowKind::Dataset => vec![("Reset to seed", ResetDataset)],
+        RowKind::Dataset { .. } => vec![
+            ("Open", Open),
+            ("Open pinned", OpenPinned),
+            ("Reset to seed", ResetDataset),
+            ("Export JSON…", ExportDataset),
+        ],
+        RowKind::CrudOp { .. } => vec![("Open route", Open)],
         RowKind::Response { default, disabled } => {
             let mut v = Vec::new();
             if !default {
@@ -522,10 +579,12 @@ mod tests {
         let pos = |id: &str| rows.iter().position(|r| r.id == id).unwrap();
         assert!(pos("rt_health") > pos("rt_users_delete"));
         assert!(pos("srv_payments") > pos("rt_health"));
-        assert!(
-            rows.iter()
-                .all(|r| { !matches!(r.kind, RowKind::Environment { .. } | RowKind::Dataset) })
-        );
+        assert!(rows.iter().all(|r| {
+            !matches!(
+                r.kind,
+                RowKind::Environment { .. } | RowKind::Dataset { .. }
+            )
+        }));
     }
 
     #[test]
@@ -535,7 +594,10 @@ mod tests {
         let env = flatten(&ws, &c, "local", SidebarTab::Environments);
         assert!(!env.is_empty() && env.iter().all(|r| r.id.starts_with("env:") && r.depth == 0));
         let ds = flatten(&ws, &c, "local", SidebarTab::Datasets);
-        assert!(ds.iter().any(|r| r.id == "ds:users"));
+        assert!(
+            ds.iter()
+                .any(|r| r.id == "ds:srv_users:users" && r.label.starts_with("users · "))
+        );
         assert!(ds.iter().all(|r| r.id.starts_with("ds:")));
         // Collapsing a server does not affect other tabs.
         let c: HashSet<String> = ["srv_users".to_string()].into();
@@ -625,7 +687,10 @@ mod tests {
                 .all(|l| *l != "Set active")
         );
         assert!(labels(&RowKind::Environment { active: false }, false).contains(&"Set active"));
-        assert_eq!(labels(&RowKind::Dataset, false), ["Reset to seed"]);
+        assert_eq!(
+            labels(&RowKind::Dataset { rows: 1 }, false),
+            ["Open", "Open pinned", "Reset to seed", "Export JSON…"]
+        );
     }
 }
 

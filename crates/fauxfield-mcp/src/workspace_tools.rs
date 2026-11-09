@@ -72,6 +72,35 @@ struct SetVariable {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct UpsertDataset {
+    /// Server ID, name or file slug.
+    server: String,
+    /// Dataset name (letters, digits, `_`, `-`).
+    name: String,
+    /// Seed rows as JSON text (an array, or an object for a singleton); written to data/<name>.json.
+    #[serde(default)]
+    seed: Option<String>,
+    /// Tera template rendering to JSON, written to files/<name>.json.tera (instead of `seed`).
+    #[serde(default)]
+    seed_template: Option<String>,
+    /// Item identifier field (default `id`).
+    #[serde(default)]
+    key: Option<String>,
+    /// `uuid` (default), `increment` or `ulid`.
+    #[serde(default)]
+    id_strategy: Option<String>,
+    /// Persist mutations under .fauxfield/state/.
+    #[serde(default)]
+    persist: Option<bool>,
+    /// Also add a `kind = "crud"` Route at this path (e.g. `/products`) when none serves the Dataset.
+    #[serde(default)]
+    crud_path: Option<String>,
+    /// JSON Schema file (workspace-relative) for POST/PUT/PATCH on the CRUD Route.
+    #[serde(default)]
+    validate: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct RouteRef {
     /// Route ID (`rte_…`).
     route: String,
@@ -358,6 +387,41 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                     "removed": a.value.is_none(),
                     "value": a.value.filter(|_| !secret),
                 }))
+            });
+            Box::pin(async move { out })
+        },
+    ));
+    let p = provider.clone();
+    r.register(ToolDef::new::<UpsertDataset>(
+        "upsert_dataset",
+        "Create or replace a Dataset (seed file plus [[datasets]] entry) and optionally add a CRUD Route for it.",
+        ToolClass::Write,
+        move |m| {
+            let Some(s) = p() else { return no_workspace() };
+            let out = parse::<UpsertDataset>(m).and_then(|a| {
+                let snap = s.snapshot();
+                let id = snap
+                    .servers
+                    .iter()
+                    .find(|(_, x)| {
+                        x.id == a.server || x.name == a.server || fauxfield_store::slugify(&x.name) == a.server
+                    })
+                    .map(|(_, x)| x.id.clone())
+                    .ok_or_else(|| format!("no server `{}`", a.server))?;
+                let spec = fauxfield_store::DatasetSpec {
+                    name: a.name.clone(),
+                    seed_json: a.seed,
+                    seed_template: a.seed_template,
+                    key: a.key,
+                    id_strategy: a.id_strategy,
+                    persist: a.persist,
+                    crud_path: a.crud_path,
+                    crud_folder: None,
+                    validate: a.validate,
+                };
+                let route = s.upsert_dataset(&id, &spec).map_err(e)?;
+                s.flush().map_err(e)?;
+                Ok(json!({ "server": id, "dataset": a.name, "route": route }))
             });
             Box::pin(async move { out })
         },

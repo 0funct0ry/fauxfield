@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use fauxfield_engine::{
-    Engine, EngineError, Recording, ServerInfo, TestRequest, TestResponse, TrafficFilter,
+    DatasetInfo, Engine, EngineError, Recording, ServerInfo, TestRequest, TestResponse,
+    TrafficFilter,
 };
 use fauxfield_model::vars::ResolvedVar;
 use serde::{Deserialize, Serialize};
@@ -34,6 +35,7 @@ impl From<EngineError> for ControlError {
             EngineError::NotRunning(_) => "not_running",
             EngineError::Disabled(_) => "disabled",
             EngineError::Request(_) => "request",
+            EngineError::UnknownDataset(_) => "unknown_dataset",
         };
         ControlError::new(kind, e.to_string())
     }
@@ -65,6 +67,27 @@ pub trait ControlApi: Send + Sync {
         server: String,
         route: Option<String>,
     ) -> Result<Vec<ResolvedVar>, ControlError>;
+    /// Datasets (all, or one Server's) with live row counts.
+    async fn data_list(&self, server: Option<String>) -> Result<Vec<DatasetInfo>, ControlError>;
+    /// Live rows of one Dataset.
+    async fn data_show(
+        &self,
+        server: String,
+        dataset: String,
+    ) -> Result<serde_json::Value, ControlError>;
+    /// Replace a Dataset's live rows (import).
+    async fn data_set(
+        &self,
+        server: String,
+        dataset: String,
+        rows: serde_json::Value,
+    ) -> Result<(), ControlError>;
+    /// Reset state (SPEC §6.4): all Servers, one Server, or one Dataset of a Server.
+    async fn reset_state(
+        &self,
+        server: Option<String>,
+        dataset: Option<String>,
+    ) -> Result<(), ControlError>;
     /// Asks the host to exit (graceful drain happens in the host).
     async fn shutdown(&self) -> Result<(), ControlError>;
 }
@@ -185,6 +208,42 @@ impl ControlApi for LocalControl {
         route: Option<String>,
     ) -> Result<Vec<ResolvedVar>, ControlError> {
         Ok(self.engine.vars_in_scope(&server, route.as_deref())?)
+    }
+
+    async fn data_list(&self, server: Option<String>) -> Result<Vec<DatasetInfo>, ControlError> {
+        Ok(self.engine.datasets(server.as_deref())?)
+    }
+
+    async fn data_show(
+        &self,
+        server: String,
+        dataset: String,
+    ) -> Result<serde_json::Value, ControlError> {
+        Ok(self.engine.dataset_rows(&server, &dataset)?)
+    }
+
+    async fn data_set(
+        &self,
+        server: String,
+        dataset: String,
+        rows: serde_json::Value,
+    ) -> Result<(), ControlError> {
+        Ok(self.engine.dataset_set(&server, &dataset, rows)?)
+    }
+
+    async fn reset_state(
+        &self,
+        server: Option<String>,
+        dataset: Option<String>,
+    ) -> Result<(), ControlError> {
+        match (server, dataset) {
+            (Some(s), Some(d)) => Ok(self.engine.dataset_reset(&s, &d)?),
+            (None, Some(_)) => Err(ControlError::new(
+                "request",
+                "a dataset reset needs a server",
+            )),
+            (s, None) => Ok(self.engine.reset_state(s.as_deref())?),
+        }
     }
 
     async fn shutdown(&self) -> Result<(), ControlError> {

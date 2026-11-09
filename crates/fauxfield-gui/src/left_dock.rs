@@ -189,6 +189,31 @@ impl Shell {
                         Action("new_environment")
                     ))
                 })
+                .when(tab == tree::SidebarTab::Datasets, |d| {
+                    d.child(crate::dev_id_meta!(
+                        div()
+                            .id("sidebar-new-dataset")
+                            .size(px(20.))
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(3.))
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(sel))
+                            .tooltip(crate::ui::tooltip("New CRUD resource…".to_string()))
+                            .on_click(cx.listener(|this, _, w, cx| this.begin_new_crud(w, cx)))
+                            .child(icon("plus", 14., t.icon_muted)),
+                        crate::dev_mcp::tree::Meta {
+                            tooltip: true,
+                            ..Default::default()
+                        },
+                        "sidebar-new-dataset",
+                        Button,
+                        "New CRUD resource",
+                        Action("new_crud_resource")
+                    ))
+                })
                 .when(tab == tree::SidebarTab::Servers, |d| {
                     d.child(crate::dev_id_meta!(
                         div()
@@ -274,6 +299,28 @@ impl Shell {
                         Action("new_environment")
                     ))
                 })
+                .when(tab == tree::SidebarTab::Datasets, |d| {
+                    d.child(crate::dev_id!(
+                        div()
+                            .id("sidebar-empty-new-dataset")
+                            .h(px(24.))
+                            .px(px(10.))
+                            .flex()
+                            .items_center()
+                            .rounded(px(4.))
+                            .border_1()
+                            .border_color(border)
+                            .text_color(t.text)
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(hover))
+                            .on_click(cx.listener(|this, _, w, cx| this.begin_new_crud(w, cx)))
+                            .child("New CRUD resource…"),
+                        "sidebar-empty-new-dataset",
+                        Button,
+                        "New CRUD resource…",
+                        Action("new_crud_resource")
+                    ))
+                })
                 .when(tab == tree::SidebarTab::Servers, |d| {
                     d.child(crate::dev_id!(
                         div()
@@ -343,7 +390,8 @@ impl Shell {
                 if *active { t.created } else { t.icon_muted },
             )
             .into_any_element(),
-            RowKind::Dataset => icon("table", 13., t.icon_muted).into_any_element(),
+            RowKind::Dataset { .. } => icon("table", 13., t.icon_muted).into_any_element(),
+            RowKind::CrudOp { method } => method_badge(t, method).into_any_element(),
             RowKind::Response { .. }
             | RowKind::ErrorPresets
             | RowKind::RuleTarget

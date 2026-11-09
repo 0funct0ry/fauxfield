@@ -91,6 +91,59 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                     format!("unknown folder `{fl}`"),
                 ));
             }
+            if !crate::ROUTE_KINDS.contains(&r.kind.as_str()) {
+                out.push(Diagnostic::error(
+                    file,
+                    format!("{rp}.kind"),
+                    "E070",
+                    format!("unknown kind `{}`", r.kind),
+                ));
+            }
+            if r.kind == "crud" {
+                if !r.path.starts_with('/') {
+                    out.push(Diagnostic::error(
+                        file,
+                        format!("{rp}.path"),
+                        "E031",
+                        "path must start with `/`",
+                    ));
+                }
+                match r.dataset.as_deref() {
+                    None | Some("") => out.push(Diagnostic::error(
+                        file,
+                        format!("{rp}.dataset"),
+                        "E071",
+                        "a crud Route needs `dataset`",
+                    )),
+                    Some(d) if !s.datasets.iter().any(|x| x.name == d) => {
+                        out.push(Diagnostic::error(
+                            file,
+                            format!("{rp}.dataset"),
+                            "E072",
+                            format!("unknown dataset `{d}`"),
+                        ))
+                    }
+                    _ => {}
+                }
+                if let Some(v) = &r.validate
+                    && (v.starts_with('/') || v.split(['/', '\\']).any(|c| c == ".."))
+                {
+                    out.push(Diagnostic::error(
+                        file,
+                        format!("{rp}.validate"),
+                        "E042",
+                        "validate must stay inside the workspace",
+                    ));
+                }
+                if !r.responses.is_empty() {
+                    out.push(Diagnostic::warning(
+                        file,
+                        format!("{rp}.responses"),
+                        "W070",
+                        "responses are ignored on a crud Route",
+                    ));
+                }
+            }
             if r.kind == "http" {
                 let strict = s.strict_slash.unwrap_or(false);
                 match pattern::parse_mode(r.match_mode.as_deref()) {
@@ -230,6 +283,55 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                 ));
             }
         }
+        let mut names: HashMap<&str, ()> = HashMap::new();
+        for (i, d) in s.datasets.iter().enumerate() {
+            let dp = format!("datasets[{i}]");
+            if d.name.trim().is_empty() {
+                out.push(Diagnostic::error(
+                    file,
+                    format!("{dp}.name"),
+                    "E073",
+                    "dataset name is empty",
+                ));
+            } else if names.insert(&d.name, ()).is_some() {
+                out.push(Diagnostic::error(
+                    file,
+                    format!("{dp}.name"),
+                    "E073",
+                    format!("duplicate dataset `{}`", d.name),
+                ));
+            }
+            if let Some(st) = d.id_strategy.as_deref()
+                && !crate::ID_STRATEGIES.contains(&st)
+            {
+                out.push(Diagnostic::error(
+                    file,
+                    format!("{dp}.id_strategy"),
+                    "E074",
+                    format!("id_strategy must be uuid, increment or ulid, got `{st}`"),
+                ));
+            }
+            if d.seed.is_some() && d.seed_template.is_some() {
+                out.push(Diagnostic::error(
+                    file,
+                    format!("{dp}.seed"),
+                    "E075",
+                    "set either `seed` or `seed_template`, not both",
+                ));
+            }
+            for (k, v) in [("seed", &d.seed), ("seed_template", &d.seed_template)] {
+                if let Some(v) = v
+                    && (v.starts_with('/') || v.split(['/', '\\']).any(|c| c == ".."))
+                {
+                    out.push(Diagnostic::error(
+                        file,
+                        format!("{dp}.{k}"),
+                        "E042",
+                        format!("{k} must stay inside the workspace"),
+                    ));
+                }
+            }
+        }
         for sh in pattern::shadowed_routes(s) {
             let by = s.routes.iter().find(|r| r.id == sh.by);
             let me = s.routes.iter().find(|r| r.id == sh.route);
@@ -298,5 +400,20 @@ mod tests {
         let s = parse_server("id=\"srv_a\"\nname=\"n\"\nport=1\nfuture=1\n[tls]\nenabled=false\n")
             .unwrap();
         assert!(s.extra.contains_key("future") && s.extra.contains_key("tls"));
+    }
+
+    #[test]
+    fn dataset_and_crud_checks() {
+        let t = "id=\"srv_a\"\nname=\"n\"\nport=1\n\
+            [[datasets]]\nname=\"u\"\nid_strategy=\"nope\"\nseed=\"a.json\"\nseed_template=\"b\"\n\
+            [[datasets]]\nname=\"u\"\n\
+            [[routes]]\nid=\"r1\"\nkind=\"crud\"\npath=\"/u\"\ndataset=\"missing\"\n\
+            [[routes]]\nid=\"r2\"\nkind=\"crud\"\npath=\"/v\"\n\
+            [[routes]]\nid=\"r3\"\nkind=\"bogus\"\npath=\"/w\"\n";
+        let d = validate_servers(&[("servers/a.toml".into(), parse_server(t).unwrap())]);
+        let codes: Vec<_> = d.iter().map(|d| d.code.as_str()).collect();
+        for c in ["E070", "E071", "E072", "E073", "E074", "E075"] {
+            assert!(codes.contains(&c), "{c} in {codes:?}");
+        }
     }
 }

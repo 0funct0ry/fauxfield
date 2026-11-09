@@ -86,6 +86,11 @@ pub enum Command {
         #[command(subcommand)]
         action: crate::env_cmd::VarAction,
     },
+    /// List, show, reset, export and import Datasets.
+    Data {
+        #[command(subcommand)]
+        action: crate::data_cmd::DataAction,
+    },
     /// Render a Response template against a sample request, without running a server.
     Render(crate::workspace_cmd::RenderArgs),
     /// Serve a workspace headless: become the host and run its servers until stopped.
@@ -197,6 +202,7 @@ pub fn run() -> i32 {
         Some(Command::Response { action }) => crate::workspace_cmd::response(action),
         Some(Command::Env { action }) => crate::env_cmd::env(action),
         Some(Command::Var { action }) => crate::env_cmd::var(action),
+        Some(Command::Data { action }) => crate::data_cmd::data(action),
         Some(Command::Render(a)) => crate::workspace_cmd::render(a),
         Some(Command::Run(a)) => crate::host_cmd::run(a),
         Some(Command::Status(a)) => crate::host_cmd::status(a),

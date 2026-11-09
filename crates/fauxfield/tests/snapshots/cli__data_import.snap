@@ -1,0 +1,9 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "dataset": "people",
+  "live": false,
+  "rows": 1
+}

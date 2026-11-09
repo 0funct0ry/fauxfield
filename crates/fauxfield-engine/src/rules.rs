@@ -45,7 +45,7 @@ impl Compiled {
             .or_insert_with(|| fauxfield_model::pattern::compile_regex(src).ok())
             .clone()
     }
-    fn schema(&self, root: &Path, path: &str) -> Option<Arc<jsonschema::Validator>> {
+    pub(crate) fn schema(&self, root: &Path, path: &str) -> Option<Arc<jsonschema::Validator>> {
         let mut m = self.schema.lock().unwrap();
         m.entry(path.to_string())
             .or_insert_with(|| {

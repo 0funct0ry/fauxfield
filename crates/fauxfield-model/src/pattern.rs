@@ -224,16 +224,19 @@ impl Pattern {
 /// Routes in effective order (SPEC §20.17): Folders in order, each with its Routes,
 /// then Routes without a Folder. Disabled Folders and non-http Routes are skipped.
 pub fn effective_routes(s: &Server) -> Vec<&Route> {
+    effective_routes_of(s, &["http"])
+}
+
+/// [`effective_routes`] for any set of Route kinds (the engine also compiles `crud`).
+pub fn effective_routes_of<'a>(s: &'a Server, kinds: &[&str]) -> Vec<&'a Route> {
     let mut v = Vec::new();
     for f in s.folders.iter().filter(|f| f.enabled) {
-        v.extend(
-            s.routes
-                .iter()
-                .filter(|r| r.kind == "http" && r.folder.as_deref() == Some(f.id.as_str())),
-        );
+        v.extend(s.routes.iter().filter(|r| {
+            kinds.contains(&r.kind.as_str()) && r.folder.as_deref() == Some(f.id.as_str())
+        }));
     }
     v.extend(s.routes.iter().filter(|r| {
-        r.kind == "http"
+        kinds.contains(&r.kind.as_str())
             && !r
                 .folder
                 .as_deref()

@@ -2,12 +2,14 @@
 //! `toml_edit` so comments and ordering survive; writes are atomic and debounced;
 //! a watcher hot-reloads external edits. Must not depend on GPUI.
 
+mod datasets;
 mod init;
 mod recent;
 mod store;
 mod vars;
 mod watch;
 
+pub use datasets::{DatasetSpec, confined, state_path};
 pub use init::{discover, init_workspace, slugify};
 pub use recent::{clear_recent, load_recent, push_recent, remove_recent};
 pub use store::{

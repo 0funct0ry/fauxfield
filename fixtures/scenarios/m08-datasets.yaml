@@ -1,0 +1,27 @@
+# M8 scenario: Datasets. The sidebar lists each Dataset with its live row count, a Dataset tab
+# shows the rows, "Add row" changes them live, Reset restores the seed, and the CRUD Route is
+# an expandable tree node. Needs the example workspace as the launch workspace.
+name: m08-datasets
+size: default
+steps:
+  - state: [reset]
+  - click_element: {id: sidebar-tab-datasets}
+  - wait_for_idle: {}
+  - assert: {pointer: /tree/visible_rows, equals: ["ds:srv_users:users", "ds:srv_payments:charges"]}
+  - assert: {pointer: /datasets/0/rows, equals: 3}
+  - assert_find: {text: New CRUD resource, ids: [sidebar-new-dataset]}
+  - click_element: {id: "row-ds:srv_users:users"}
+  - wait_for_idle: {}
+  - assert: {pointer: /active_tab, equals: "srv_users:users"}
+  - assert: {pointer: /dataset/columns, equals: [id, name, email, role, age]}
+  - assert_find: {text: Ada Lovelace}
+  - screenshot: {name: m08-dataset-tab}
+  - assert: {pointer: /dataset/view, equals: table}
+  - click_element: {id: ds-reset}
+  - wait_for_idle: {}
+  - assert: {pointer: /datasets/0/rows, equals: 3}
+  # The CRUD route is one expandable node.
+  - click_element: {id: sidebar-tab-servers}
+  - wait_for_idle: {}
+  - assert_find: {text: /v2/users, ids: ["row-rt_users_crud", "chev-rt_users_crud", "dots-rt_users_crud", "row-rt_users_crud#0", "dots-rt_users_crud#0", "row-rt_users_crud#1", "dots-rt_users_crud#1", "row-rt_users_crud#2", "dots-rt_users_crud#2", "row-rt_users_crud#3", "dots-rt_users_crud#3", "row-rt_users_crud#4", "dots-rt_users_crud#4", "row-rt_users_crud#5", "dots-rt_users_crud#5"]}
+  - screenshot: {name: m08-crud-tree}

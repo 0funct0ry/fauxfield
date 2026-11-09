@@ -195,14 +195,14 @@ pub fn quick_search(query: &str, ws: &Workspace, commands: &[CommandEntry]) -> V
             }
         }
         for d in &ws.datasets {
-            if let Some(score) = sc.score(d) {
+            if let Some(score) = sc.score(&d.name) {
                 hits.push(Hit {
-                    label: d.clone(),
+                    label: d.name.clone(),
                     detail: "Dataset".into(),
                     kind: Kind::Dataset,
                     method: None,
                     binding: None,
-                    target: Target::Dataset(d.clone()),
+                    target: Target::Dataset(d.key()),
                     score,
                 });
             }

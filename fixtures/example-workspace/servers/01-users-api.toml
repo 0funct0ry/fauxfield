@@ -9,6 +9,8 @@ prefix = "/api"
 
 [[datasets]]
 name = "users"
+seed = "data/users.json"
+id_strategy = "increment"
 
 [[folders]]
 id = "fld_users"
@@ -112,3 +114,10 @@ path = "/health"
   status = 200
   content_type = "application/json"
   body = '''{ "ok": true }'''
+
+[[routes]]
+id = "rt_users_crud"
+name = "Users (CRUD)"
+kind = "crud"
+path = "/v2/users"
+dataset = "users"

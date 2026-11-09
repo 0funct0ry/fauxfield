@@ -43,6 +43,17 @@ pub struct Route {
     pub shadowed_by: Option<String>,
     /// Pattern error (E033/E034/E035) when the pattern is invalid.
     pub pattern_error: Option<String>,
+    /// `http`, `crud`, ... (`method` is `CRUD` for a crud Route).
+    pub kind: String,
+    /// crud Routes: the Dataset served and the optional JSON Schema file.
+    pub dataset: Option<String>,
+    pub validate: Option<String>,
+}
+
+impl Route {
+    pub fn is_crud(&self) -> bool {
+        self.kind == "crud"
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -117,7 +128,22 @@ pub struct Workspace {
     pub root: std::path::PathBuf,
     pub servers: Vec<Server>,
     pub environments: Vec<Environment>,
-    pub datasets: Vec<String>,
+    pub datasets: Vec<Dataset>,
+}
+
+/// A Dataset as the sidebar and Dataset tab list it (live row count when a host runs).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Dataset {
+    pub name: String,
+    pub server_id: String,
+    pub server: String,
+    pub rows: usize,
+    pub key: String,
+    pub id_strategy: String,
+    pub persist: bool,
+    pub seed: Option<String>,
+    pub seed_template: Option<String>,
+    pub error: Option<String>,
 }
 
 /// Tooltip of the dice icon (SPEC §8.3).
@@ -172,6 +198,10 @@ impl Workspace {
         self.servers.iter().find(|s| s.id == id)
     }
 
+    pub fn find_dataset(&self, key: &str) -> Option<&Dataset> {
+        self.datasets.iter().find(|d| d.key() == key)
+    }
+
     pub fn find_environment(&self, name: &str) -> Option<&Environment> {
         self.environments.iter().find(|e| e.name == name)
     }
@@ -198,6 +228,35 @@ pub struct Problem {
     pub target: Option<String>,
 }
 
+impl Dataset {
+    /// Stable key across servers: `<server id>:<name>` (tab id; the row id adds `ds:`).
+    pub fn key(&self) -> String {
+        format!("{}:{}", self.server_id, self.name)
+    }
+
+    /// Sidebar label: `users · 50 rows`.
+    pub fn label(&self) -> String {
+        format!(
+            "{} · {} {}",
+            self.name,
+            self.rows,
+            if self.rows == 1 { "row" } else { "rows" }
+        )
+    }
+}
+
+/// Row count of a Dataset's seed file (0 for a template or a missing file); the shell replaces
+/// it with the live count when a host runs.
+fn seed_rows(root: &std::path::Path, d: &fauxfield_model::Dataset) -> usize {
+    let Some(f) = d.seed.as_deref().filter(|f| fauxfield_store::confined(f)) else {
+        return 0;
+    };
+    std::fs::read_to_string(root.join(f))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .map_or(0, |v| v.as_array().map_or(1, Vec::len))
+}
+
 impl Workspace {
     /// Build the view from a store snapshot. Servers never run before M3, so `running` is false.
     pub fn from_snapshot(snap: &fauxfield_store::Snapshot) -> Workspace {
@@ -222,12 +281,22 @@ impl Workspace {
                 None
             },
             id: r.id.clone(),
-            method: r.method.clone(),
+            kind: r.kind.clone(),
+            dataset: r.dataset.clone(),
+            validate: r.validate.clone(),
+            method: if r.kind == "crud" {
+                "CRUD".to_string()
+            } else {
+                r.method.clone()
+            },
             path: r.path.clone(),
-            name: r
-                .name
-                .clone()
-                .unwrap_or_else(|| format!("{} {}", r.method, r.path)),
+            name: r.name.clone().unwrap_or_else(|| {
+                if r.kind == "crud" {
+                    format!("CRUD {}", r.path)
+                } else {
+                    format!("{} {}", r.method, r.path)
+                }
+            }),
             responses: r
                 .responses
                 .iter()
@@ -266,12 +335,19 @@ impl Workspace {
                 let shadows = m::pattern::shadowed_routes(s);
                 let strict = s.strict_slash.unwrap_or(false);
                 let route = |r: &m::Route| route(r, &shadows, strict);
-                if let Some(toml::Value::Array(a)) = s.extra.get("datasets") {
-                    for d in a {
-                        if let Some(n) = d.get("name").and_then(|n| n.as_str()) {
-                            datasets.push(n.to_string());
-                        }
-                    }
+                for d in &s.datasets {
+                    datasets.push(Dataset {
+                        name: d.name.clone(),
+                        server_id: s.id.clone(),
+                        server: s.name.clone(),
+                        rows: seed_rows(&snap.root, d),
+                        key: d.key_name().to_string(),
+                        id_strategy: d.id_strategy.clone().unwrap_or_else(|| "uuid".into()),
+                        persist: d.persist,
+                        seed: d.seed.clone(),
+                        seed_template: d.seed_template.clone(),
+                        error: None,
+                    });
                 }
                 Server {
                     id: s.id.clone(),
@@ -457,7 +533,8 @@ mod tests {
         assert_eq!((s.port, r.method.as_str()), (4010, "GET"));
         assert!(w.find_route("nope").is_none());
         assert_eq!(w.find_environment("staging").unwrap().vars.len(), 2);
-        assert_eq!(w.datasets, vec!["users".to_string(), "charges".to_string()]);
+        let names: Vec<_> = w.datasets.iter().map(|d| d.name.as_str()).collect();
+        assert_eq!(names, ["users", "charges"]);
     }
 
     #[test]

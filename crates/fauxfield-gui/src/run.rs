@@ -108,6 +108,7 @@ impl Shell {
 
     /// Mirror the engine's statuses into the view's running flags.
     pub(crate) fn sync_running(&mut self) {
+        self.sync_dataset_counts();
         let Some(h) = &self.host else { return };
         let list = h.engine().list();
         for s in &mut self.ws.servers {
@@ -169,6 +170,7 @@ impl Shell {
                         self.layout.right_open = true;
                     }
                 }
+                EngineEvent::Dataset { .. } => {}
                 EngineEvent::Status { server_id, status } => {
                     let name = self
                         .ws
