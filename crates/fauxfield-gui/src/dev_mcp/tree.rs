@@ -74,6 +74,8 @@ pub enum Click {
     AboutClose,
     /// About box: open a link (URL).
     AboutLink(String),
+    /// M5 controls without their own variant: `<op>:<ids…>`, run by `Shell::press`.
+    Press(String),
 }
 
 /// Extra facts the audit (`ui.audit`) needs. Everything defaults to "nothing declared".
@@ -557,6 +559,11 @@ pub fn click_element(
         Click::AboutCopy => shell.copy_version_info(cx),
         Click::AboutClose => shell.close_about(cx),
         Click::AboutLink(url) => shell.open_link(&url, cx),
+        Click::Press(op) => {
+            if let Err(e) = shell.press(&op, node.bounds, window, cx) {
+                return fail(e);
+            }
+        }
         Click::Recent(path) => shell.open_recent(std::path::Path::new(&path), cx),
         Click::RemoveRecent(path) => shell.remove_recent(std::path::Path::new(&path), cx),
         Click::Response(route, i) => {

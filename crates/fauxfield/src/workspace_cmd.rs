@@ -192,6 +192,150 @@ pub fn server(action: ServerAction) -> i32 {
     EXIT_OK
 }
 
+#[derive(Subcommand, Debug)]
+pub enum ResponseAction {
+    /// Add a Response to a Route (a running host hot-reloads).
+    Add {
+        /// Route ID.
+        route: String,
+        /// Response name.
+        #[arg(long)]
+        name: Option<String>,
+        /// Status code (100-599, default 200).
+        #[arg(long)]
+        status: Option<u16>,
+        /// Response body.
+        #[arg(long)]
+        body: Option<String>,
+        /// Content type.
+        #[arg(long)]
+        content_type: Option<String>,
+        /// Mark as the Route's default Response.
+        #[arg(long)]
+        default: bool,
+        /// Add the RFC 9457 problem+json preset for this status instead (400, 401, ... 504).
+        #[arg(long, value_name = "STATUS", conflicts_with_all = ["name", "status", "body", "content_type"])]
+        preset: Option<u16>,
+        #[command(flatten)]
+        ws: WsArgs,
+    },
+    /// Make a Response the default of its Route.
+    SetDefault {
+        /// Response ID.
+        response: String,
+        #[command(flatten)]
+        ws: WsArgs,
+    },
+}
+
+pub fn response(action: ResponseAction) -> i32 {
+    use fauxfield_store::{StoreError, Target};
+    let fail = |e: StoreError| match e {
+        StoreError::NotFound(m) => {
+            eprintln!("error: not found: {m}");
+            EXIT_USAGE
+        }
+        StoreError::Invalid(m) => {
+            eprintln!("error: {m}");
+            EXIT_USAGE
+        }
+        e => {
+            eprintln!("error: {e}");
+            EXIT_RUNTIME
+        }
+    };
+    match action {
+        ResponseAction::Add {
+            route,
+            name,
+            status,
+            body,
+            content_type,
+            default,
+            preset,
+            ws,
+        } => {
+            let store = match open_store(&ws) {
+                Ok(s) => s,
+                Err(c) => return c,
+            };
+            if let Some(s) = status
+                && !(100..=599).contains(&s)
+            {
+                eprintln!("error: status {s} is not 100-599");
+                return EXIT_USAGE;
+            }
+            let created = match preset {
+                Some(p) => store.create_error_preset(&route, p),
+                None => store.create_response(&route).and_then(|id| {
+                    let t = Target::Response(id.clone());
+                    store.set_str(&t, "name", Some(name.as_deref().unwrap_or("New response")))?;
+                    if let Some(s) = status {
+                        store.set_int(&t, "status", Some(i64::from(s)))?;
+                    }
+                    if let Some(b) = &body {
+                        store.set_str(&t, "body", Some(b))?;
+                    }
+                    if let Some(c) = &content_type {
+                        store.set_str(&t, "content_type", Some(c))?;
+                    }
+                    Ok(id)
+                }),
+            };
+            let id = match created {
+                Ok(id) => id,
+                Err(e) => return fail(e),
+            };
+            if default && let Err(e) = store.set_default_response(&id) {
+                return fail(e);
+            }
+            if let Err(e) = store.flush() {
+                return fail(e);
+            }
+            let snap = store.snapshot();
+            let resp = snap
+                .servers
+                .iter()
+                .flat_map(|(_, s)| s.routes.iter())
+                .flat_map(|r| r.responses.iter())
+                .find(|r| r.id == id);
+            let (n, st) = resp.map_or((String::new(), 0), |r| {
+                (r.name.clone().unwrap_or_default(), r.status)
+            });
+            if ws.json {
+                print_json(&json!({
+                    "id": id, "route": route, "name": n, "status": st, "default": default,
+                }));
+            } else {
+                println!("Added {id}  {st} {n}");
+            }
+            EXIT_OK
+        }
+        ResponseAction::SetDefault { response, ws } => {
+            let store = match open_store(&ws) {
+                Ok(s) => s,
+                Err(c) => return c,
+            };
+            if store.file_of(&Target::Response(response.clone())).is_none() {
+                eprintln!("error: not found: {response}");
+                return EXIT_USAGE;
+            }
+            if let Err(e) = store
+                .set_default_response(&response)
+                .and_then(|()| store.flush().map(|_| ()))
+            {
+                return fail(e);
+            }
+            if ws.json {
+                print_json(&json!({ "id": response, "default": true }));
+            } else {
+                println!("{response} is now the default Response");
+            }
+            EXIT_OK
+        }
+    }
+}
+
 pub fn route(action: RouteAction) -> i32 {
     let (server, ws) = match action {
         RouteAction::List { server, ws } => (server, ws),

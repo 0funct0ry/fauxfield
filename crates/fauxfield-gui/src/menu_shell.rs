@@ -182,6 +182,7 @@ impl Shell {
             || self.any_dialog_open()
             || self.quit_confirm
             || self.about_open
+            || self.sample_dialog.is_some()
             || self.lc.method_menu.is_some()
     }
 

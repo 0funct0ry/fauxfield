@@ -428,3 +428,46 @@ path = "/h"
         "{out}"
     );
 }
+
+#[test]
+fn rules_reorder_and_presets_round_trip() {
+    let (_d, s) = ws();
+    let srv = s.create_server("Rules", 3050).unwrap();
+    let rte = s.create_route(&srv, None, "get", "/r").unwrap();
+    let a = s.create_response(&rte).unwrap();
+    let b = s.create_response(&rte).unwrap();
+    let rule = |k: &str, v: &str| fauxfield_model::Rule {
+        target: "query".into(),
+        key: Some(k.into()),
+        op: "eq".into(),
+        value: Some(toml::Value::String(v.into())),
+        negate: false,
+        extra: Default::default(),
+    };
+    s.set_rule(&a, None, &rule("role", "admin")).unwrap();
+    s.set_rule(&a, None, &rule("x", "1")).unwrap();
+    s.set_rule(&b, None, &rule("y", "2")).unwrap();
+    s.move_rule(&a, 1, 0).unwrap();
+    s.move_response(&a, None).unwrap(); // a after b
+    let p = s.create_error_preset(&rte, 401).unwrap();
+    s.set_response_disabled(&p, true).unwrap();
+    s.set_response_mode(&rte, "sequential").unwrap();
+    s.flush().unwrap();
+    let snap = s.snapshot();
+    let file = s.server_file(&srv).unwrap();
+    let text = s.text(&file).unwrap();
+    let parsed = fauxfield_model::parse_server(&text).unwrap();
+    let route = &parsed.routes[0];
+    assert_eq!(route.response_mode.as_deref(), Some("sequential"));
+    assert_eq!(route.responses[1].id, b);
+    assert_eq!(route.responses[1].rules[0].key.as_deref(), Some("y"));
+    assert_eq!(route.responses[2].id, a);
+    assert_eq!(route.responses[2].rules[0].key.as_deref(), Some("x"));
+    assert_eq!(route.responses[2].rules.len(), 2);
+    assert!(route.responses[3].disabled);
+    assert_eq!(route.responses[3].status, 401);
+    assert!(fauxfield_model::validate_servers(&[(file, parsed)]).is_empty());
+    let _ = snap;
+    s.delete_rule(&a, 0).unwrap();
+    assert!(s.set_response_mode(&rte, "bogus").is_err());
+}

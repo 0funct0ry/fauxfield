@@ -71,6 +71,11 @@ pub enum Command {
         #[command(subcommand)]
         action: crate::workspace_cmd::RouteAction,
     },
+    /// Add and configure Responses of a Route.
+    Response {
+        #[command(subcommand)]
+        action: crate::workspace_cmd::ResponseAction,
+    },
     /// Serve a workspace headless: become the host and run its servers until stopped.
     Run(crate::host_cmd::RunArgs),
     /// Show the running host and its servers (exit code 4 when no host is running).
@@ -177,6 +182,7 @@ pub fn run() -> i32 {
         Some(Command::Workspace { action }) => crate::workspace_cmd::workspace(action),
         Some(Command::Server { action }) => crate::workspace_cmd::server(action),
         Some(Command::Route { action }) => crate::workspace_cmd::route(action),
+        Some(Command::Response { action }) => crate::workspace_cmd::response(action),
         Some(Command::Run(a)) => crate::host_cmd::run(a),
         Some(Command::Status(a)) => crate::host_cmd::status(a),
         Some(Command::Stop(a)) => crate::host_cmd::stop(a),

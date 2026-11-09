@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use fauxfield_model::pattern::{self, Pattern, Seg, effective_routes, split_path};
-use fauxfield_model::{Response, Route, Server};
+use fauxfield_model::{Route, Server};
 use regex::{Regex, RegexSet};
 
 /// Compiled, immutable route table for one server; swapped atomically on hot reload.
@@ -112,6 +112,9 @@ impl RouteTable {
         };
         let mut regex_src = Vec::new();
         for r in effective_routes(server) {
+            if r.response_mode.as_deref() == Some("disabled") {
+                continue;
+            }
             let Ok(pat) = Pattern::parse(&r.path, r.match_mode.as_deref(), strict) else {
                 continue;
             };
@@ -298,15 +301,6 @@ impl RouteTable {
         scored.truncate(3);
         scored
     }
-}
-
-/// Default response, else the first one (SPEC §5.2).
-pub fn pick_response(route: &Route) -> Option<&Response> {
-    route
-        .responses
-        .iter()
-        .find(|r| r.default)
-        .or_else(|| route.responses.first())
 }
 
 fn levenshtein(a: &str, b: &str) -> usize {

@@ -5,6 +5,7 @@ mod engine;
 mod problem;
 mod recording;
 mod router;
+mod rules;
 mod testreq;
 mod time;
 
@@ -14,6 +15,7 @@ pub use engine::{
 };
 pub use recording::{Recording, Timing, to_curl};
 pub use router::{Match, RouteTable};
+pub use rules::{ResponseTrace, RuleTrace, Trace};
 pub use testreq::{TestRequest, TestResponse};
 
 /// Current time as RFC 3339 UTC (for `host.json` and log lines).

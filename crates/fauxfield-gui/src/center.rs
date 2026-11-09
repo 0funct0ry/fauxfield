@@ -358,6 +358,17 @@ impl Shell {
                     )
                     .child(div().flex_1())
                     .child(crate::dev_id!(
+                        toolbar_button(t, "route-sample")
+                            .child("Sample…")
+                            .on_click(cx.listener(|this, _, w, cx| {
+                                this.run_action_id("edit_sample_request", w, cx)
+                            })),
+                        format!("route-sample-{}", r.id),
+                        Button,
+                        "Edit sample request",
+                        Action("edit_sample_request")
+                    ))
+                    .child(crate::dev_id!(
                         toolbar_button(t, "route-send")
                             .child(icon("play", 12., t.created))
                             .child("Send test")
@@ -411,6 +422,7 @@ impl Shell {
             .child(
                 div().flex_1().min_h_0().child(match sub {
                     0 => self.render_responses(t, r, cx).into_any_element(),
+                    1 => self.render_rules(t, r, cx),
                     5 => self.render_route_settings(t, s, r, cx).into_any_element(),
                     n => div()
                         .p(px(16.))
@@ -614,21 +626,37 @@ impl Shell {
                 "edit_route_priority",
                 cx.listener(|this, _, w, cx| this.edit_route_setting(0, w, cx)),
             )))
-            .child(
-                row().child(label("Response mode")).child(
+            .child({
+                let route_id = r.id.clone();
+                row().child(label("Response mode")).child(crate::dev_id!(
                     div()
                         .id("route-response-mode")
+                        .h(px(22.))
                         .px(px(4.))
-                        .child("Rules")
-                        .child(
-                            div()
-                                .ml(px(8.))
-                                .text_size(px(12.))
-                                .text_color(t.text_muted)
-                                .child("Other modes arrive in M5"),
-                        ),
-                ),
-            )
+                        .flex()
+                        .items_center()
+                        .font_family(BUFFER_FONT)
+                        .text_size(px(12.))
+                        .cursor_pointer()
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, ev: &gpui::MouseDownEvent, _, cx| {
+                                this.open_picker_menu(
+                                    &route_id,
+                                    crate::tree::RowKind::ResponseMode,
+                                    f32::from(ev.position.x),
+                                    f32::from(ev.position.y),
+                                    cx,
+                                );
+                            }),
+                        )
+                        .child(r.response_mode.clone()),
+                    "route-response-mode",
+                    Button,
+                    r.response_mode.clone(),
+                    Press(format!("response-mode:{}", r.id))
+                ))
+            })
             .child(row().child(label("Test a path")).child(field_button_with(
                 "route-test-path-input",
                 if input.is_empty() {
@@ -722,86 +750,19 @@ impl Shell {
                     .border_r_1()
                     .border_color(t.border_variant)
                     .bg(t.panel)
-                    .children(r.responses.iter().enumerate().map(|(i, resp)| {
-                        let rid = r.id.clone();
-                        let (resp_id, menu_id, dots_id) =
-                            (resp.id.clone(), resp.id.clone(), resp.id.clone());
-                        let group = format!("resp-grp-{}", resp.id);
-                        crate::dev_id!(
-                            div()
-                                .id(crate::ui::eid(format!("resp-{}-{i}", r.id)))
-                                .group(group.clone())
-                                .h(px(ROW_H + 4.))
-                                .px(px(10.))
-                                .flex()
-                                .items_center()
-                                .gap(px(6.))
-                                .cursor_pointer()
-                                .on_click(cx.listener(move |this, ev: &ClickEvent, w, cx| {
-                                    this.resp_sel.insert(rid.clone(), i);
-                                    if ev.click_count() >= 2 {
-                                        this.rename_row(&resp_id, w, cx);
-                                    }
-                                    cx.notify();
-                                }))
-                                .on_mouse_down(
-                                    MouseButton::Right,
-                                    cx.listener(move |this, ev: &gpui::MouseDownEvent, _, cx| {
-                                        this.open_response_menu(
-                                            &menu_id,
-                                            f32::from(ev.position.x),
-                                            f32::from(ev.position.y),
-                                            cx,
-                                        )
-                                    }),
-                                )
-                                .when(i == sel, |d| d.bg(t.element_selected))
-                                .child(
-                                    div()
-                                        .text_size(px(11.))
-                                        .text_color(t.status_color(resp.status))
-                                        .child(resp.status.to_string()),
-                                )
-                                .child(div().flex_1().truncate().child(resp.name.clone()))
-                                .children(resp.default.then(|| icon("check", 12., t.created)))
-                                .child(crate::dev_id!(
-                                    div()
-                                        .id(crate::ui::eid(format!("resp-dots-{}", resp.id)))
-                                        .size(px(20.))
-                                        .flex_none()
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .rounded(px(3.))
-                                        .invisible()
-                                        .group_hover(group, |s| s.visible())
-                                        .hover(|s| s.bg(t.element_selected))
-                                        .on_mouse_down(
-                                            MouseButton::Left,
-                                            cx.listener(
-                                                move |this, ev: &gpui::MouseDownEvent, _, cx| {
-                                                    this.open_response_menu(
-                                                        &dots_id,
-                                                        f32::from(ev.position.x),
-                                                        f32::from(ev.position.y),
-                                                        cx,
-                                                    );
-                                                    cx.stop_propagation();
-                                                },
-                                            ),
-                                        )
-                                        .child(icon("ellipsis", 14., t.icon_muted)),
-                                    format!("resp-dots-{}", resp.id),
-                                    Button,
-                                    format!("Menu for {}", resp.name),
-                                    None
-                                )),
-                            format!("resp-{}-{i}", r.id),
-                            Row,
-                            &resp.name,
-                            Response(r.id.clone(), i)
-                        )
-                    })),
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .id(crate::ui::eid(format!("resp-list-{}", r.id)))
+                            .flex_1()
+                            .min_h_0()
+                            .overflow_y_scroll()
+                            .children(r.responses.iter().enumerate().map(|(i, resp)| {
+                                self.render_response_row(t, r, i, i == sel, resp, cx)
+                            })),
+                    )
+                    .child(self.render_response_footer(t, r, cx)),
             )
             .child(
                 div()
@@ -811,6 +772,214 @@ impl Shell {
                     .flex_col()
                     .children(first.map(|resp| self.render_response_pane(t, &resp, cx))),
             )
+    }
+
+    fn render_response_row(
+        &self,
+        t: &Theme,
+        r: &Route,
+        i: usize,
+        selected: bool,
+        resp: &crate::view::Response,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let rid = r.id.clone();
+        let (resp_id, menu_id, dots_id) = (resp.id.clone(), resp.id.clone(), resp.id.clone());
+        let group = format!("resp-grp-{}", resp.id);
+        let drag = crate::tree::DraggedResponse {
+            id: resp.id.clone(),
+            label: resp.name.clone(),
+        };
+        let (drop_target, hover_drop) = (resp.id.clone(), t.element_hover);
+        let rules = resp.rules.len();
+        let dim = resp.disabled;
+        let badge = |text: String| {
+            div()
+                .px(px(5.))
+                .rounded(px(3.))
+                .bg(t.element_hover)
+                .text_size(px(10.))
+                .text_color(t.text_muted)
+                .child(text)
+        };
+        crate::dev_id!(
+            div()
+                .id(crate::ui::eid(format!("resp-{}-{i}", r.id)))
+                .group(group.clone())
+                .min_h(px(ROW_H + 4.))
+                .py(px(3.))
+                .px(px(10.))
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .cursor_pointer()
+                .on_click(cx.listener(move |this, ev: &ClickEvent, w, cx| {
+                    this.resp_sel.insert(rid.clone(), i);
+                    if ev.click_count() >= 2 {
+                        this.rename_row(&resp_id, w, cx);
+                    }
+                    cx.notify();
+                }))
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(move |this, ev: &gpui::MouseDownEvent, _, cx| {
+                        this.open_response_menu(
+                            &menu_id,
+                            f32::from(ev.position.x),
+                            f32::from(ev.position.y),
+                            cx,
+                        )
+                    }),
+                )
+                .on_drag(drag, |d, _, _, cx| {
+                    gpui::AppContext::new(cx, |_| DragGhost(d.label.clone()))
+                })
+                .drag_over::<crate::tree::DraggedResponse>(move |s, _, _, _| s.bg(hover_drop))
+                .on_drop(
+                    cx.listener(move |this, d: &crate::tree::DraggedResponse, _, cx| {
+                        this.drop_response(&d.id, &drop_target, cx)
+                    },)
+                )
+                .when(selected, |d| d.bg(t.element_selected))
+                .child(
+                    div()
+                        .text_size(px(11.))
+                        .text_color(t.status_color(resp.status))
+                        .child(resp.status.to_string()),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .text_color(if dim { t.text_muted } else { t.text })
+                        .child(div().truncate().child(resp.name.clone()))
+                        .children((!resp.description.is_empty()).then(|| {
+                            crate::dev_id!(
+                                div()
+                                    .id(crate::ui::eid(format!("resp-desc-{}", resp.id)))
+                                    .truncate()
+                                    .text_size(px(11.))
+                                    .text_color(t.text_muted)
+                                    .child(resp.description.clone()),
+                                format!("resp-desc-{}", resp.id),
+                                Text,
+                                resp.description.clone(),
+                                None
+                            )
+                        })),
+                )
+                .children(dim.then(|| badge("off".into())))
+                .children((rules > 0).then(|| {
+                    crate::dev_id!(
+                        badge(format!("{rules} rule{}", if rules == 1 { "" } else { "s" }))
+                            .id(crate::ui::eid(format!("resp-rules-{}", resp.id))),
+                        format!("resp-rules-{}", resp.id),
+                        Text,
+                        format!("{rules} rules"),
+                        None
+                    )
+                }))
+                .children(resp.default.then(|| {
+                    crate::dev_id!(
+                        div()
+                            .id(crate::ui::eid(format!("resp-default-{}", resp.id)))
+                            .child(icon("star", 12., t.modified)),
+                        format!("resp-default-{}", resp.id),
+                        Text,
+                        "Default response",
+                        None
+                    )
+                }))
+                .child(crate::dev_id!(
+                    div()
+                        .id(crate::ui::eid(format!("resp-dots-{}", resp.id)))
+                        .size(px(20.))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(3.))
+                        .invisible()
+                        .group_hover(group, |s| s.visible())
+                        .hover(|s| s.bg(t.element_selected))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, ev: &gpui::MouseDownEvent, _, cx| {
+                                this.open_response_menu(
+                                    &dots_id,
+                                    f32::from(ev.position.x),
+                                    f32::from(ev.position.y),
+                                    cx,
+                                );
+                                cx.stop_propagation();
+                            }),
+                        )
+                        .child(icon("ellipsis", 14., t.icon_muted)),
+                    format!("resp-dots-{}", resp.id),
+                    Button,
+                    format!("Menu for {}", resp.name),
+                    None
+                )),
+            format!("resp-{}-{i}", r.id),
+            Row,
+            &resp.name,
+            Response(r.id.clone(), i)
+        )
+        .into_any_element()
+    }
+
+    /// "New response" and "Add error preset" under the response list.
+    fn render_response_footer(&self, t: &Theme, r: &Route, cx: &mut Context<Self>) -> AnyElement {
+        let (new_id, preset_id) = (r.id.clone(), r.id.clone());
+        let btn = |id: &'static str, label: &'static str| {
+            div()
+                .id(id)
+                .h(px(26.))
+                .px(px(10.))
+                .flex()
+                .items_center()
+                .text_size(px(12.))
+                .text_color(t.text_muted)
+                .cursor_pointer()
+                .hover(|s| s.bg(t.element_hover).text_color(t.text))
+                .child(label)
+        };
+        div()
+            .flex_none()
+            .border_t_1()
+            .border_color(t.border_variant)
+            .flex()
+            .flex_col()
+            .child(crate::dev_id!(
+                btn("resp-add", "+ New response").on_click(
+                    cx.listener(move |this, _, _, cx| { this.new_response_for(&new_id, cx) })
+                ),
+                "resp-add",
+                Button,
+                "New response",
+                Press(format!("resp-add:{}", r.id))
+            ))
+            .child(crate::dev_id!(
+                btn("resp-add-preset", "+ Add error preset…").on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, ev: &gpui::MouseDownEvent, _, cx| {
+                        this.open_picker_menu(
+                            &preset_id,
+                            crate::tree::RowKind::ErrorPresets,
+                            f32::from(ev.position.x),
+                            f32::from(ev.position.y) - 300.,
+                            cx,
+                        );
+                    })
+                ),
+                "resp-add-preset",
+                Button,
+                "Add error preset",
+                Press(format!("resp-add-preset:{}", r.id))
+            ))
+            .into_any_element()
     }
 
     // ---- Server tab ----------------------------------------------------------------------
@@ -1280,6 +1449,80 @@ impl Shell {
                 .child(line("Pattern".into(), rec.route_pattern.clone()));
             for (k, v) in &rec.params {
                 col = col.child(line(format!("{k} ="), v.clone()));
+            }
+        }
+        if let Some(tr) = &rec.trace {
+            col = col
+                .child(
+                    div()
+                        .id("traffic-trace")
+                        .child(section("RESPONSE SELECTION")),
+                )
+                .child(line(
+                    "Mode".into(),
+                    format!("{} (call {})", tr.mode, tr.call),
+                ))
+                .child(line(
+                    "Chosen".into(),
+                    if rec.response_name.is_empty() {
+                        rec.response_id.clone()
+                    } else {
+                        format!("{} ({})", rec.response_name, rec.response_id)
+                    },
+                ))
+                .child(line("Because".into(), tr.reason.clone()));
+            for (n, resp) in tr.evaluated.iter().enumerate() {
+                let mark = |ok: bool| if ok { "✓" } else { "✗" };
+                let colour = |ok: bool| if ok { t.created } else { t.text_muted };
+                let head = format!(
+                    "{} {}{}",
+                    mark(resp.passed),
+                    if resp.name.is_empty() {
+                        &resp.id
+                    } else {
+                        &resp.name
+                    },
+                    if resp.note.is_empty() {
+                        format!("  [{}]", resp.logic)
+                    } else {
+                        format!("  ({})", resp.note)
+                    }
+                );
+                col = col.child(
+                    div()
+                        .id(crate::ui::eid(format!("trace-resp-{n}")))
+                        .pt(px(3.))
+                        .font_family(BUFFER_FONT)
+                        .text_size(px(11.))
+                        .text_color(colour(resp.passed))
+                        .child(head),
+                );
+                for (k, rule) in resp.rules.iter().enumerate() {
+                    let subject = if rule.key.is_empty() {
+                        rule.target.clone()
+                    } else {
+                        format!("{} {}", rule.target, rule.key)
+                    };
+                    let actual = rule
+                        .actual
+                        .clone()
+                        .map_or("(none)".to_string(), |a| format!("{a:?}"));
+                    col = col.child(
+                        div()
+                            .id(crate::ui::eid(format!("trace-rule-{n}-{k}")))
+                            .pl(px(14.))
+                            .font_family(BUFFER_FONT)
+                            .text_size(px(11.))
+                            .text_color(colour(rule.passed))
+                            .child(format!(
+                                "{} {subject} {}{} {} — got {actual}",
+                                mark(rule.passed),
+                                if rule.negate { "not " } else { "" },
+                                rule.op,
+                                rule.expected,
+                            )),
+                    );
+                }
             }
         }
         let mut col = col

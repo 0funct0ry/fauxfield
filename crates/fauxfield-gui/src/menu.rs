@@ -461,6 +461,7 @@ pub fn build_menus(ctx: &MenuContext) -> Vec<MenuDef> {
         mnemonic: Some('R'),
         entries: vec![
             act("send_test", "Send Test Request"),
+            act("edit_sample_request", "Edit Sample Request…"),
             MenuEntry::Separator,
             act("edit_route_method", "Edit Method…"),
             act("edit_route_path", "Edit Path…"),
@@ -578,9 +579,11 @@ pub fn enabled(id: &str, ctx: &MenuContext) -> bool {
         "edit_server_port" => ctx.current_server.is_some(),
         "clear_traffic" => ctx.traffic_rows > 0,
         "copy_as_curl" => ctx.traffic_row_selected,
-        "send_test" | "edit_route_method" | "edit_route_path" | "new_response" => {
-            ctx.current_route.is_some()
-        }
+        "send_test"
+        | "edit_sample_request"
+        | "edit_route_method"
+        | "edit_route_path"
+        | "new_response" => ctx.current_route.is_some(),
         "set_default_response"
         | "edit_response_status"
         | "edit_response_name"

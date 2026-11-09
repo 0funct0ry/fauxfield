@@ -5,8 +5,14 @@
 pub struct Response {
     pub id: String,
     pub name: String,
+    /// One-line note shown under the name (SPEC §5.5).
+    pub description: String,
     pub status: u16,
     pub default: bool,
+    pub disabled: bool,
+    /// `and` or `or`.
+    pub rules_logic: String,
+    pub rules: Vec<fauxfield_model::Rule>,
     pub content_type: String,
     pub delay_ms: u32,
     pub body: String,
@@ -27,6 +33,8 @@ pub struct Route {
     /// Effective mode: exact, param or regex.
     pub match_mode: String,
     pub priority: i32,
+    /// `rules` (default), `sequential`, `random` or `disabled`.
+    pub response_mode: String,
     /// Winning Route ID when this Route is fully shadowed.
     pub shadowed_by: Option<String>,
     /// Pattern error (E033/E034/E035) when the pattern is invalid.
@@ -178,6 +186,7 @@ impl Workspace {
             .label()
             .to_string(),
             priority: r.priority.unwrap_or(0),
+            response_mode: r.response_mode.clone().unwrap_or_else(|| "rules".into()),
             shadowed_by: shadows
                 .iter()
                 .find(|x| x.route == r.id)
@@ -200,8 +209,12 @@ impl Workspace {
                 .map(|x| Response {
                     id: x.id.clone(),
                     name: x.name.clone().unwrap_or_else(|| x.status.to_string()),
+                    description: x.description.clone().unwrap_or_default(),
                     status: x.status,
                     default: x.default,
+                    disabled: x.disabled,
+                    rules_logic: x.rules_logic.clone().unwrap_or_else(|| "and".into()),
+                    rules: x.rules.clone(),
                     content_type: x.content_type.clone().unwrap_or_default(),
                     delay_ms: x.delay_ms.unwrap_or(0) as u32,
                     body: x.body.clone().unwrap_or_default(),

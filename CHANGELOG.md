@@ -3,6 +3,20 @@
 ## Unreleased
 
 ### Added
+- M5 Multiple and conditional responses: `response_mode` (`rules`, `sequential`, `random`,
+  `disabled`), per-Response `rules` (targets header, query, cookie, param, body, method, path, ip,
+  count; ops eq, ne, contains, starts_with, ends_with, regex, exists, absent, gt, gte, lt, lte, in,
+  json_schema; `negate`; `rules_logic` and/or), `description` and `disabled`; body parsing for JSON
+  (JSONPath), urlencoded forms, multipart fields and text; per-route call counters (reset by
+  *Dataset: Reset State*); a rule trace on every recording (`trace`, `response_id`) shown in the
+  Inspector; diagnostics E043 to E049 and W044. GUI: response list with drag reorder, default star,
+  rule-count and off badges, description line, Disable, Move up/down and *Add error preset* (RFC 9457
+  problem+json); Rules sub-tab (one table grouped by Response, and/or switch, row editor with
+  inline validation); Response mode picker in Settings; Send test uses a per-Route sample request
+  (method, query, headers, cookies, body) edited in a dialog and saved in `.fauxfield/ui.json`.
+  CLI: `fauxfield response add` and `response set-default`. MCP: `upsert_route` takes
+  `response_mode` and Response `rules`, `rules_logic`, `description`, `disabled`; `get_traffic`
+  returns the trace. dev-mcp: `ui.state.route`, scenario `m05-responses`.
 - M4.1 Reusable code editor: one `CodeEditor` component (`fauxfield-gui/src/code_editor/`) replaces
   the hand-rolled body editor. Grapheme-aware buffer with undo (200 steps / 1 MiB, typing grouped
   within 1 s), soft wrap, tabs, IME, mouse (double/triple click, drag auto-scroll, wheel), auto-close,

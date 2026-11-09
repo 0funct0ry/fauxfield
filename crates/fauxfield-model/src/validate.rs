@@ -149,6 +149,16 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                     ));
                 }
             }
+            if let Some(m) = r.response_mode.as_deref()
+                && !crate::rules::RESPONSE_MODES.contains(&m)
+            {
+                out.push(Diagnostic::error(
+                    file,
+                    format!("{rp}.response_mode"),
+                    "E043",
+                    format!("unknown response_mode `{m}`"),
+                ));
+            }
             for (j, resp) in r.responses.iter().enumerate() {
                 let sp = format!("{rp}.responses[{j}]");
                 if let Some(prev) = ids.insert(&resp.id, file) {
@@ -166,6 +176,22 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                         "E040",
                         format!("status {} is not 100-599", resp.status),
                     ));
+                }
+                if let Some(l) = resp.rules_logic.as_deref()
+                    && l != "and"
+                    && l != "or"
+                {
+                    out.push(Diagnostic::error(
+                        file,
+                        format!("{sp}.rules_logic"),
+                        "E049",
+                        format!("rules_logic must be `and` or `or`, got `{l}`"),
+                    ));
+                }
+                for (k, rule) in resp.rules.iter().enumerate() {
+                    if let Err((code, m)) = crate::rules::check_rule(rule) {
+                        out.push(Diagnostic::error(file, format!("{sp}.rules[{k}]"), code, m));
+                    }
                 }
                 if resp.body.is_some() && resp.body_file.is_some() {
                     out.push(Diagnostic::error(
@@ -185,6 +211,14 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                         "body_file must stay inside the workspace",
                     ));
                 }
+            }
+            if let Some(d) = r.responses.iter().find(|x| x.default && x.disabled) {
+                out.push(Diagnostic::warning(
+                    file,
+                    format!("{rp}.responses"),
+                    "W044",
+                    format!("default response `{}` is disabled", d.id),
+                ));
             }
             let defaults = r.responses.iter().filter(|x| x.default).count();
             if defaults > 1 {

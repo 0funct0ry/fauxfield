@@ -70,6 +70,14 @@ struct ResponseSpec {
     delay_ms: Option<u64>,
     default: Option<bool>,
     headers: Option<std::collections::BTreeMap<String, String>>,
+    /// One-line note shown under the name; not sent.
+    description: Option<String>,
+    /// Skip this Response during selection.
+    disabled: Option<bool>,
+    /// `and` (default) or `or`.
+    rules_logic: Option<String>,
+    /// Replaces all rules of the Response when given. Fields: target, key, op, value, negate.
+    rules: Option<Vec<fauxfield_model::Rule>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -89,6 +97,8 @@ struct UpsertRoute {
     match_mode: Option<String>,
     /// Higher wins; 0 is the default and is not written.
     priority: Option<i32>,
+    /// `rules` (default), `sequential`, `random` or `disabled`.
+    response_mode: Option<String>,
     responses: Option<Vec<ResponseSpec>>,
 }
 
@@ -194,6 +204,40 @@ fn apply_response(store: &Store, id: &str, r: &ResponseSpec) -> Result<(), Strin
     }
     if r.default == Some(true) {
         store.set_default_response(id).map_err(e)?;
+    }
+    if let Some(v) = &r.description {
+        store
+            .set_str(
+                &t,
+                "description",
+                Some(v).filter(|v| !v.is_empty()).map(String::as_str),
+            )
+            .map_err(e)?;
+    }
+    if let Some(v) = r.disabled {
+        store.set_response_disabled(id, v).map_err(e)?;
+    }
+    if let Some(v) = &r.rules_logic {
+        store.set_rules_logic(id, v).map_err(e)?;
+    }
+    if let Some(rules) = &r.rules {
+        for rule in rules {
+            fauxfield_model::rules::check_rule(rule).map_err(|(c, m)| format!("{c}: {m}"))?;
+        }
+        let have = store
+            .snapshot()
+            .servers
+            .iter()
+            .flat_map(|(_, s)| s.routes.iter())
+            .flat_map(|r| r.responses.iter())
+            .find(|x| x.id == id)
+            .map_or(0, |x| x.rules.len());
+        for _ in 0..have {
+            store.delete_rule(id, 0).map_err(e)?;
+        }
+        for rule in rules {
+            store.set_rule(id, None, rule).map_err(e)?;
+        }
     }
     Ok(())
 }
@@ -419,6 +463,9 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                 }
                 if let Some(v) = &a.name {
                     s.set_str(&t, "name", Some(v)).map_err(e)?;
+                }
+                if let Some(v) = &a.response_mode {
+                    s.set_response_mode(&rid, v).map_err(e)?;
                 }
                 // A new route starts with one placeholder response; the first given response reuses it.
                 let mut spare = if created {

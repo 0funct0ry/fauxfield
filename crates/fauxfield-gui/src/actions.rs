@@ -38,6 +38,7 @@ actions!(
         NewServer,
         NewRoute,
         SendTest,
+        EditSampleRequest,
         Duplicate,
         ResetState,
         NewFolder,
@@ -196,6 +197,11 @@ pub static ACTIONS: &[ActionInfo] = &[
     row!("new_server", "Server: New…", NewServer),
     row!("new_route", "Route: New…", NewRoute),
     row!("send_test", "Route: Send Test Request", SendTest),
+    row!(
+        "edit_sample_request",
+        "Route: Edit Sample Request…",
+        EditSampleRequest
+    ),
     row!("duplicate", "Edit: Duplicate Response or Route", Duplicate),
     row!("reset_state", "Dataset: Reset State", ResetState),
     row!("new_folder", "Folder: New…", NewFolder),

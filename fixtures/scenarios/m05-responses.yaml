@@ -1,0 +1,48 @@
+# M5 scenario: multiple responses per Route, the Rules sub-tab, the sample request dialog.
+# Needs the example workspace as the launch workspace (scripts/smoke-ui.sh copies it).
+name: m05-responses
+size: default
+steps:
+  - state: [reset]
+  - open: {kind: route, id: rt_users_get}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/id, equals: rt_users_get}
+  - assert: {pointer: /route/response_mode, equals: rules}
+  - assert: {pointer: /route/responses/0/rules, equals: 0}
+  # New response and the error preset picker.
+  - click_element: {id: resp-add}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/responses/2/status, equals: 200}
+  - click_element: {id: resp-add-preset}
+  - wait_for_idle: {}
+  - assert_find: {text: "401 Unauthorized"}
+  - click_element: {id: "menu-401 Unauthorized"}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/responses/3/status, equals: 401}
+  # Rules: add one, toggle the logic, remove it.
+  - click_element: {id: subtab-rt_users_get-Rules}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/sub_tab, equals: 1}
+  - click_element: {id: rules-add-rsp_users_get_1}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/responses/0/rules, equals: 1}
+  - click_element: {id: rules-logic-rsp_users_get_1}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/responses/0/rules_logic, equals: or}
+  - click_element: {id: rule-remove-rsp_users_get_1-0}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/responses/0/rules, equals: 0}
+  # Open and cancel the sample request dialog.
+  - click_element: {id: subtab-rt_users_get-Responses}
+  - wait_for_idle: {}
+  - invoke: edit_sample_request
+  - wait_for_idle: {}
+  - wait_for: {condition: {pointer: /route/sample_dialog, equals: true}}
+  - assert: {pointer: /modal, equals: sample_request}
+  - assert_find: {text: sample-headers, ids: [sample-headers]}
+  - click_element: {id: sample-cancel}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/sample_dialog, equals: false}
+  - audit:
+      themes: [one-dark, one-light]
+      max_errors: 0

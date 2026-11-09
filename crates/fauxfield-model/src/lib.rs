@@ -4,14 +4,15 @@
 mod diagnostic;
 mod id;
 pub mod pattern;
+pub mod rules;
 mod types;
 mod validate;
 
 pub use diagnostic::{Diagnostic, Severity};
 pub use id::new_id;
 pub use types::{
-    Environment, Folder, Manifest, Response, Route, SCHEMA_VERSION, Server, parse_environment,
-    parse_manifest, parse_server,
+    Environment, Folder, Manifest, Response, Route, Rule, SCHEMA_VERSION, Server,
+    parse_environment, parse_manifest, parse_server,
 };
 pub use validate::{validate_environment_names, validate_servers};
 

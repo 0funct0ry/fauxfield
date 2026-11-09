@@ -33,6 +33,21 @@ pub enum InlineTarget {
     Status(String),
     Delay(String),
     BodyFile(String),
+    /// One-line description under the Response name.
+    Description(String),
+    /// Sample request dialog fields (route id).
+    SampleMethod(String),
+    SampleQuery(String),
+    SampleCookies(String),
+    /// Key / Value cell of rule `row` of a Response (Rules sub-tab).
+    RuleKey {
+        response: String,
+        row: usize,
+    },
+    RuleValue {
+        response: String,
+        row: usize,
+    },
     /// Key cell of header row `row` of a Response; `row == rows.len()` is a new row.
     HeaderKey {
         response: String,
@@ -184,6 +199,40 @@ impl Shell {
                         s.set_str(&T::Response(id), "body", None)
                     });
                 }
+            }
+            InlineTarget::SampleMethod(_) => {
+                if let Some(d) = self.sample_dialog.as_mut() {
+                    d.sample.method = v.to_ascii_uppercase();
+                }
+            }
+            InlineTarget::SampleQuery(_) => {
+                if let Some(d) = self.sample_dialog.as_mut() {
+                    d.sample.query = v;
+                }
+            }
+            InlineTarget::SampleCookies(_) => {
+                if let Some(d) = self.sample_dialog.as_mut() {
+                    d.sample.cookies = v;
+                }
+            }
+            InlineTarget::Description(id) => {
+                self.store_op(cx, |s| {
+                    s.set_str(
+                        &T::Response(id),
+                        "description",
+                        Some(&v).filter(|v| !v.is_empty()).map(String::as_str),
+                    )
+                });
+            }
+            InlineTarget::RuleKey { response, row } => {
+                self.edit_rule(&response, row, cx, |r| {
+                    r.key = Some(v.clone()).filter(|k| !k.is_empty())
+                });
+            }
+            InlineTarget::RuleValue { response, row } => {
+                self.edit_rule(&response, row, cx, |r| {
+                    r.value = Some(crate::rules_ui::parse_value(&r.op, &v));
+                });
             }
             InlineTarget::HeaderKey { response, row } => {
                 self.commit_header_key(&response, row, &edit.buf.text, nav, window, cx)
@@ -849,6 +898,19 @@ impl Shell {
                             "0",
                             110.,
                             true,
+                            cx,
+                        ),
+                    ))
+                    .child(field(
+                        "Description",
+                        self.inline_field(
+                            t,
+                            "resp-description".into(),
+                            InlineTarget::Description(resp.id.clone()),
+                            &resp.description,
+                            "Only on the 3rd call",
+                            260.,
+                            false,
                             cx,
                         ),
                     )),

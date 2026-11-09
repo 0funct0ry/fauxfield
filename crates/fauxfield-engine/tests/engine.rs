@@ -276,3 +276,99 @@ fn unmatched_hint_false_omits_closest_but_keeps_the_problem() {
     assert_eq!(v["status"], 404);
     e.stop_all();
 }
+
+fn conditional(port: u16, mode: &str) -> fauxfield_model::Server {
+    parse_server(&format!(
+        r#"
+id = "srv_c"
+name = "Cond"
+port = {port}
+[[routes]]
+id = "rte_c"
+path = "/c"
+response_mode = "{mode}"
+[[routes.responses]]
+id = "rsp_admin"
+name = "Admin"
+status = 200
+  [[routes.responses.rules]]
+  target = "query"
+  key = "role"
+  op = "eq"
+  value = "admin"
+[[routes.responses]]
+id = "rsp_401"
+name = "Unauthorized"
+status = 401
+  [[routes.responses.rules]]
+  target = "header"
+  key = "Authorization"
+  op = "absent"
+[[routes.responses]]
+id = "rsp_default"
+name = "Default"
+default = true
+status = 202
+"#
+    ))
+    .unwrap()
+}
+
+#[test]
+fn rules_choose_the_response_and_the_trace_explains_it() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(&rt, dir.path());
+    e.apply(vec![conditional(free_port(), "rules")]);
+    e.start("srv_c").unwrap();
+    let send = |path: &str, auth: bool| {
+        let mut r = req("GET", path);
+        if auth {
+            r.headers.push(("authorization".into(), "Bearer x".into()));
+        }
+        rt.block_on(e.send_test("srv_c", &r)).unwrap().status
+    };
+    assert_eq!(send("/c?role=admin", false), 200);
+    assert_eq!(send("/c", false), 401);
+    assert_eq!(send("/c", true), 202);
+    let recs = e.traffic(&TrafficFilter::default());
+    let last = recs.last().unwrap();
+    let t = last.trace.as_ref().unwrap();
+    assert_eq!(last.response_id, "rsp_default");
+    assert_eq!(t.call, 3);
+    assert_eq!(t.evaluated.len(), 3);
+    assert!(!t.evaluated[1].passed);
+    assert_eq!(t.evaluated[1].rules[0].actual.as_deref(), Some("***"));
+}
+
+#[test]
+fn sequential_cycles_and_reset_state_restarts_it() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(&rt, dir.path());
+    e.apply(vec![conditional(free_port(), "sequential")]);
+    e.start("srv_c").unwrap();
+    let get = || {
+        rt.block_on(e.send_test("srv_c", &req("GET", "/c")))
+            .unwrap()
+            .status
+    };
+    assert_eq!([get(), get(), get(), get()], [200, 401, 202, 200]);
+    e.reset_state();
+    assert_eq!(get(), 200);
+}
+
+#[test]
+fn disabled_mode_makes_the_route_unmatched() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(&rt, dir.path());
+    e.apply(vec![conditional(free_port(), "disabled")]);
+    e.start("srv_c").unwrap();
+    assert_eq!(
+        rt.block_on(e.send_test("srv_c", &req("GET", "/c")))
+            .unwrap()
+            .status,
+        404
+    );
+}

@@ -556,8 +556,12 @@ mod tests {
         Response {
             id: "rsp_1".into(),
             name: "OK".into(),
+            description: String::new(),
             status: 200,
             default: true,
+            disabled: false,
+            rules_logic: "and".into(),
+            rules: vec![],
             content_type: "application/json".into(),
             delay_ms: 0,
             body: String::new(),

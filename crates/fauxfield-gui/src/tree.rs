@@ -109,7 +109,15 @@ pub enum RowKind {
     /// A Response in the Route tab's list (menu only; never a tree row).
     Response {
         default: bool,
+        disabled: bool,
     },
+    /// "Add error preset" picker; the row id is the Route.
+    ErrorPresets,
+    /// Rule target picker; the row id is `<response>#<rule index>`.
+    RuleTarget,
+    RuleOp,
+    /// Response mode picker; the row id is the Route.
+    ResponseMode,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -277,6 +285,14 @@ pub enum MenuAct {
     MoveDown,
     MoveToRoot,
     SetDefaultResponse,
+    /// Response: toggle `disabled`.
+    ToggleResponseDisabled,
+    /// Add the RFC 9457 error preset for this status to the Route.
+    ErrorPreset(u16),
+    /// Index into `fauxfield_model::rules::TARGETS` / `OPS` / `RESPONSE_MODES`.
+    SetRuleTarget(usize),
+    SetRuleOp(usize),
+    SetResponseMode(usize),
     ResetDataset,
     // Server menu (M3.1).
     Restart,
@@ -316,6 +332,11 @@ impl MenuAct {
             MoveDown => "move-down".into(),
             MoveToRoot => "move-to-root".into(),
             SetDefaultResponse => "set-default-response".into(),
+            ToggleResponseDisabled => "toggle-response-disabled".into(),
+            ErrorPreset(c) => format!("error-preset-{c}"),
+            SetRuleTarget(i) => format!("rule-target-{i}"),
+            SetRuleOp(i) => format!("rule-op-{i}"),
+            SetResponseMode(i) => format!("response-mode-{i}"),
             ResetDataset => "reset-dataset".into(),
             Restart => "restart".into(),
             ToggleEnabled => "toggle-enabled".into(),
@@ -356,6 +377,21 @@ pub fn workspace_menu_items(recents: &[std::path::PathBuf]) -> Vec<(String, Menu
 }
 
 /// Items of the "⋯" / right-click menu of a tree row, in display order.
+/// "Add error preset" entries (SPEC §5.6), in status order.
+pub const ERROR_PRESET_ITEMS: [(&str, MenuAct); 11] = [
+    ("400 Bad Request", MenuAct::ErrorPreset(400)),
+    ("401 Unauthorized", MenuAct::ErrorPreset(401)),
+    ("403 Forbidden", MenuAct::ErrorPreset(403)),
+    ("404 Not Found", MenuAct::ErrorPreset(404)),
+    ("409 Conflict", MenuAct::ErrorPreset(409)),
+    ("422 Unprocessable Entity", MenuAct::ErrorPreset(422)),
+    ("429 Too Many Requests", MenuAct::ErrorPreset(429)),
+    ("500 Internal Server Error", MenuAct::ErrorPreset(500)),
+    ("502 Bad Gateway", MenuAct::ErrorPreset(502)),
+    ("503 Service Unavailable", MenuAct::ErrorPreset(503)),
+    ("504 Gateway Timeout", MenuAct::ErrorPreset(504)),
+];
+
 pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, MenuAct)> {
     use MenuAct::*;
     match kind {
@@ -431,18 +467,40 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
             v
         }
         RowKind::Dataset => vec![("Reset to seed", ResetDataset)],
-        RowKind::Response { default } => {
+        RowKind::Response { default, disabled } => {
             let mut v = Vec::new();
             if !default {
                 v.push(("Set as default", SetDefaultResponse));
             }
+            v.push((
+                if *disabled { "Enable" } else { "Disable" },
+                ToggleResponseDisabled,
+            ));
             v.extend([
                 ("Rename…", Rename),
                 ("Duplicate", Duplicate),
+                ("Move up", MoveUp),
+                ("Move down", MoveDown),
                 ("Delete", Delete),
             ]);
             v
         }
+        RowKind::ErrorPresets => ERROR_PRESET_ITEMS.to_vec(),
+        RowKind::RuleTarget => fauxfield_model::rules::TARGETS
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (*t, SetRuleTarget(i)))
+            .collect(),
+        RowKind::RuleOp => fauxfield_model::rules::OPS
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (*t, SetRuleOp(i)))
+            .collect(),
+        RowKind::ResponseMode => fauxfield_model::rules::RESPONSE_MODES
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (*t, SetResponseMode(i)))
+            .collect(),
     }
 }
 
@@ -571,6 +629,13 @@ mod tests {
         assert!(labels(&RowKind::Environment { active: false }, false).contains(&"Set active"));
         assert_eq!(labels(&RowKind::Dataset, false), ["Reset to seed"]);
     }
+}
+
+/// A Response row being dragged in the Route tab's list (runtime-only).
+#[derive(Clone, Debug)]
+pub struct DraggedResponse {
+    pub id: String,
+    pub label: String,
 }
 
 /// A Route or Folder row being dragged in the tree (runtime-only).

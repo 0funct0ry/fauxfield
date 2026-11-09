@@ -1576,3 +1576,168 @@ fn headers_table_edits_completes_and_navigates(cx: &mut TestAppContext) {
     view.update(cx, |s, cx| s.remove_header_row(&r, 0, cx));
     assert_eq!(order(&view, cx), vec![hdr("x-b", "2")]);
 }
+
+#[gpui::test]
+fn m5_rules_modes_reorder_presets_and_sample(cx: &mut TestAppContext) {
+    use crate::tree::MenuAct;
+    let (view, cx) = setup(cx, None);
+    let ids = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
+        read(view, cx, |s| {
+            s.ws.find_route("rt_users_get")
+                .unwrap()
+                .1
+                .responses
+                .iter()
+                .map(|r| r.id.clone())
+                .collect::<Vec<_>>()
+        })
+    };
+    let before = ids(&view, cx);
+    assert!(before.len() >= 2);
+    let first = before[0].clone();
+
+    // Rules: add, edit through the pickers, validate, remove.
+    view.update(cx, |s, cx| s.add_rule(&first, cx));
+    let rules = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
+        read(view, cx, |s| s.find_response(&first).unwrap().2.rules)
+    };
+    assert_eq!(rules(&view, cx).len(), 1);
+    view.update_in(cx, |s, w, cx| {
+        s.open_picker_menu(
+            &format!("{first}#0"),
+            crate::tree::RowKind::RuleOp,
+            0.,
+            0.,
+            cx,
+        );
+        let i = fauxfield_model::rules::OPS
+            .iter()
+            .position(|o| *o == "regex")
+            .unwrap();
+        s.run_menu(MenuAct::SetRuleOp(i), w, cx);
+    });
+    assert_eq!(rules(&view, cx)[0].op, "regex");
+    view.update(cx, |s, cx| {
+        s.edit_rule(&first, 0, cx, |r| {
+            r.value = Some(toml::Value::String("(".into()))
+        })
+    });
+    assert!(fauxfield_model::rules::check_rule(&rules(&view, cx)[0]).is_err());
+    view.update(cx, |s, cx| s.edit_rule(&first, 0, cx, |r| r.negate = true));
+    assert!(rules(&view, cx)[0].negate);
+
+    // Response mode, disable, reorder, preset.
+    view.update_in(cx, |s, w, cx| {
+        s.open_picker_menu(
+            "rt_users_get",
+            crate::tree::RowKind::ResponseMode,
+            0.,
+            0.,
+            cx,
+        );
+        s.run_menu(MenuAct::SetResponseMode(1), w, cx);
+    });
+    assert_eq!(
+        read(&view, cx, |s| s
+            .ws
+            .find_route("rt_users_get")
+            .unwrap()
+            .1
+            .response_mode
+            .clone()),
+        "sequential"
+    );
+    view.update(cx, |s, cx| s.toggle_response_disabled(&first, cx));
+    assert!(read(&view, cx, |s| s
+        .find_response(&first)
+        .unwrap()
+        .2
+        .disabled));
+    view.update(cx, |s, cx| s.move_row(&first, 1, cx));
+    assert_eq!(ids(&view, cx)[1], first);
+    view.update(cx, |s, cx| s.drop_response(&first, &before[1], cx));
+    assert_eq!(ids(&view, cx)[0], first);
+    view.update_in(cx, |s, w, cx| {
+        s.open_picker_menu(
+            "rt_users_get",
+            crate::tree::RowKind::ErrorPresets,
+            0.,
+            0.,
+            cx,
+        );
+        s.run_menu(MenuAct::ErrorPreset(429), w, cx);
+    });
+    let last = ids(&view, cx).last().unwrap().clone();
+    let r = read(&view, cx, |s| s.find_response(&last).unwrap().2);
+    assert_eq!(
+        (r.status, r.content_type.as_str()),
+        (429, "application/problem+json")
+    );
+
+    // Description edit.
+    use crate::response_pane::{InlineTarget as I, Nav};
+    view.update_in(cx, |s, w, cx| {
+        s.begin_inline(I::Description(first.clone()), "", false, w, cx);
+        s.inline.as_mut().unwrap().buf = crate::editor::TextBuf::new("Only for admins");
+        s.commit_inline(Nav::Stay, w, cx);
+    });
+    assert_eq!(
+        read(&view, cx, |s| s
+            .find_response(&first)
+            .unwrap()
+            .2
+            .description),
+        "Only for admins"
+    );
+
+    // Sample request round trip through ui.json.
+    view.update(cx, |s, cx| {
+        s.open_tab("rt_users_get", TabKind::Route, "Get user", false);
+        s.open_sample_dialog(cx);
+        s.sample_dialog.as_mut().unwrap().sample.query = "role=admin".into();
+    });
+    view.update_in(cx, |s, w, cx| s.save_sample(false, w, cx));
+    let q = read(&view, cx, |s| s.sample_of("rt_users_get").query);
+    assert_eq!(q, "role=admin");
+    assert!(read(&view, cx, |s| s.sample_dialog.is_none()));
+}
+
+#[test]
+fn sample_builds_the_test_request() {
+    let s = crate::sample::Sample {
+        method: "post".into(),
+        query: "?role=admin".into(),
+        headers: "X-A: 1\nbad line\nAuthorization: Bearer t".into(),
+        cookies: "sid=abc".into(),
+        body: "{}".into(),
+    };
+    let ws = crate::view::workspace();
+    let srv = ws
+        .servers
+        .iter()
+        .find(|s| s.all_routes().any(|r| r.id == "rt_users_get"))
+        .unwrap();
+    let route = ws.find_route("rt_users_get").unwrap().1;
+    let req = s.request(srv, route);
+    assert_eq!(req.method, "POST");
+    assert!(req.path.ends_with("?role=admin"));
+    assert_eq!(req.headers.len(), 3);
+    assert!(
+        req.headers
+            .iter()
+            .any(|(k, v)| k == "cookie" && v == "sid=abc")
+    );
+}
+
+#[gpui::test]
+fn edit_sample_request_action_opens_the_dialog(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    view.update(cx, |s, cx| {
+        s.open_tab("rt_users_get", TabKind::Route, "Get user", false);
+        cx.notify();
+    });
+    cx.run_until_parked();
+    view.update_in(cx, |s, w, cx| s.run_action_id("edit_sample_request", w, cx));
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s.sample_dialog.is_some()));
+}

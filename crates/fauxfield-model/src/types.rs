@@ -138,8 +138,19 @@ pub struct Response {
     pub id: String,
     #[serde(default)]
     pub name: Option<String>,
+    /// Optional one-line note shown under the name (SPEC §5.5). Not sent.
+    #[serde(default)]
+    pub description: Option<String>,
     #[serde(default)]
     pub default: bool,
+    /// true: skipped by response selection (SPEC §5.3).
+    #[serde(default)]
+    pub disabled: bool,
+    /// `and` (default) or `or` (SPEC §5.4).
+    #[serde(default)]
+    pub rules_logic: Option<String>,
+    #[serde(default)]
+    pub rules: Vec<Rule>,
     #[serde(default = "ok_status")]
     pub status: u16,
     #[serde(default)]
@@ -154,6 +165,23 @@ pub struct Response {
     #[serde(default)]
     #[schemars(with = "BTreeMap<String, String>")]
     pub headers: indexmap::IndexMap<String, String>,
+    #[serde(flatten)]
+    #[schemars(skip)]
+    pub extra: Extra,
+}
+
+/// One condition of a Response (SPEC §5.4). Values are plain strings, numbers or arrays until M6.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Rule {
+    pub target: String,
+    #[serde(default)]
+    pub key: Option<String>,
+    pub op: String,
+    #[serde(default)]
+    #[schemars(with = "Option<serde_json::Value>")]
+    pub value: Option<toml::Value>,
+    #[serde(default)]
+    pub negate: bool,
     #[serde(flatten)]
     #[schemars(skip)]
     pub extra: Extra,

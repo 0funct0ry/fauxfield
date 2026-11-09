@@ -35,8 +35,55 @@ open its tab.
 A Route that an earlier-winning Route provably matches for every request is reported as **W051** in
 Problems and with a warning icon in the tree. The check is conservative.
 
+## Multiple and conditional responses
+
+A Route can hold several Responses. `response_mode` picks one per request:
+
+| Mode | Behaviour |
+|---|---|
+| `rules` (default) | The first Response, in order, whose rules pass. Falls back to the Response marked `default`, else the first one. A Response without rules is only reached by that fallback. |
+| `sequential` | Cycles through the Responses in order; *Dataset: Reset State* restarts it. |
+| `random` | A uniform random pick. |
+| `disabled` | The Route is skipped as if it did not exist. |
+
+A Response with `disabled = true` is skipped in every mode. Each rule has a `target`
+(`header`, `query`, `cookie`, `param`, `body`, `method`, `path`, `ip`, `count`; `variable` and
+`dataset` arrive later), a `key`, an `op` (`eq`, `ne`, `contains`, `starts_with`, `ends_with`,
+`regex`, `exists`, `absent`, `gt`, `gte`, `lt`, `lte`, `in`, `json_schema`), a `value` and an optional
+`negate`. `rules_logic` is `and` (default) or `or`. A body key starting with `$` is a JSONPath
+(`$.user.role`); otherwise it names a form field. `count` is the Route's call number.
+
+```toml
+[[routes.responses]]
+id = "rsp_admin"
+name = "Admin"
+  [[routes.responses.rules]]
+  target = "query"
+  key = "role"
+  op = "eq"
+  value = "admin"
+
+[[routes.responses]]
+id = "rsp_401"
+name = "No token"
+status = 401
+  [[routes.responses.rules]]
+  target = "header"
+  key = "Authorization"
+  op = "absent"
+```
+
+Every request in Traffic records which Responses were evaluated, which rules passed and the value
+compared (Inspector, *Response selection*). The Rules sub-tab edits all rules of a Route in one table,
+*Add error preset* creates RFC 9457 `application/problem+json` Responses, and *Sample…* sets the
+request Send test fires. `fauxfield response add <route>` and `fauxfield response set-default
+<response>` do the same from the CLI.
+
 ## CLI
 
 ```bash
 fauxfield route add users-api GET '/users/:id' --folder Users --priority 5 --json
+fauxfield response add <route-id> --name Teapot --status 418 --json
+fauxfield response add <route-id> --preset 401
+fauxfield response set-default <response-id>
 ```

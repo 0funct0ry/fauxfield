@@ -1,0 +1,11 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "default": false,
+  "id": "<id>",
+  "name": "Teapot",
+  "route": "<route>",
+  "status": 418
+}

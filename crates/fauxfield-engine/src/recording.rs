@@ -25,6 +25,14 @@ pub struct Recording {
     pub server: String,
     /// Route ID, or `unmatched`.
     pub route: String,
+    /// The Response that answered (empty when unmatched).
+    #[serde(default)]
+    pub response_id: String,
+    #[serde(default)]
+    pub response_name: String,
+    /// Why that Response was chosen (SPEC §5.3).
+    #[serde(default)]
+    pub trace: Option<crate::rules::Trace>,
     /// Captured path params in pattern order (secret-named values masked).
     #[serde(default)]
     pub params: Vec<(String, String)>,
@@ -112,6 +120,9 @@ mod tests {
             server_id: "s".into(),
             server: "s".into(),
             route: "r".into(),
+            response_id: String::new(),
+            response_name: String::new(),
+            trace: None,
             params: vec![],
             route_pattern: String::new(),
             method: "POST".into(),

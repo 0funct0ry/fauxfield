@@ -275,3 +275,47 @@ fn route_add_variants_are_stable() {
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["warnings"][0]["code"], "W051");
 }
+
+#[test]
+fn response_add_and_set_default_are_stable() {
+    let dir = workspace();
+    let p = dir.path().to_str().unwrap();
+    let (code, out, _) = run(&[
+        "route",
+        "add",
+        "example-api",
+        "get",
+        "/r",
+        "-w",
+        p,
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    let route = serde_json::from_str::<serde_json::Value>(&out).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (code, out, _) = run(&[
+        "response", "add", &route, "--name", "Teapot", "--status", "418", "--body", "short", "-w",
+        p, "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    let mut v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let rsp = v["id"].as_str().unwrap().to_string();
+    v["id"] = "<id>".into();
+    v["route"] = "<route>".into();
+    snap_json(Some("response_add"), &v);
+    let (code, out, _) = run(&["response", "set-default", &rsp, "-w", p, "--json"]);
+    assert_eq!(code, 0, "{out}");
+    let mut v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    v["id"] = "<id>".into();
+    snap_json(Some("response_set_default"), &v);
+    let (code, out, _) = run(&[
+        "response", "add", &route, "--preset", "401", "-w", p, "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["status"], 401);
+    let (code, _, _) = run(&["response", "set-default", "rsp_nope", "-w", p]);
+    assert_eq!(code, 2);
+}

@@ -283,7 +283,11 @@ impl Shell {
             )
             .into_any_element(),
             RowKind::Dataset => icon("table", 13., t.icon_muted).into_any_element(),
-            RowKind::Response { .. } => div().into_any_element(),
+            RowKind::Response { .. }
+            | RowKind::ErrorPresets
+            | RowKind::RuleTarget
+            | RowKind::RuleOp
+            | RowKind::ResponseMode => div().into_any_element(),
         };
         let chevron: gpui::AnyElement = if r.expandable {
             crate::dev_id!(

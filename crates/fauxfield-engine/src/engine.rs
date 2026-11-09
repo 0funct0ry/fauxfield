@@ -21,7 +21,7 @@ use tokio::task::JoinHandle;
 
 use crate::problem;
 use crate::recording::{Recording, Timing, body_text, redact};
-use crate::router::{RouteTable, pick_response};
+use crate::router::RouteTable;
 use crate::testreq::{self, TEST_HEADER, TestRequest, TestResponse};
 use crate::time::{now_ms, rfc3339};
 
@@ -133,6 +133,8 @@ struct ServerRt {
     ring: Mutex<VecDeque<Recording>>,
     run: Mutex<Option<Running>>,
     status: Mutex<ServerStatus>,
+    counters: crate::rules::Counters,
+    compiled: crate::rules::Compiled,
 }
 
 struct Inner {
@@ -221,6 +223,7 @@ impl Engine {
                     let disabled = !s.enabled;
                     *rt.def.lock().unwrap() = s.clone();
                     *rt.table.write().unwrap() = table;
+                    rt.compiled.clear();
                     if rt.run.lock().unwrap().is_some() {
                         if disabled {
                             to_stop.push((s.id.clone(), rt.clone()));
@@ -238,6 +241,8 @@ impl Engine {
                             ring: Mutex::new(VecDeque::new()),
                             run: Mutex::new(None),
                             status: Mutex::new(ServerStatus::Stopped),
+                            counters: Default::default(),
+                            compiled: Default::default(),
                         }),
                     ));
                 }
@@ -412,6 +417,13 @@ impl Engine {
         out
     }
 
+    /// Reset runtime state: per-route call counters and sequential cursors (SPEC §5.3).
+    pub fn reset_state(&self) {
+        for (_, rt) in self.inner.servers.lock().unwrap().iter() {
+            rt.counters.reset();
+        }
+    }
+
     pub fn clear_traffic(&self) {
         for (_, rt) in self.inner.servers.lock().unwrap().iter() {
             rt.ring.lock().unwrap().clear();
@@ -518,13 +530,14 @@ async fn serve(
         tokio::select! {
             _ = stop.changed() => break,
             accepted = listener.accept() => {
-                let Ok((stream, _)) = accepted else { continue };
+                let Ok((stream, peer)) = accepted else { continue };
+                let ip = peer.ip().to_string();
                 let eng = engine.clone();
                 let rt2 = rt.clone();
                 let id2 = id.clone();
                 let svc = service_fn(move |req| {
-                    let (eng, rt, id) = (eng.clone(), rt2.clone(), id2.clone());
-                    async move { Ok::<_, Infallible>(handle(eng, id, rt, req).await) }
+                    let (eng, rt, id, ip) = (eng.clone(), rt2.clone(), id2.clone(), ip.clone());
+                    async move { Ok::<_, Infallible>(handle(eng, id, rt, ip, req).await) }
                 });
                 let conn = hyper::server::conn::http1::Builder::new()
                     .serve_connection(TokioIo::new(stream), svc);
@@ -555,6 +568,7 @@ async fn handle(
     engine: Engine,
     id: String,
     rt: Arc<ServerRt>,
+    ip: String,
     req: Request<Incoming>,
 ) -> HyperResponse<Full<Bytes>> {
     let started = Instant::now();
@@ -599,6 +613,8 @@ async fn handle(
     let match_us = match_start.elapsed().as_micros() as u64;
 
     let mut delay_ms = 0;
+    let mut trace = None;
+    let mut chosen: (String, String) = Default::default();
     let (route_id, (status, headers, bytes)) = match &route {
         None => {
             let closest = table.closest(&method, &path);
@@ -612,9 +628,27 @@ async fn handle(
             )
         }
         Some(r) => {
-            let out = match pick_response(r) {
+            let call = rt.counters.bump(&r.id);
+            let lc_headers: Vec<(String, String)> = req_headers
+                .iter()
+                .map(|(k, v)| (k.to_ascii_lowercase(), v.clone()))
+                .collect();
+            let ctx = crate::rules::Ctx::new(
+                &method,
+                &url,
+                &lc_headers,
+                &params,
+                Some(ip),
+                &body,
+                call,
+                &engine.inner.cfg.root,
+            );
+            let (picked, t) = crate::rules::select(r, &ctx, &rt.compiled);
+            trace = Some(t);
+            let out = match picked {
                 None => (200, vec![], Bytes::new()),
                 Some(resp) => {
+                    chosen = (resp.id.clone(), resp.name.clone().unwrap_or_default());
                     delay_ms = resp.delay_ms.unwrap_or(0);
                     if delay_ms > 0 {
                         tokio::time::sleep(Duration::from_millis(delay_ms)).await;
@@ -642,6 +676,9 @@ async fn handle(
             server_id: id,
             server: server_name,
             route: route_id,
+            response_id: chosen.0,
+            response_name: chosen.1,
+            trace,
             params,
             route_pattern,
             method,
@@ -709,7 +746,7 @@ fn build_response(
     (status, headers, body)
 }
 
-fn read_confined(root: &std::path::Path, file: &str) -> Result<Vec<u8>, String> {
+pub(crate) fn read_confined(root: &std::path::Path, file: &str) -> Result<Vec<u8>, String> {
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     let full = root.join(file).canonicalize().map_err(|e| e.to_string())?;
     if !full.starts_with(&root) {

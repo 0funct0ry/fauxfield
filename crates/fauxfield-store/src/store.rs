@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::time::Instant;
 
 use fauxfield_model::{
-    Diagnostic, Environment, Manifest, Server, new_id, parse_environment, parse_manifest,
+    Diagnostic, Environment, Manifest, Rule, Server, new_id, parse_environment, parse_manifest,
     parse_server, validate_environment_names, validate_servers,
 };
 use toml_edit::{ArrayOfTables, DocumentMut, Item, Table, value};
@@ -785,6 +785,163 @@ impl Store {
         Ok(id)
     }
 
+    // ---- response ordering, rules, presets (M5) ----
+
+    /// Reorder a Response before sibling `before` (or to the end) within its Route.
+    pub fn move_response(&self, response_id: &str, before: Option<&str>) -> Result<(), StoreError> {
+        let t = Target::Response(response_id.into());
+        let file = self
+            .file_of(&t)
+            .ok_or_else(|| StoreError::NotFound(response_id.into()))?;
+        self.edit(&file, |d| {
+            if before == Some(response_id) {
+                return Ok(());
+            }
+            let rs = responses_of_mut(d, response_id)
+                .ok_or_else(|| StoreError::NotFound(response_id.into()))?;
+            let (mut v, pos) = take_all(rs);
+            let from = v
+                .iter()
+                .position(|t| id_of(t) == Some(response_id))
+                .expect("found above");
+            let r = v.remove(from);
+            let at = match before {
+                Some(b) => v
+                    .iter()
+                    .position(|t| id_of(t) == Some(b))
+                    .ok_or_else(|| StoreError::NotFound(b.into()))?,
+                None => v.len(),
+            };
+            v.insert(at, r);
+            put_all(rs, v, pos);
+            renumber(d);
+            Ok(())
+        })
+    }
+
+    /// Append (or with `index`, replace) a rule on a Response. Returns the rule's index.
+    pub fn set_rule(
+        &self,
+        response_id: &str,
+        index: Option<usize>,
+        rule: &Rule,
+    ) -> Result<usize, StoreError> {
+        let t = Target::Response(response_id.into());
+        let file = self
+            .file_of(&t)
+            .ok_or_else(|| StoreError::NotFound(response_id.into()))?;
+        let mut out = 0;
+        self.edit(&file, |d| {
+            let resp = resolve(d, &t).ok_or_else(|| StoreError::NotFound(response_id.into()))?;
+            let tbl = rule_table(rule)?;
+            let list = rules_mut(resp)?;
+            match index {
+                Some(i) if i < list.len() => {
+                    list.remove(i);
+                    // Re-insert at the same place.
+                    let (mut v, pos) = take_all(list);
+                    v.insert(i, tbl);
+                    put_all(list, v, pos);
+                    out = i;
+                }
+                Some(i) => return Err(StoreError::NotFound(format!("rule {i}"))),
+                None => {
+                    out = list.len();
+                    list.push(tbl);
+                }
+            }
+            renumber(d);
+            Ok(())
+        })?;
+        Ok(out)
+    }
+
+    pub fn delete_rule(&self, response_id: &str, index: usize) -> Result<(), StoreError> {
+        let t = Target::Response(response_id.into());
+        let file = self
+            .file_of(&t)
+            .ok_or_else(|| StoreError::NotFound(response_id.into()))?;
+        self.edit(&file, |d| {
+            let resp = resolve(d, &t).ok_or_else(|| StoreError::NotFound(response_id.into()))?;
+            let list = rules_mut(resp)?;
+            if index >= list.len() {
+                return Err(StoreError::NotFound(format!("rule {index}")));
+            }
+            list.remove(index);
+            if list.is_empty() {
+                resp.remove("rules");
+            }
+            Ok(())
+        })
+    }
+
+    /// Move a rule from index `from` to index `to` (after removal) within its Response.
+    pub fn move_rule(&self, response_id: &str, from: usize, to: usize) -> Result<(), StoreError> {
+        let t = Target::Response(response_id.into());
+        let file = self
+            .file_of(&t)
+            .ok_or_else(|| StoreError::NotFound(response_id.into()))?;
+        self.edit(&file, |d| {
+            let resp = resolve(d, &t).ok_or_else(|| StoreError::NotFound(response_id.into()))?;
+            let list = rules_mut(resp)?;
+            if from >= list.len() || to >= list.len() {
+                return Err(StoreError::NotFound(format!("rule {from}/{to}")));
+            }
+            let (mut v, pos) = take_all(list);
+            let r = v.remove(from);
+            v.insert(to, r);
+            put_all(list, v, pos);
+            renumber(d);
+            Ok(())
+        })
+    }
+
+    /// Set `disabled` (the key is removed when false).
+    pub fn set_response_disabled(
+        &self,
+        response_id: &str,
+        disabled: bool,
+    ) -> Result<(), StoreError> {
+        let t = Target::Response(response_id.into());
+        self.set_item(&t, "disabled", disabled.then(|| value(true)))
+    }
+
+    /// Set the Route's response mode (`rules`, the default, removes the key).
+    pub fn set_response_mode(&self, route_id: &str, mode: &str) -> Result<(), StoreError> {
+        if !fauxfield_model::rules::RESPONSE_MODES.contains(&mode) {
+            return Err(StoreError::Invalid(format!(
+                "unknown response_mode `{mode}`"
+            )));
+        }
+        let t = Target::Route(route_id.into());
+        self.set_item(&t, "response_mode", (mode != "rules").then(|| value(mode)))
+    }
+
+    /// `and` (the default) removes the key.
+    pub fn set_rules_logic(&self, response_id: &str, logic: &str) -> Result<(), StoreError> {
+        if logic != "and" && logic != "or" {
+            return Err(StoreError::Invalid("rules_logic must be and or or".into()));
+        }
+        let t = Target::Response(response_id.into());
+        self.set_item(&t, "rules_logic", (logic != "and").then(|| value(logic)))
+    }
+
+    /// Add an RFC 9457 problem+json Response for `status` (SPEC §5.6).
+    pub fn create_error_preset(&self, route_id: &str, status: u16) -> Result<String, StoreError> {
+        let (title, detail) = error_preset(status)
+            .ok_or_else(|| StoreError::Invalid(format!("no error preset for {status}")))?;
+        let id = self.create_response(route_id)?;
+        let t = Target::Response(id.clone());
+        self.set_str(&t, "name", Some(&format!("{status} {title}")))?;
+        self.set_int(&t, "status", Some(i64::from(status)))?;
+        self.set_str(&t, "content_type", Some("application/problem+json"))?;
+        let body = format!(
+            "{{\n  \"type\": \"about:blank\",\n  \"title\": \"{title}\",\n  \"status\": {status},\n  \"detail\": \"{detail}\"\n}}"
+        );
+        self.set_str(&t, "body", Some(&body))?;
+        Ok(id)
+    }
+
     /// Rename (`name`) any item. Servers use `rename_server`.
     pub fn set_str(&self, target: &Target, key: &str, val: Option<&str>) -> Result<(), StoreError> {
         self.set_item(target, key, val.map(value))
@@ -1146,6 +1303,107 @@ fn validate_pattern(path: &str, mode: Option<&str>) -> Result<(), StoreError> {
     fauxfield_model::pattern::Pattern::parse(path, mode, false)
         .map(|_| ())
         .map_err(StoreError::Invalid)
+}
+
+pub fn error_preset(status: u16) -> Option<(&'static str, &'static str)> {
+    Some(match status {
+        400 => (
+            "Bad Request",
+            "The request was malformed or failed validation.",
+        ),
+        401 => ("Unauthorized", "Authentication is required."),
+        403 => ("Forbidden", "You do not have access to this resource."),
+        404 => ("Not Found", "The resource does not exist."),
+        409 => ("Conflict", "The request conflicts with the current state."),
+        422 => (
+            "Unprocessable Entity",
+            "The request body could not be processed.",
+        ),
+        429 => ("Too Many Requests", "Rate limit exceeded. Retry later."),
+        500 => (
+            "Internal Server Error",
+            "The server hit an unexpected error.",
+        ),
+        502 => (
+            "Bad Gateway",
+            "The upstream server returned an invalid response.",
+        ),
+        503 => (
+            "Service Unavailable",
+            "The service is temporarily unavailable.",
+        ),
+        504 => (
+            "Gateway Timeout",
+            "The upstream server did not answer in time.",
+        ),
+        _ => return None,
+    })
+}
+
+fn responses_of_mut<'a>(
+    d: &'a mut DocumentMut,
+    response_id: &str,
+) -> Option<&'a mut ArrayOfTables> {
+    d.get_mut("routes")?
+        .as_array_of_tables_mut()?
+        .iter_mut()
+        .filter_map(|r| r.get_mut("responses")?.as_array_of_tables_mut())
+        .find(|rs| rs.iter().any(|t| id_of(t) == Some(response_id)))
+}
+
+fn rules_mut(resp: &mut Table) -> Result<&mut ArrayOfTables, StoreError> {
+    if resp.get("rules").is_none() {
+        resp["rules"] = Item::ArrayOfTables(ArrayOfTables::new());
+    }
+    resp["rules"]
+        .as_array_of_tables_mut()
+        .ok_or_else(|| StoreError::Invalid("rules is not a table array".into()))
+}
+
+fn rule_table(r: &Rule) -> Result<Table, StoreError> {
+    let mut t = Table::new();
+    t["target"] = value(r.target.clone());
+    if let Some(k) = r.key.as_deref().filter(|k| !k.is_empty()) {
+        t["key"] = value(k);
+    }
+    t["op"] = value(r.op.clone());
+    if let Some(v) = &r.value {
+        let parsed = v
+            .to_string()
+            .parse::<toml_edit::Value>()
+            .map_err(|e| StoreError::Invalid(format!("bad rule value: {e}")))?;
+        t["value"] = Item::Value(parsed);
+    }
+    if r.negate {
+        t["negate"] = value(true);
+    }
+    Ok(t)
+}
+
+/// Reassign table positions in logical (depth-first) order so reordered or inserted tables
+/// print where their parents expect them, children right after their parent.
+fn renumber(d: &mut DocumentMut) {
+    fn walk(t: &mut Table, n: &mut usize) {
+        for (_, item) in t.iter_mut() {
+            match item {
+                Item::Table(c) => {
+                    c.set_position(*n);
+                    *n += 1;
+                    walk(c, n);
+                }
+                Item::ArrayOfTables(a) => {
+                    for c in a.iter_mut() {
+                        c.set_position(*n);
+                        *n += 1;
+                        walk(c, n);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut n = 0;
+    walk(d.as_table_mut(), &mut n);
 }
 
 fn id_of(t: &Table) -> Option<&str> {

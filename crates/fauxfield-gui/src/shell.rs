@@ -352,6 +352,8 @@ pub struct Shell {
     pub(crate) menu_sink: Box<dyn crate::menu_shell::MenuSink>,
     pub(crate) url_opener: Box<dyn crate::menu_shell::UrlOpener>,
     pub(crate) about_open: bool,
+    pub(crate) sample_dialog: Option<crate::sample::SampleDraft>,
+    pub(crate) sample_editors: Option<[gpui::Entity<crate::code_editor::CodeEditor>; 2]>,
     pub(crate) bar: crate::menubar::Bar,
     /// Dev-mcp actions waiting for the frames that re-register their handlers.
     #[cfg(feature = "dev-mcp")]
@@ -537,6 +539,8 @@ impl Shell {
             menu_sink: Box::new(crate::menu_shell::NativeSink),
             url_opener: Box::new(crate::menu_shell::SystemOpener),
             about_open: false,
+            sample_dialog: None,
+            sample_editors: None,
             bar: Default::default(),
             #[cfg(feature = "dev-mcp")]
             dev_pending: 0,
@@ -1032,24 +1036,86 @@ impl Shell {
 
     /// Context menu of a Response row in the Route tab.
     pub fn open_response_menu(&mut self, response: &str, x: f32, y: f32, cx: &mut Context<Self>) {
-        let Some(default) = self
+        let Some((default, disabled)) = self
             .ws
             .servers
             .iter()
             .flat_map(|s| s.all_routes())
             .flat_map(|r| &r.responses)
             .find(|r| r.id == response)
-            .map(|r| r.default)
+            .map(|r| (r.default, r.disabled))
         else {
             return;
         };
+        self.open_picker_menu(response, RowKind::Response { default, disabled }, x, y, cx);
+    }
+
+    /// Open a context or picker menu of `kind` for `row_id` at `(x, y)`.
+    pub fn open_picker_menu(
+        &mut self,
+        row_id: &str,
+        kind: RowKind,
+        x: f32,
+        y: f32,
+        cx: &mut Context<Self>,
+    ) {
         self.menu = Some(RowMenu {
-            row_id: response.to_string(),
-            kind: RowKind::Response { default },
+            row_id: row_id.to_string(),
+            kind,
             x,
             y,
         });
         cx.notify();
+    }
+
+    /// Edit rule `idx` of Response `resp` through `f`; invalid results are still written
+    /// (validation shows them inline).
+    pub(crate) fn edit_rule(
+        &mut self,
+        resp: &str,
+        idx: usize,
+        cx: &mut Context<Self>,
+        f: impl FnOnce(&mut fauxfield_model::Rule),
+    ) {
+        let Some((_, _, r)) = self.find_response(resp) else {
+            return;
+        };
+        let Some(mut rule) = r.rules.get(idx).cloned() else {
+            return;
+        };
+        f(&mut rule);
+        let id = resp.to_string();
+        self.store_op(cx, |s| s.set_rule(&id, Some(idx), &rule));
+    }
+
+    pub(crate) fn add_rule(&mut self, resp: &str, cx: &mut Context<Self>) {
+        let rule = fauxfield_model::Rule {
+            target: "query".into(),
+            key: Some(String::new()),
+            op: "eq".into(),
+            value: Some(toml::Value::String(String::new())),
+            negate: false,
+            extra: Default::default(),
+        };
+        let id = resp.to_string();
+        self.store_op(cx, |s| s.set_rule(&id, None, &rule));
+    }
+
+    pub(crate) fn toggle_response_disabled(&mut self, resp: &str, cx: &mut Context<Self>) {
+        let Some((_, _, r)) = self.find_response(resp) else {
+            return;
+        };
+        let id = resp.to_string();
+        self.store_op(cx, |s| s.set_response_disabled(&id, !r.disabled));
+    }
+
+    /// Drop of a dragged Response onto `target` (inserts before it).
+    pub(crate) fn drop_response(&mut self, dragged: &str, target: &str, cx: &mut Context<Self>) {
+        if dragged == target {
+            return;
+        }
+        let (d, t) = (dragged.to_string(), target.to_string());
+        self.store_op(cx, |s| s.move_response(&d, Some(&t)));
     }
 
     /// The Response with this ID: `(route id, index, response)`.
@@ -1103,6 +1169,52 @@ impl Shell {
             MenuAct::MoveUp => self.move_row(&m.row_id, -1, cx),
             MenuAct::MoveDown => self.move_row(&m.row_id, 1, cx),
             MenuAct::MoveToRoot => self.move_to_root(&m.row_id, cx),
+            MenuAct::ToggleResponseDisabled => self.toggle_response_disabled(&m.row_id, cx),
+            MenuAct::ErrorPreset(code) => {
+                let route = m.row_id.clone();
+                if let Some(id) = self.store_op(cx, |s| s.create_error_preset(&route, code))
+                    && let Some((_, r)) = self.ws.find_route(&route)
+                {
+                    let n = r.responses.iter().position(|x| x.id == id).unwrap_or(0);
+                    self.resp_sel.insert(route, n);
+                }
+            }
+            MenuAct::SetRuleTarget(i) | MenuAct::SetRuleOp(i) | MenuAct::SetResponseMode(i)
+                if i >= 64 => {}
+            MenuAct::SetRuleTarget(i) => {
+                if let Some((resp, idx)) = m.row_id.split_once('#')
+                    && let (Some(t), Ok(idx)) =
+                        (fauxfield_model::rules::TARGETS.get(i), idx.parse::<usize>())
+                {
+                    self.edit_rule(resp, idx, cx, |r| {
+                        r.target = (*t).into();
+                        if !fauxfield_model::rules::needs_key(t) && *t != "body" {
+                            r.key = None;
+                        }
+                    });
+                }
+            }
+            MenuAct::SetRuleOp(i) => {
+                if let Some((resp, idx)) = m.row_id.split_once('#')
+                    && let (Some(op), Ok(idx)) =
+                        (fauxfield_model::rules::OPS.get(i), idx.parse::<usize>())
+                {
+                    self.edit_rule(resp, idx, cx, |r| {
+                        r.op = (*op).into();
+                        if matches!(*op, "exists" | "absent") {
+                            r.value = None;
+                        } else if r.value.is_none() {
+                            r.value = Some(toml::Value::String(String::new()));
+                        }
+                    });
+                }
+            }
+            MenuAct::SetResponseMode(i) => {
+                if let Some(mode) = fauxfield_model::rules::RESPONSE_MODES.get(i) {
+                    let route = m.row_id.clone();
+                    self.store_op(cx, |s| s.set_response_mode(&route, mode));
+                }
+            }
             MenuAct::ResetDataset => self.stub("Resetting dataset state", "M8", cx),
             MenuAct::Restart => self.restart_server_id(&m.row_id, cx),
             MenuAct::ToggleEnabled => self.toggle_enabled(&m.row_id, cx),
@@ -1120,6 +1232,17 @@ impl Shell {
                     self.open_recent(&p, cx);
                 }
             }
+        }
+        // A picker item vanishes with its menu; keep keyboard shortcuts routed to the shell.
+        if matches!(
+            act,
+            MenuAct::ErrorPreset(_)
+                | MenuAct::SetRuleTarget(_)
+                | MenuAct::SetRuleOp(_)
+                | MenuAct::SetResponseMode(_)
+                | MenuAct::ToggleResponseDisabled
+        ) {
+            window.focus(&self.focus);
         }
         cx.notify();
     }
@@ -1632,6 +1755,11 @@ impl Shell {
             cx.stop_propagation();
             return;
         }
+        if self.sample_dialog.is_some() && ev.keystroke.key == "escape" && self.inline.is_none() {
+            self.close_sample_dialog(cx);
+            cx.stop_propagation();
+            return;
+        }
         if self.any_dialog_open() && ev.keystroke.key == "escape" {
             self.cancel_dialog(cx);
             cx.stop_propagation();
@@ -1782,7 +1910,7 @@ impl Shell {
         }
     }
 
-    fn new_response_for(&mut self, route: &str, cx: &mut Context<Self>) {
+    pub(crate) fn new_response_for(&mut self, route: &str, cx: &mut Context<Self>) {
         if self.ws.find_route(route).is_none() {
             return self.notify("Select a route first.".into(), cx);
         }
@@ -1920,6 +2048,30 @@ impl Shell {
 
     /// Move a Route or Folder one step among its siblings (Alt+Up / Alt+Down, menu).
     pub(crate) fn move_row(&mut self, id: &str, delta: i32, cx: &mut Context<Self>) {
+        if let Some((route, i, _)) = self.find_response(id) {
+            let sib: Vec<String> = self
+                .ws
+                .find_route(&route)
+                .map(|(_, r)| r.responses.iter().map(|x| x.id.clone()).collect())
+                .unwrap_or_default();
+            let to = i as i32 + delta;
+            if to < 0 || to as usize >= sib.len() {
+                return;
+            }
+            let before = if delta < 0 {
+                sib.get(i - 1).cloned()
+            } else {
+                sib.get(i + 2).cloned()
+            };
+            let rid = id.to_string();
+            if self
+                .store_op(cx, |s| s.move_response(&rid, before.as_deref()))
+                .is_some()
+            {
+                self.resp_sel.insert(route, to as usize);
+            }
+            return;
+        }
         let ids = |v: Vec<&str>| v.into_iter().map(String::from).collect::<Vec<_>>();
         // Siblings in effective order, and whether the item is a Folder.
         let mut found: Option<(Vec<String>, Option<String>, bool)> = None;
@@ -2700,7 +2852,16 @@ impl Render for Shell {
                 Some(id) => this.duplicate_row(&id, cx),
                 None => this.notify("Select something to duplicate.".into(), cx),
             },
-            ResetState => |this, _w, cx| this.stub("Resetting dataset state", "M8", cx),
+            EditSampleRequest => |this, _w, cx| this.open_sample_dialog(cx),
+            ResetState => |this, _w, cx| {
+                if let Some(h) = &this.host {
+                    h.engine().reset_state();
+                }
+                this.notify(
+                    "Reset response counters (dataset state arrives in M8)".into(),
+                    cx,
+                );
+            },
             RestartServer => |this, _w, cx| this.restart_current(cx),
             ClearTraffic => |this, _w, cx| this.clear_traffic(cx),
             CopyAsCurl => |this, _w, cx| this.copy_curl(cx),
@@ -2815,6 +2976,9 @@ impl Render for Shell {
             d.child(self.render_dialogs(&t, cx))
         })
         .when(self.about_open, |d| d.child(self.render_about(&t, cx)))
+        .when(self.sample_dialog.is_some(), |d| {
+            d.child(self.render_sample_dialog(&t, cx))
+        })
         .when(self.bar_visible() && self.bar.open.is_some(), |d| {
             d.child(self.render_bar_backdrop(cx))
         })

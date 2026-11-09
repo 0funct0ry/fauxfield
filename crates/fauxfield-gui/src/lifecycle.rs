@@ -267,10 +267,13 @@ impl Shell {
         }
         if let Some(store) = &self.store {
             let _ = store.flush();
-            let state = serde_json::json!({
-                "tabs": self.tabs.tabs(),
-                "active_tab": self.tabs.active().map(|t| t.id.clone()),
-            });
+            // Merge, so keys owned elsewhere (sample_requests) survive.
+            let mut state = fauxfield_store::load_ui_state(&store.root());
+            if !state.is_object() {
+                state = serde_json::json!({});
+            }
+            state["tabs"] = serde_json::json!(self.tabs.tabs());
+            state["active_tab"] = serde_json::json!(self.tabs.active().map(|t| t.id.clone()));
             let _ = fauxfield_store::save_ui_state(&store.root(), &state);
         }
         self.store = None;
@@ -340,6 +343,8 @@ impl Shell {
             Some("create_confirm")
         } else if self.about_open {
             Some("about")
+        } else if self.sample_dialog.is_some() {
+            Some("sample_request")
         } else {
             None
         }

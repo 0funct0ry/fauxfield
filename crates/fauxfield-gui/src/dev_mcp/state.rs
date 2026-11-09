@@ -52,6 +52,32 @@ pub struct UiState {
     pub menus: MenusState,
     /// Every CodeEditor on screen (SPEC §20.18).
     pub editors: Vec<EditorState>,
+    /// The open Route's responses, rules and mode (M5); `None` without a Route tab.
+    pub route: Option<RouteState>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct RouteState {
+    pub id: String,
+    pub response_mode: String,
+    pub sub_tab: usize,
+    pub selected_response: usize,
+    pub sample_dialog: bool,
+    pub responses: Vec<ResponseState>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ResponseState {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub status: u16,
+    pub default: bool,
+    pub disabled: bool,
+    pub rules_logic: String,
+    pub rules: usize,
+    /// Rules that fail validation (shown inline in the Rules sub-tab).
+    pub invalid_rules: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -367,6 +393,9 @@ pub struct LastRequest {
     pub status: u16,
     pub route: String,
     pub server: String,
+    /// The Response that answered, and why (M5 rule trace).
+    pub response_id: String,
+    pub selection_reason: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -531,6 +560,17 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
                     status: r.status,
                     route: r.route.clone(),
                     server: r.server.clone(),
+                    response_id: r
+                        .rec
+                        .as_ref()
+                        .map(|x| x.response_id.clone())
+                        .unwrap_or_default(),
+                    selection_reason: r
+                        .rec
+                        .as_ref()
+                        .and_then(|x| x.trace.as_ref())
+                        .map(|t| t.reason.clone())
+                        .unwrap_or_default(),
                 }),
         },
         problems: shell.problems.len(),
@@ -610,6 +650,7 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
         theme: cx.global::<Theme>().name.clone(),
         menus: menus_state(shell),
         editors: editors_state(shell, cx),
+        route: route_state(shell),
     }
 }
 
@@ -630,4 +671,35 @@ impl Tracker {
         }
         state
     }
+}
+
+fn route_state(shell: &Shell) -> Option<RouteState> {
+    let id = shell.current_route_id()?;
+    let (_, r) = shell.ws.find_route(&id)?;
+    Some(RouteState {
+        id: r.id.clone(),
+        response_mode: r.response_mode.clone(),
+        sub_tab: shell.route_sub.get(&r.id).copied().unwrap_or(0),
+        selected_response: shell.resp_sel.get(&r.id).copied().unwrap_or(0),
+        sample_dialog: shell.sample_dialog.is_some(),
+        responses: r
+            .responses
+            .iter()
+            .map(|x| ResponseState {
+                id: x.id.clone(),
+                name: x.name.clone(),
+                description: x.description.clone(),
+                status: x.status,
+                default: x.default,
+                disabled: x.disabled,
+                rules_logic: x.rules_logic.clone(),
+                rules: x.rules.len(),
+                invalid_rules: x
+                    .rules
+                    .iter()
+                    .filter(|r| fauxfield_model::rules::check_rule(r).is_err())
+                    .count(),
+            })
+            .collect(),
+    })
 }
