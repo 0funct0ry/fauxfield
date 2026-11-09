@@ -7,16 +7,18 @@ use std::rc::Rc;
 
 use gpui::{
     AnyElement, Bounds, ClickEvent, Context, InteractiveElement, IntoElement, KeyDownEvent,
-    MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Point,
-    StatefulInteractiveElement, Styled, Window, canvas, div, prelude::*, px,
+    MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, StatefulInteractiveElement,
+    Styled, Window, canvas, div, prelude::*, px,
 };
 
 use crate::assets::BUFFER_FONT;
-use crate::editor::{self, Lang, TextBuf, Tok};
+use crate::code_editor::{CodeEditor, EditorEvent, Language, format};
+use crate::editor::{self, TextBuf};
 use crate::shell::{BodyEdit, Shell};
 use crate::theme::Theme;
 use crate::ui::icon;
 use crate::view::Response;
+use gpui::Focusable as _;
 
 /// Body editor geometry: fixed line height and gutter, so a click maps to `(line, col)`.
 pub const BODY_LINE_H: f32 = 20.0;
@@ -357,6 +359,127 @@ impl Shell {
 
     // ---- body editor --------------------------------------------------------------------------
 
+    /// The CodeEditor for a Response's body (`id`) or file preview (`id#file`), created on first
+    /// use. The owner pushes its text in whenever it differs and no edit session is open.
+    pub(crate) fn ensure_body_editor(&mut self, response: &str, cx: &mut Context<Self>) {
+        let Some(resp) = self.response_by_id(response) else {
+            return;
+        };
+        let editing = self
+            .body_edit
+            .as_ref()
+            .is_some_and(|b| b.response == response);
+        let st = self.editor_settings.clone();
+        let lang = Language::detect(&resp.content_type, &resp.body);
+        let ed = match self.body_editors.get(response) {
+            Some(e) => e.clone(),
+            None => {
+                let ed = cx.new(|cx| {
+                    CodeEditor::new(lang, cx)
+                        .read_only(true)
+                        .format_paste(true)
+                        .placeholder(
+                            "Empty body. Click to type, or paste a JSON, YAML or XML body.",
+                        )
+                });
+                ed.update(cx, |e, cx| e.set_text(&resp.body, cx));
+                let rid = response.to_string();
+                cx.subscribe(&ed, move |this, _, ev: &EditorEvent, cx| match ev {
+                    EditorEvent::Blurred => {
+                        if this.body_edit.as_ref().is_some_and(|b| b.response == rid) {
+                            this.commit_body_edit(cx);
+                        }
+                    }
+                    EditorEvent::Changed => this.body_changed(&rid, cx),
+                    _ => {}
+                })
+                .detach();
+                self.body_editors.insert(response.to_string(), ed.clone());
+                ed
+            }
+        };
+        if !editing {
+            ed.update(cx, |e, cx| {
+                if e.text() != resp.body {
+                    e.set_text(&resp.body, cx);
+                }
+                e.set_language(lang, cx);
+                e.set_read_only(true, cx);
+                e.apply_settings(&st, cx);
+            });
+        } else {
+            ed.update(cx, |e, cx| e.apply_settings(&st, cx));
+        }
+        // File preview (read-only, 256 KiB guard in `file_preview`).
+        if let Some(path) = resp.body_file.clone() {
+            let (text, lang) = match self.file_preview(&path, &resp.content_type) {
+                Ok((t, l)) => (t, l),
+                Err(_) => (String::new(), Language::Plain),
+            };
+            let key = format!("{response}#file");
+            let pv = self
+                .body_editors
+                .entry(key)
+                .or_insert_with(|| cx.new(|cx| CodeEditor::new(lang, cx).read_only(true)))
+                .clone();
+            pv.update(cx, |e, cx| {
+                if e.text() != text {
+                    e.set_text(&text, cx);
+                }
+                e.set_language(lang, cx);
+                e.apply_settings(&st, cx);
+            });
+        }
+    }
+
+    /// Re-detects the language while typing and refreshes the validity footer.
+    fn body_changed(&mut self, response: &str, cx: &mut Context<Self>) {
+        let ct = self
+            .response_by_id(response)
+            .map(|r| r.content_type)
+            .unwrap_or_default();
+        if let Some(ed) = self.body_editors.get(response).cloned() {
+            ed.update(cx, |e, cx| {
+                let lang = Language::detect(&ct, e.text());
+                e.set_language(lang, cx);
+            });
+        }
+        cx.notify();
+    }
+
+    /// Text and language of a body file, `Err` with the message to show instead.
+    pub(crate) fn file_preview(
+        &self,
+        path: &str,
+        content_type: &str,
+    ) -> Result<(String, Language), String> {
+        if path.is_empty() {
+            return Err(
+                "Type a path relative to the workspace folder, e.g. bodies/user.json".into(),
+            );
+        }
+        let full = self.ws.root.join(path);
+        match std::fs::read(&full) {
+            Ok(b) if b.len() > 256 * 1024 => {
+                Err("File is larger than 256 KiB; not previewed.".into())
+            }
+            Ok(b) => {
+                let text = String::from_utf8_lossy(&b).into_owned();
+                let lang = match path.rsplit('.').next().unwrap_or("") {
+                    "json" => Language::Json,
+                    "yaml" | "yml" => Language::Yaml,
+                    "xml" => Language::Xml,
+                    "html" | "htm" => Language::Html,
+                    "md" => Language::Markdown,
+                    "toml" => Language::Toml,
+                    _ => Language::detect(content_type, &text),
+                };
+                Ok((text, lang))
+            }
+            Err(e) => Err(format!("Cannot read {path}: {e}")),
+        }
+    }
+
     pub(crate) fn begin_body_edit(
         &mut self,
         response: &str,
@@ -371,16 +494,23 @@ impl Shell {
             .as_ref()
             .is_some_and(|b| b.response == response)
         {
-            window.focus(&self.body_focus);
+            if let Some(ed) = self.body_editors.get(response) {
+                window.focus(&ed.read(cx).focus_handle(cx));
+            }
             return;
         }
         self.commit_inline(Nav::Stay, window, cx);
         self.commit_body_edit(cx);
+        self.ensure_body_editor(response, cx);
+        let Some(ed) = self.body_editors.get(response).cloned() else {
+            return;
+        };
         self.body_edit = Some(BodyEdit {
             response: response.into(),
-            buf: TextBuf::new(&x.body),
+            original: x.body,
         });
-        window.focus(&self.body_focus);
+        ed.update(cx, |e, cx| e.set_read_only(false, cx));
+        window.focus(&ed.read(cx).focus_handle(cx));
         cx.notify();
     }
 
@@ -391,20 +521,24 @@ impl Shell {
         let Some(b) = self.body_edit.take() else {
             return;
         };
-        self.body_drag = false;
+        let Some(ed) = self.body_editors.get(&b.response).cloned() else {
+            return;
+        };
+        ed.update(cx, |e, cx| e.set_read_only(true, cx));
         let Some(x) = self.response_by_id(&b.response) else {
             return;
         };
-        let mut text = b.buf.text.clone();
-        if self.layout.format_on_save
-            && editor::lang_for(&x.content_type, &text) == Lang::Json
-            && let Ok(pretty) = editor::format_json(&text)
+        let mut text = ed.read(cx).text().to_string();
+        if (self.layout.format_on_save || self.editor_settings.format_json_on_save)
+            && Language::detect(&x.content_type, &text) == Language::Json
+            && let Ok(pretty) = format::format_json(&text, "  ")
+            && format::validate_json(&text).is_ok()
         {
             text = pretty;
         }
         if text != x.body {
             let id = b.response.clone();
-            let set_ct = x.content_type.is_empty() && editor::looks_like_json_document(&text);
+            let set_ct = x.content_type.is_empty() && looks_like_json_document(&text);
             self.store_op(cx, |s| {
                 s.set_str(
                     &T::Response(id.clone()),
@@ -420,137 +554,49 @@ impl Shell {
         cx.notify();
     }
 
+    /// Esc: discard the session's edits and restore the stored body.
     pub(crate) fn cancel_body_edit(&mut self, cx: &mut Context<Self>) {
-        self.body_drag = false;
-        if self.body_edit.take().is_some() {
+        if let Some(b) = self.body_edit.take() {
+            if let Some(ed) = self.body_editors.get(&b.response).cloned() {
+                ed.update(cx, |e, cx| {
+                    e.set_text(&b.original, cx);
+                    e.set_read_only(true, cx);
+                });
+            }
             cx.notify();
         }
     }
 
     /// Pretty-print the body as JSON, in the editor if open, else in the file.
     pub(crate) fn format_body(&mut self, response: &str, cx: &mut Context<Self>) {
-        let src = match &self.body_edit {
-            Some(b) if b.response == response => b.buf.text.clone(),
-            _ => match self.response_by_id(response) {
-                Some(x) => x.body,
-                None => return,
-            },
+        let editing = self
+            .body_edit
+            .as_ref()
+            .is_some_and(|b| b.response == response);
+        if editing && let Some(ed) = self.body_editors.get(response).cloned() {
+            ed.update(cx, |e, cx| e.format_body(cx));
+            if let Some(err) = ed.read(cx).last_error().cloned() {
+                self.notify(format!("Not valid JSON: {err}"), cx);
+            }
+            cx.notify();
+            return;
+        }
+        let Some(x) = self.response_by_id(response) else {
+            return;
         };
-        match editor::format_json(&src) {
+        let res = format::validate_json(&x.body).and_then(|_| format::format_json(&x.body, "  "));
+        match res {
             Ok(pretty) => {
-                if let Some(b) = self.body_edit.as_mut().filter(|b| b.response == response) {
-                    b.buf = TextBuf::new(&pretty);
-                    cx.notify();
-                } else {
-                    let id = response.to_string();
-                    self.store_op(cx, |s| {
-                        s.set_str(
-                            &fauxfield_store::Target::Response(id),
-                            "body",
-                            Some(&pretty),
-                        )
-                    });
-                }
+                let id = response.to_string();
+                self.store_op(cx, |s| {
+                    s.set_str(
+                        &fauxfield_store::Target::Response(id),
+                        "body",
+                        Some(&pretty),
+                    )
+                });
             }
             Err(e) => self.notify(format!("Not valid JSON: {e}"), cx),
-        }
-    }
-
-    pub(crate) fn on_body_key(&mut self, ev: &KeyDownEvent, cx: &mut Context<Self>) {
-        let m = ev.keystroke.modifiers;
-        let key = ev.keystroke.key.as_str();
-        if key == "escape" {
-            self.cancel_body_edit(cx);
-            cx.stop_propagation();
-            return;
-        }
-        if key == "enter" && m.secondary() {
-            self.commit_body_edit(cx);
-            cx.stop_propagation();
-            return;
-        }
-        let Some(cur) = self.body_edit.as_ref() else {
-            return;
-        };
-        let ct = self
-            .find_response(&cur.response)
-            .map(|(_, _, r)| r.content_type)
-            .unwrap_or_default();
-        let lang = editor::editing_lang(&ct, &cur.buf.text);
-        let Some(b) = self.body_edit.as_mut() else {
-            return;
-        };
-        let s = m.shift;
-        match key {
-            "enter" => b.buf.newline_for(lang),
-            "tab" => b.buf.insert(editor::INDENT),
-            "backspace" => b.buf.backspace_for(lang),
-            "delete" => b.buf.delete(),
-            "left" => b.buf.left(s),
-            "right" => b.buf.right(s),
-            "up" => b.buf.up(s),
-            "down" => b.buf.down(s),
-            "home" => b.buf.home(s),
-            "end" => b.buf.end(s),
-            _ => {
-                if !m.secondary()
-                    && !m.control
-                    && !m.alt
-                    && let Some(ch) = ev.keystroke.key_char.as_deref()
-                {
-                    b.buf.type_for(lang, ch);
-                } else {
-                    // Cmd/Ctrl combos (copy, paste, select all, …) stay with the menu actions.
-                    return;
-                }
-            }
-        }
-        cx.stop_propagation();
-        cx.notify();
-    }
-
-    /// `(line, col)` under a window position, from the editor's last painted bounds.
-    fn body_line_col(&self, p: Point<Pixels>) -> Option<(usize, usize)> {
-        let b = self.body_bounds.get()?;
-        let (x, y) = (
-            f32::from(p.x) - f32::from(b.origin.x),
-            f32::from(p.y) - f32::from(b.origin.y),
-        );
-        let w = if self.mono_w > 0.0 { self.mono_w } else { 7.8 };
-        let line = (y / BODY_LINE_H).floor().max(0.0) as usize;
-        let col = ((x - BODY_GUTTER) / w).round().max(0.0) as usize;
-        Some((line, col))
-    }
-
-    pub(crate) fn body_mouse_down(
-        &mut self,
-        response: &str,
-        ev: &MouseDownEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.begin_body_edit(response, window, cx);
-        let pos = self.body_line_col(ev.position);
-        if let (Some((l, c)), Some(b)) = (pos, self.body_edit.as_mut()) {
-            if ev.click_count >= 3 {
-                b.buf.set_line_col(l, 0, false);
-                b.buf.end(true);
-            } else {
-                b.buf.set_line_col(l, c, ev.modifiers.shift);
-            }
-            self.body_drag = ev.click_count < 3;
-        }
-        cx.notify();
-    }
-
-    pub(crate) fn body_mouse_move(&mut self, ev: &MouseMoveEvent, cx: &mut Context<Self>) {
-        if !self.body_drag || ev.pressed_button != Some(MouseButton::Left) {
-            return;
-        }
-        let pos = self.body_line_col(ev.position);
-        if let (Some((l, c)), Some(b)) = (pos, self.body_edit.as_mut()) {
-            b.buf.set_line_col(l, c, true);
-            cx.notify();
         }
     }
 
@@ -894,12 +940,10 @@ impl Shell {
                 .child(label)
         };
         let (rid_inline, rid_file, rid_fmt) = (resp.id.clone(), resp.id.clone(), resp.id.clone());
-        let body_text = if file_mode {
-            String::new()
-        } else {
-            self.body_text(resp)
-        };
-        let lang = editor::lang_for(&resp.content_type, &body_text);
+        let lang = self
+            .body_editors
+            .get(&resp.id)
+            .map_or(Language::Plain, |e| e.read(cx).lang());
         div()
             .size_full()
             .flex()
@@ -951,9 +995,9 @@ impl Shell {
                         div()
                             .text_size(px(11.))
                             .text_color(t.text_muted)
-                            .child(lang.label()),
+                            .child(lang.name()),
                     )
-                    .when(!file_mode && lang == Lang::Json, |d| {
+                    .when(!file_mode && lang == Language::Json, |d| {
                         d.child(crate::dev_id!(
                             div()
                                 .id("resp-format")
@@ -979,17 +1023,8 @@ impl Shell {
             .child(if file_mode {
                 self.render_body_file(t, resp, cx).into_any_element()
             } else {
-                self.render_body_editor(t, resp, lang, cx)
-                    .into_any_element()
+                self.render_body_editor(t, resp, cx).into_any_element()
             })
-    }
-
-    /// The body shown in the editor: the live buffer while editing, else the stored body.
-    fn body_text(&self, resp: &Response) -> String {
-        match &self.body_edit {
-            Some(b) if b.response == resp.id => b.buf.text.clone(),
-            _ => resp.body.clone(),
-        }
     }
 
     fn render_body_file(
@@ -999,27 +1034,8 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let path = resp.body_file.clone().unwrap_or_default();
-        let preview: Result<String, String> = if path.is_empty() {
-            Err("Type a path relative to the workspace folder, e.g. bodies/user.json".into())
-        } else {
-            let full = self.ws.root.join(&path);
-            match std::fs::read(&full) {
-                Ok(b) if b.len() > 256 * 1024 => {
-                    Err("File is larger than 256 KiB; not previewed.".into())
-                }
-                Ok(b) => Ok(String::from_utf8_lossy(&b).into_owned()),
-                Err(e) => Err(format!("Cannot read {path}: {e}")),
-            }
-        };
-        let lang = match &preview {
-            Ok(text) => match path.rsplit('.').next().unwrap_or("") {
-                "json" => Lang::Json,
-                "yaml" | "yml" => Lang::Yaml,
-                "xml" | "html" | "htm" => Lang::Xml,
-                _ => editor::lang_for(&resp.content_type, text),
-            },
-            Err(_) => Lang::Plain,
-        };
+        let preview = self.file_preview(&path, &resp.content_type);
+        let pv = self.body_editors.get(&format!("{}#file", resp.id)).cloned();
         div()
             .flex_1()
             .min_h_0()
@@ -1046,14 +1062,11 @@ impl Shell {
                     )),
             )
             .child(match preview {
-                Ok(text) => div()
+                Ok(_) => div()
                     .id("body-file-preview")
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scroll()
-                    .font_family(BUFFER_FONT)
-                    .text_size(px(BODY_FONT_SIZE))
-                    .children(self.highlighted_lines(t, &text, lang))
+                    .children(pv)
                     .into_any_element(),
                 Err(msg) => div()
                     .px(px(12.))
@@ -1064,110 +1077,26 @@ impl Shell {
             })
     }
 
-    fn tok_color(t: &Theme, k: Tok) -> impl Into<gpui::Hsla> {
-        match k {
-            Tok::Key => t.syntax_property,
-            Tok::Str => t.syntax_string,
-            Tok::Num => t.syntax_number,
-            Tok::Keyword => t.syntax_keyword,
-            Tok::Template => t.syntax_function,
-            Tok::Comment => t.syntax_comment,
-            Tok::Tag => t.syntax_type,
-            Tok::Attr => t.syntax_property,
-            Tok::Plain => t.text,
-        }
-    }
-
-    fn highlighted_lines(&self, t: &Theme, text: &str, lang: Lang) -> Vec<AnyElement> {
-        text.split('\n')
-            .enumerate()
-            .map(|(li, line)| {
-                div()
-                    .h(px(BODY_LINE_H))
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .whitespace_nowrap()
-                    .child(
-                        div()
-                            .w(px(BODY_GUTTER))
-                            .flex_none()
-                            .pr(px(10.))
-                            .flex()
-                            .justify_end()
-                            .text_color(t.text_placeholder)
-                            .child((li + 1).to_string()),
-                    )
-                    .children(
-                        editor::tokenize(lang, line)
-                            .into_iter()
-                            .map(|(k, s)| div().text_color(Self::tok_color(t, k)).child(s)),
-                    )
-                    .into_any_element()
-            })
-            .collect()
-    }
-
     fn render_body_editor(
         &self,
         t: &Theme,
         resp: &Response,
-        lang: Lang,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let editing = self.body_edit.as_ref().filter(|b| b.response == resp.id);
-        let text = self.body_text(resp);
-        let w = if self.mono_w > 0.0 { self.mono_w } else { 7.8 };
-        let mut overlay: Vec<AnyElement> = Vec::new();
-        if let Some(b) = editing {
-            if let Some((a, z)) = b.buf.selection() {
-                let ((la, ca), (lz, cz)) = (b.buf.line_col_of(a), b.buf.line_col_of(z));
-                let lines: Vec<&str> = b.buf.text.split('\n').collect();
-                for l in la..=lz {
-                    let start = if l == la { ca } else { 0 };
-                    let end = if l == lz {
-                        cz
-                    } else {
-                        lines.get(l).map_or(0, |s| s.chars().count()) + 1
-                    };
-                    if end > start {
-                        overlay.push(
-                            div()
-                                .absolute()
-                                .top(px(l as f32 * BODY_LINE_H))
-                                .left(px(BODY_GUTTER + start as f32 * w))
-                                .w(px((end - start) as f32 * w))
-                                .h(px(BODY_LINE_H))
-                                .bg(t.element_selected)
-                                .into_any_element(),
-                        );
-                    }
-                }
-            }
-            let (l, c) = b.buf.line_col();
-            overlay.push(
-                div()
-                    .absolute()
-                    .top(px(l as f32 * BODY_LINE_H + 2.))
-                    .left(px(BODY_GUTTER + c as f32 * w))
-                    .w(px(1.5))
-                    .h(px(BODY_LINE_H - 4.))
-                    .bg(t.accent)
-                    .into_any_element(),
-            );
-        }
-        let verdict: Option<(bool, String)> =
-            (!text.trim().is_empty() && lang == Lang::Json).then(|| {
-                match editor::validate_json(&text) {
-                    Ok(()) => (true, "Valid JSON".to_string()),
-                    Err(e) => (false, e),
-                }
-            });
-        let is_editing = editing.is_some();
-        let bounds = self.body_bounds.clone();
-        let (rid_down, rid_empty) = (resp.id.clone(), resp.id.clone());
-        let lines = self.highlighted_lines(t, &text, lang);
-        let empty = text.is_empty() && !is_editing;
+        let editing = self
+            .body_edit
+            .as_ref()
+            .is_some_and(|b| b.response == resp.id);
+        let ed = self.body_editors.get(&resp.id).cloned();
+        let (text, lang) = ed
+            .as_ref()
+            .map(|e| (e.read(cx).text().to_string(), e.read(cx).lang()))
+            .unwrap_or((String::new(), Language::Plain));
+        let verdict: Option<(bool, String)> = format::validate(lang, &text).map(|r| match r {
+            Ok(()) => (true, "Valid JSON".to_string()),
+            Err(e) => (false, e.to_string()),
+        });
+        let rid = resp.id.clone();
         div()
             .flex_1()
             .min_h_0()
@@ -1180,60 +1109,21 @@ impl Shell {
                     .id("body-editor")
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scroll()
-                    .py(px(8.))
-                    .font_family(BUFFER_FONT)
-                    .text_size(px(BODY_FONT_SIZE))
                     .cursor_text()
-                    .when(is_editing, |d| {
-                        d.key_context("Editor")
-                            .track_focus(&self.body_focus)
-                            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
-                                this.on_body_key(ev, cx)
-                            }))
-                            .on_mouse_down_out(
-                                cx.listener(|this, _, _, cx| this.commit_body_edit(cx)),
-                            )
-                    })
-                    .child(if empty {
-                        div()
-                            .id("body-empty")
-                            .px(px(12.))
-                            .text_color(t.text_placeholder)
-                            .on_click(cx.listener(move |this, _, w, cx| {
-                                this.begin_body_edit(&rid_empty, w, cx)
-                            }))
-                            .child("Empty body. Click to type, or paste a JSON, YAML or XML body.")
-                            .into_any_element()
-                    } else {
-                        div()
-                            .relative()
-                            .min_h_full()
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(move |this, ev: &MouseDownEvent, w, cx| {
-                                    this.body_mouse_down(&rid_down, ev, w, cx)
-                                }),
-                            )
-                            .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _, cx| {
-                                this.body_mouse_move(ev, cx)
-                            }))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _, _| this.body_drag = false),
-                            )
-                            .child(
-                                canvas(
-                                    move |b: Bounds<Pixels>, _, _| bounds.set(Some(b)),
-                                    |_, _, _, _| {},
-                                )
-                                .absolute()
-                                .size_full(),
-                            )
-                            .children(overlay)
-                            .child(div().flex().flex_col().children(lines))
-                            .into_any_element()
-                    }),
+                    .on_action(cx.listener(
+                        |this, _: &crate::code_editor::actions::Escape, _, cx| {
+                            if this.body_edit.is_some() {
+                                this.cancel_body_edit(cx);
+                            } else {
+                                cx.propagate();
+                            }
+                        }
+                    ))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, w, cx| this.begin_body_edit(&rid, w, cx)),
+                    )
+                    .children(ed),
                 "body-editor",
                 Input,
                 "Response body",
@@ -1281,7 +1171,7 @@ impl Shell {
                             .cursor_pointer()
                             .hover(|s| s.bg(t.element_hover))
                             .tooltip(crate::ui::tooltip(
-                                "Pretty-print valid JSON bodies when they are saved".into(),
+                                "Pretty-print valid JSON bodies when they are saved".into()
                             ))
                             .on_mouse_down(
                                 MouseButton::Left,
@@ -1311,13 +1201,19 @@ impl Shell {
                         "Format on save",
                         None
                     ))
-                    .child(if is_editing {
+                    .child(if editing {
                         "Cmd/Ctrl+Enter or click outside to save · Esc to cancel"
                     } else {
                         "Click to edit"
                     }),
             )
     }
+}
+
+/// True when saving this into a Response with no content type should set `application/json`.
+fn looks_like_json_document(body: &str) -> bool {
+    let t = body.trim_start();
+    (t.starts_with('{') || t.starts_with('[')) && format::validate_json(body).is_ok()
 }
 
 /// Shared `Rc<Cell<…>>` for the body editor's painted bounds.

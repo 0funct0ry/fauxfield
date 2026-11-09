@@ -1158,6 +1158,51 @@ impl Shell {
 
     // ---- Right dock ----------------------------------------------------------------------
 
+    /// Keeps the two read-only body viewers of the Traffic detail in step with the selection.
+    pub(crate) fn ensure_traffic_editors(&mut self, cx: &mut Context<Self>) {
+        use crate::code_editor::{CodeEditor, Language};
+        let rec = self
+            .traffic_selected
+            .and_then(|i| self.traffic.get(i))
+            .and_then(|r| r.rec.clone());
+        let Some(rec) = rec else {
+            return;
+        };
+        let st = self.editor_settings.clone();
+        let eds = self
+            .traffic_editors
+            .get_or_insert_with(|| {
+                [0, 1].map(|_| {
+                    cx.new(|cx| {
+                        CodeEditor::new(Language::Plain, cx)
+                            .read_only(true)
+                            .line_numbers(false)
+                            .placeholder("(empty body)")
+                    })
+                })
+            })
+            .clone();
+        let ct = |h: &[(String, String)]| {
+            h.iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default()
+        };
+        let items = [
+            (&rec.request_body, ct(&rec.request_headers)),
+            (&rec.response_body, ct(&rec.response_headers)),
+        ];
+        for (ed, (body, ct)) in eds.iter().zip(items) {
+            ed.update(cx, |e, cx| {
+                if e.text() != body.as_str() {
+                    e.set_text(body, cx);
+                }
+                e.set_language(Language::detect(&ct, body), cx);
+                e.apply_settings(&st, cx);
+            });
+        }
+    }
+
     /// Request, response and timing of a recorded request (SPEC §9.3 detail split).
     fn render_inspector_detail(
         &self,
@@ -1187,17 +1232,15 @@ impl Shell {
                 .child(div().flex_none().text_color(t.text_muted).child(k))
                 .child(div().flex_1().min_w_0().child(v))
         };
-        let body = |s: &str| {
+        let body = |i: usize| {
+            let ed = self.traffic_editors.as_ref().map(|e| e[i].clone());
             div()
-                .py(px(2.))
-                .font_family(BUFFER_FONT)
-                .text_size(px(11.))
-                .text_color(t.syntax_string)
-                .child(if s.is_empty() {
-                    "(empty body)".to_string()
-                } else {
-                    s.to_string()
-                })
+                .h(px(160.))
+                .flex_none()
+                .border_1()
+                .border_color(t.border_variant)
+                .rounded(px(3.))
+                .children(ed)
         };
         let mut col = div()
             .id("inspector-detail")
@@ -1248,13 +1291,11 @@ impl Shell {
         for (k, v) in &rec.request_headers {
             col = col.child(line(format!("{k}:"), v.clone()));
         }
-        col = col
-            .child(body(&rec.request_body))
-            .child(section("RESPONSE"));
+        col = col.child(body(0)).child(section("RESPONSE"));
         for (k, v) in &rec.response_headers {
             col = col.child(line(format!("{k}:"), v.clone()));
         }
-        col = col.child(body(&rec.response_body));
+        col = col.child(body(1));
         if rec.truncated {
             col = col.child(
                 div()

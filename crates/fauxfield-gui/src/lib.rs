@@ -6,6 +6,7 @@ pub mod assets;
 pub mod bottom_dock;
 pub mod center;
 pub mod chord;
+pub mod code_editor;
 #[cfg(feature = "dev-mcp")]
 pub mod dev_mcp;
 pub mod editor;

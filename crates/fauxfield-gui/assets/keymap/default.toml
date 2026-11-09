@@ -187,3 +187,334 @@ keys = "alt-up"
 [[binding]]
 action = "move_down"
 keys = "alt-down"
+
+# Code editor (M4.1). Tab, Shift+Tab, Enter and PageUp/PageDown are key events, not actions.
+
+[[binding]]
+action = "ed_left"
+keys = "left"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_right"
+keys = "right"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_up"
+keys = "up"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_down"
+keys = "down"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_select_left"
+keys = "shift-left"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_select_right"
+keys = "shift-right"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_select_up"
+keys = "shift-up"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_select_down"
+keys = "shift-down"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_word_left"
+keys = "alt-left"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_word_left"
+keys = "ctrl-left"
+context = "CodeEditor"
+platform = ["windows", "linux"]
+
+[[binding]]
+action = "ed_word_right"
+keys = "alt-right"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_word_right"
+keys = "ctrl-right"
+context = "CodeEditor"
+platform = ["windows", "linux"]
+
+[[binding]]
+action = "ed_select_word_left"
+keys = "alt-shift-left"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_select_word_left"
+keys = "ctrl-shift-left"
+context = "CodeEditor"
+platform = ["windows", "linux"]
+
+[[binding]]
+action = "ed_select_word_right"
+keys = "alt-shift-right"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_select_word_right"
+keys = "ctrl-shift-right"
+context = "CodeEditor"
+platform = ["windows", "linux"]
+
+[[binding]]
+action = "ed_line_start"
+keys = "home"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_line_start"
+keys = "cmd-left"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_line_end"
+keys = "end"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_line_end"
+keys = "cmd-right"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_select_line_start"
+keys = "shift-home"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_select_line_start"
+keys = "cmd-shift-left"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_select_line_end"
+keys = "shift-end"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_select_line_end"
+keys = "cmd-shift-right"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_doc_start"
+keys = "cmd-up"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_doc_start"
+keys = "ctrl-home"
+context = "CodeEditor"
+platform = ["windows", "linux"]
+
+[[binding]]
+action = "ed_doc_end"
+keys = "cmd-down"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_doc_end"
+keys = "ctrl-end"
+context = "CodeEditor"
+platform = ["windows", "linux"]
+
+[[binding]]
+action = "ed_select_doc_start"
+keys = "cmd-shift-up"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_select_doc_start"
+keys = "ctrl-shift-home"
+context = "CodeEditor"
+platform = ["windows", "linux"]
+
+[[binding]]
+action = "ed_select_doc_end"
+keys = "cmd-shift-down"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_select_doc_end"
+keys = "ctrl-shift-end"
+context = "CodeEditor"
+platform = ["windows", "linux"]
+
+[[binding]]
+action = "ed_backspace"
+keys = "backspace"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_backspace"
+keys = "shift-backspace"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_delete"
+keys = "delete"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_delete_word_left"
+keys = "alt-backspace"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_delete_word_left"
+keys = "ctrl-backspace"
+context = "CodeEditor"
+platform = ["windows", "linux"]
+
+[[binding]]
+action = "ed_delete_word_right"
+keys = "alt-delete"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_delete_word_right"
+keys = "ctrl-delete"
+context = "CodeEditor"
+platform = ["windows", "linux"]
+
+[[binding]]
+action = "ed_delete_to_line_start"
+keys = "cmd-backspace"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_delete_to_line_end"
+keys = "cmd-delete"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_delete_to_line_end"
+keys = "ctrl-shift-delete"
+context = "CodeEditor"
+platform = ["windows", "linux"]
+
+[[binding]]
+action = "ed_cut"
+keys = "secondary-x"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_copy"
+keys = "secondary-c"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_paste"
+keys = "secondary-v"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_select_all"
+keys = "secondary-a"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_undo"
+keys = "secondary-z"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_redo"
+keys = "secondary-shift-z"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_redo"
+keys = "ctrl-y"
+context = "CodeEditor"
+platform = ["windows", "linux"]
+
+[[binding]]
+action = "ed_toggle_comment"
+keys = "secondary-/"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_move_line_up"
+keys = "alt-up"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_move_line_down"
+keys = "alt-down"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_duplicate_line"
+keys = "alt-shift-down"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_delete_line"
+keys = "secondary-shift-k"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_go_to_line"
+keys = "ctrl-g"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_match_bracket"
+keys = "secondary-shift-\\"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_show_completions"
+keys = "ctrl-space"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_toggle_soft_wrap"
+keys = "alt-z"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_format_body"
+keys = "secondary-shift-i"
+context = "CodeEditor"
+
+[[binding]]
+action = "ed_escape"
+keys = "escape"
+context = "CodeEditor"

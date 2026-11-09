@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### Added
+- M4.1 Reusable code editor: one `CodeEditor` component (`fauxfield-gui/src/code_editor/`) replaces
+  the hand-rolled body editor. Grapheme-aware buffer with undo (200 steps / 1 MiB, typing grouped
+  within 1 s), soft wrap, tabs, IME, mouse (double/triple click, drag auto-scroll, wheel), auto-close,
+  overtype, surround, smart Enter, block indent, comment toggle, line move/duplicate/delete, go to
+  line, bracket match, synchronous completion providers, tree-sitter highlighting (JSON, YAML, XML,
+  Markdown; incremental), `{{var}}` colouring, JSON/XML/HTML format and validate with line and
+  column, `[editor]` settings, new editor theme tokens. The Response body, the file preview and the
+  Traffic detail bodies use it. dev-mcp: `ui.state.editors[]`, scenario `m041-editor`.
 - Response pane in the Route tab: Status Code (editable), Status (reason phrase, read-only),
   Delay, then Body and Headers sub-tabs. Body: Inline editor with mouse cursor placement and
   selection, JSON/YAML/XML/HTML highlighting, JSON validate and Format, `{{ }}` spans marked;

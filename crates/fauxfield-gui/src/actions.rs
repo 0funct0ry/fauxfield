@@ -122,7 +122,7 @@ pub struct ActionInfo {
 }
 
 macro_rules! row {
-    ($id:literal, $label:literal, $ty:ident) => {
+    ($id:literal, $label:literal, $ty:path) => {
         ActionInfo {
             id: $id,
             label: $label,
@@ -375,6 +375,16 @@ pub fn install(cx: &mut App, keymap: &Keymap) -> Vec<String> {
     let mut problems = Vec::new();
     let mut bindings = Vec::new();
     for b in &keymap.bindings {
+        if let Some(bind) = crate::code_editor::actions::binder(&b.action) {
+            if let Some(canon) = canonical(&b.keys) {
+                if !b.is_chord() && !prefixes.contains(&canon) {
+                    bindings.push(bind(&b.keys, b.context.as_deref()));
+                }
+            } else {
+                problems.push(format!("keymap: invalid keys {:?}", b.keys));
+            }
+            continue;
+        }
         let Some(info) = find(&b.action) else {
             problems.push(format!("keymap: unknown action {:?}", b.action));
             continue;
@@ -415,7 +425,12 @@ mod tests {
     #[test]
     fn bundled_keymap_only_names_registered_actions() {
         for b in &Keymap::bundled().bindings {
-            assert!(find(&b.action).is_some(), "{}", b.action);
+            assert!(
+                find(&b.action).is_some()
+                    || crate::code_editor::actions::binder(&b.action).is_some(),
+                "{}",
+                b.action
+            );
             for stroke in b.keys.split_whitespace() {
                 assert!(canonical(stroke).is_some(), "{stroke}");
             }

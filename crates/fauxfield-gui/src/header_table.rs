@@ -1,4 +1,4 @@
-//! The Response headers table: a key/value editor modelled on fluxwire's Headers table.
+//! The Response headers table: a standard key/value table editor.
 //!
 //! - Every Key and Value cell edits in place (click, then caret/selection with keys or mouse).
 //! - A completion popup offers standard header names while typing a Key and the common values

@@ -47,6 +47,10 @@ pub struct Theme {
     pub syntax_number: Hsla,
     pub syntax_property: Hsla,
     pub syntax_comment: Hsla,
+    pub editor_active_line: Hsla,
+    pub editor_indent_guide: Hsla,
+    pub editor_invisible: Hsla,
+    pub editor_bracket_match: Hsla,
 }
 
 impl Global for Theme {}
@@ -108,6 +112,12 @@ impl Theme {
             syntax_number: hsla(t.syntax_number),
             syntax_property: hsla(t.syntax_property),
             syntax_comment: hsla(t.syntax_comment),
+            // Derived (Zed keys editor.active_line.background, editor.indent_guide,
+            // editor.invisible, editor.document_highlight.bracket_background).
+            editor_active_line: hsla(t.element_hover).opacity(0.5),
+            editor_indent_guide: hsla(t.border_variant),
+            editor_invisible: hsla(t.text_placeholder).opacity(0.6),
+            editor_bracket_match: hsla(t.element_selected).opacity(0.7),
         }
     }
 

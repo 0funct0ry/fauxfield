@@ -215,7 +215,8 @@ impl Picker {
 #[derive(Clone, Debug)]
 pub struct BodyEdit {
     pub response: String,
-    pub buf: crate::editor::TextBuf,
+    /// The stored body when the session began; Esc restores it.
+    pub original: String,
 }
 
 /// An open tree-row context menu, positioned in window coordinates.
@@ -318,14 +319,17 @@ pub struct Shell {
     pub(crate) picker_focus: FocusHandle,
     /// The Response body being edited inline (committed on blur or Cmd/Ctrl+Enter).
     pub(crate) body_edit: Option<BodyEdit>,
-    pub(crate) body_focus: FocusHandle,
+    /// One CodeEditor per Response (`<id>` for the body, `<id>#file` for the file preview).
+    pub(crate) editor_settings: crate::code_editor::EditorSettings,
+    pub(crate) body_editors:
+        std::collections::HashMap<String, gpui::Entity<crate::code_editor::CodeEditor>>,
+    /// Read-only request and response body viewers of the Traffic detail.
+    pub(crate) traffic_editors: Option<[gpui::Entity<crate::code_editor::CodeEditor>; 2]>,
     /// Painted bounds of the picker's text input, and a drag in progress in it.
     pub(crate) picker_bounds: crate::response_pane::BoundsCell,
     pub(crate) picker_drag: bool,
     /// Painted bounds of the body editor's text area (mouse → line/column).
-    pub(crate) body_bounds: crate::response_pane::BoundsCell,
     /// A mouse drag is extending the body selection.
-    pub(crate) body_drag: bool,
     /// Advance width of the buffer font at the body size (measured each frame).
     pub(crate) mono_w: f32,
     /// The single-line field being edited in the Response pane.
@@ -394,6 +398,9 @@ impl Shell {
         let (keymap, keymap_error) = Keymap::load(opts.config_dir.as_deref());
         let mut problems = actions::install(cx, &keymap);
         problems.extend(keymap_error);
+        let (editor_settings, editor_notes) =
+            crate::code_editor::EditorSettings::load(opts.config_dir.as_deref());
+        problems.extend(editor_notes);
 
         let os_dark = matches!(
             window.appearance(),
@@ -510,11 +517,11 @@ impl Shell {
             focus,
             picker_focus: cx.focus_handle(),
             body_edit: None,
-            body_focus: cx.focus_handle(),
+            editor_settings,
+            body_editors: Default::default(),
+            traffic_editors: None,
             picker_bounds: Default::default(),
             picker_drag: false,
-            body_bounds: Default::default(),
-            body_drag: false,
             mono_w: 0.0,
             inline: None,
             field_focus: cx.focus_handle(),
@@ -2467,9 +2474,7 @@ impl Render for Shell {
         self.sync_window_title(window);
         // A field or the body editor that just closed leaves focus on an element that is no
         // longer drawn; give it back to the shell so keys and actions keep working.
-        if (self.inline.is_none() && self.field_focus.is_focused(window))
-            || (self.body_edit.is_none() && self.body_focus.is_focused(window))
-        {
+        if self.inline.is_none() && self.field_focus.is_focused(window) {
             window.focus(&self.focus);
         }
         if self.mono_w == 0.0 {
@@ -2484,6 +2489,10 @@ impl Render for Shell {
             self.bar.win_w = w;
         }
         self.sync_menus(window, cx);
+        if let Some(rid) = self.current_response_id() {
+            self.ensure_body_editor(&rid, cx);
+        }
+        self.ensure_traffic_editors(cx);
         #[cfg(feature = "dev-mcp")]
         crate::dev_mcp::tree::Registry::begin_frame(
             cx,

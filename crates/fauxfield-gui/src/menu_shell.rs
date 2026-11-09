@@ -252,15 +252,13 @@ impl Shell {
 
     // ---- edit_* on the focused single-line input (the picker query) -------------------------
 
-    /// The focused text buffer outside the picker: an inline field or the body editor.
+    /// The focused single-line buffer outside the picker: an inline field (the body editor is a
+    /// CodeEditor that handles its own clipboard actions).
     fn focused_buf(&mut self) -> Option<&mut crate::editor::TextBuf> {
         if self.picker.is_some() {
             return None;
         }
-        if let Some(i) = self.inline.as_mut() {
-            return Some(&mut i.buf);
-        }
-        self.body_edit.as_mut().map(|b| &mut b.buf)
+        self.inline.as_mut().map(|i| &mut i.buf)
     }
 
     pub(crate) fn edit_copy(&mut self, cx: &mut Context<Self>) {
@@ -304,23 +302,9 @@ impl Shell {
         let Some(text) = cx.read_from_clipboard().and_then(|c| c.text()) else {
             return;
         };
-        let single_line = self.inline.is_some();
         if let Some(b) = self.focused_buf() {
-            // The body keeps its newlines (line endings normalised); fields take the first line.
-            let text = if single_line {
-                text.lines().next().unwrap_or("").to_string()
-            } else {
-                let t = text.replace("\r\n", "\n");
-                // Pasting a valid JSON document over an empty (or fully selected) body
-                // pretty-prints it; anything else is pasted as is.
-                let replaces_all =
-                    b.text.trim().is_empty() || b.selection() == Some((0, b.text.len()));
-                if replaces_all && crate::editor::looks_like_json_document(&t) {
-                    crate::editor::format_json(&t).unwrap_or(t)
-                } else {
-                    t
-                }
-            };
+            // Fields take the first line.
+            let text = text.lines().next().unwrap_or("").to_string();
             b.insert(&text);
             cx.notify();
             return;

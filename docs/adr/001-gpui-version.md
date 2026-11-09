@@ -9,7 +9,7 @@ Pin the crates.io release `gpui = "=0.2.2"` with an exact requirement in the wor
 ## Why
 - A published crate gives reproducible, cacheable builds on all three CI runners; a Zed git rev
   pulls a far larger tree.
-- The sibling projects (fluxwire, microterm) ship on the same pin, so patterns carry over.
+- Other GPUI projects ship on the same pin, so patterns carry over.
 - GPUI's API churns; upgrades happen deliberately in their own change.
 
 ## Consequences

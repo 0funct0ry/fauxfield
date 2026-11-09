@@ -1,0 +1,39 @@
+# M4.1 scenario: the reusable CodeEditor on a Response body (typing, auto-close, undo, format,
+# Esc to cancel). Needs the example workspace as the launch workspace.
+name: m041-editor
+size: default
+steps:
+  - state: [reset]
+  - open: {kind: route, id: rt_users_get}
+  - wait_for_idle: {}
+  # The stored body is shown in a read-only editor.
+  - assert: {pointer: /editors/0/id, equals: "body:rsp_users_get_1"}
+  - assert: {pointer: /editors/0/read_only, equals: true}
+  - assert: {pointer: /editors/0/language, equals: json}
+  # Edit: select everything and delete it, type `{` (auto-close gives `{}`), Enter indents, type a member.
+  - invoke: edit_response_body
+  - wait_for_idle: {}
+  - assert: {pointer: /editors/0/read_only, equals: false}
+  - key: secondary-a
+  - key: backspace
+  - assert: {pointer: /editors/0/text_len, equals: 0}
+  - type_text: "{"
+  - assert: {pointer: /editors/0/text_len, equals: 2}
+  - key: enter
+  - type_text: "\"a\": 1"
+  - assert: {pointer: /editors/0/text_len, equals: 12}
+  - assert: {pointer: /editors/0/valid, equals: true}
+  - assert: {pointer: /editors/0/cursor/line, equals: 1}
+  # Undo reverts the typing group only.
+  - key: secondary-z
+  - assert: {pointer: /editors/0/text_len, equals: 6}
+  # Format body (Cmd/Ctrl+Shift+I) collapses the empty object.
+  - key: secondary-shift-i
+  - assert: {pointer: /editors/0/text_len, equals: 2}
+  # Esc cancels the session and restores the stored body.
+  - key: escape
+  - wait_for_idle: {}
+  - assert: {pointer: /editors/0/read_only, equals: true}
+  - assert: {pointer: /editors/0/valid, equals: true}
+  - screenshot: {name: m041-editor}
+  - state: [reset]

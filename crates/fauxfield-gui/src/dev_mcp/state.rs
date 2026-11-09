@@ -50,6 +50,83 @@ pub struct UiState {
     pub theme: String,
     /// The application menu exactly as built (native menus cannot be seen or screenshotted).
     pub menus: MenusState,
+    /// Every CodeEditor on screen (SPEC §20.18).
+    pub editors: Vec<EditorState>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct EditorState {
+    pub id: String,
+    pub language: &'static str,
+    pub revision: u64,
+    pub text_len: usize,
+    /// Zero-based caret line and column, plus the byte offset.
+    pub cursor: CursorState,
+    pub selection: [usize; 2],
+    pub line_count: usize,
+    pub soft_wrap: bool,
+    pub read_only: bool,
+    pub scroll_row: f32,
+    pub undo_depth: usize,
+    /// `Some(true/false)` when the language is validated (JSON), else absent.
+    pub valid: Option<bool>,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct CursorState {
+    pub line: usize,
+    pub col: usize,
+    pub offset: usize,
+}
+
+fn editor_state(
+    id: String,
+    e: &gpui::Entity<crate::code_editor::CodeEditor>,
+    cx: &App,
+) -> EditorState {
+    let e = e.read(cx);
+    let (line, col) = e.line_col();
+    let sel = e.selection();
+    let verdict = e.validity();
+    EditorState {
+        id,
+        language: e.lang().name(),
+        revision: e.revision(),
+        text_len: e.text().len(),
+        cursor: CursorState {
+            line,
+            col,
+            offset: e.cursor(),
+        },
+        selection: [sel.start, sel.end],
+        line_count: e.line_count(),
+        soft_wrap: e.is_soft_wrap(),
+        read_only: e.is_read_only(),
+        scroll_row: e.scroll_row(),
+        undo_depth: e.undo_depth(),
+        valid: verdict.as_ref().map(Result::is_ok),
+        error: verdict.and_then(Result::err).map(|e| e.to_string()),
+    }
+}
+
+fn editors_state(shell: &Shell, cx: &App) -> Vec<EditorState> {
+    let mut out = Vec::new();
+    if let Some(rid) = shell.current_response_id() {
+        if let Some(e) = shell.body_editors.get(&rid) {
+            out.push(editor_state(format!("body:{rid}"), e, cx));
+        }
+        if let Some(e) = shell.body_editors.get(&format!("{rid}#file")) {
+            out.push(editor_state(format!("file:{rid}"), e, cx));
+        }
+    }
+    if let Some(eds) = &shell.traffic_editors {
+        if shell.traffic_selected.is_some() {
+            out.push(editor_state("traffic:request".into(), &eds[0], cx));
+            out.push(editor_state("traffic:response".into(), &eds[1], cx));
+        }
+    }
+    out
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -532,6 +609,7 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
         },
         theme: cx.global::<Theme>().name.clone(),
         menus: menus_state(shell),
+        editors: editors_state(shell, cx),
     }
 }
 

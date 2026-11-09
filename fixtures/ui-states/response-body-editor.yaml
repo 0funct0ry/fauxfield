@@ -1,0 +1,5 @@
+# UI state fixture (M4.1): the Response body shown in the CodeEditor (read-only, JSON).
+steps:
+  - reset
+  - open: {kind: route, id: rt_users_get}
+  - wait_idle

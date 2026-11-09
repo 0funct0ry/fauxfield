@@ -1328,7 +1328,10 @@ fn response_menu_body_editor_and_headers(cx: &mut TestAppContext) {
     });
     view.update_in(cx, |s, w, cx| {
         s.begin_body_edit(&new, w, cx);
-        s.body_edit.as_mut().unwrap().buf = crate::editor::TextBuf::new("{\"a\":[1,2]}");
+        let ed = s.body_editors.get(&new).unwrap().clone();
+        ed.update(cx, |e, cx| {
+            e.replace_all("{\"a\":[1,2]}", cx);
+        });
         s.commit_body_edit(cx);
     });
     let (body, ct) = read(&view, cx, |s| {
@@ -1394,37 +1397,39 @@ fn body_editor_helps_typing_and_formats_on_paste_and_save(cx: &mut TestAppContex
         s.reload(cx);
         id
     });
-    let key = |view: &Entity<Shell>, cx: &mut VisualTestContext, k: &str, ch: Option<&str>| {
-        let mut ks = gpui::Keystroke::parse(k).unwrap();
-        ks.key_char = ch.map(String::from);
-        let ev = gpui::KeyDownEvent {
-            keystroke: ks,
-            is_held: false,
-        };
-        view.update(cx, |s, cx| s.on_body_key(&ev, cx));
-    };
     let text = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
-        read(view, cx, |s| s.body_edit.as_ref().unwrap().buf.text.clone())
+        let ed = read(view, cx, |s| s.body_editors.get(&new).unwrap().clone());
+        ed.read_with(cx, |e, _| e.text().to_string())
     };
-    view.update_in(cx, |s, w, cx| s.begin_body_edit(&new, w, cx));
-    // `{` Enter `"a"` `:` ` 1`: brackets and quotes close, Enter indents.
-    key(&view, cx, "{", Some("{"));
-    key(&view, cx, "enter", None);
-    key(&view, cx, "\"", Some("\""));
-    key(&view, cx, "a", Some("a"));
-    key(&view, cx, "\"", Some("\""));
-    assert_eq!(text(&view, cx), "{\n  \"a\"\n}");
-    // Backspace through the pair, then paste over a fully selected body formats valid JSON.
+    // Show the new Response's Body in its Route tab so the editor is part of the window.
     view.update(cx, |s, cx| {
-        cx.write_to_clipboard(gpui::ClipboardItem::new_string("{\"k\":[1,2]}".into()));
-        s.edit_select_all(cx);
-        s.edit_paste(cx);
+        s.open_tab("rt_users_get", TabKind::Route, "Get user", false);
+        let n = s.ws.find_route("rt_users_get").unwrap().1.responses.len();
+        s.resp_sel.insert("rt_users_get".into(), n - 1);
+        s.resp_sub.insert(new.clone(), 0);
+        cx.notify();
     });
+    cx.run_until_parked();
+    view.update_in(cx, |s, w, cx| s.begin_body_edit(&new, w, cx));
+    cx.run_until_parked();
+    // `{` Enter `"a"`: brackets and quotes close, Enter indents.
+    cx.simulate_input("{");
+    cx.simulate_keystrokes("enter");
+    cx.simulate_input("\"a\"");
+    assert_eq!(text(&view, cx), "{\n  \"a\"\n}");
+    // Pasting a valid JSON document over a fully selected body formats it.
+    cx.update(|_, cx| {
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string("{\"k\":[1,2]}".into()));
+    });
+    cx.simulate_keystrokes("secondary-a secondary-v");
     assert_eq!(text(&view, cx), "{\n  \"k\": [\n    1,\n    2\n  ]\n}");
     // Format on save rewrites a compact body when the body is committed.
     view.update(cx, |s, cx| {
         s.layout.format_on_save = true;
-        s.body_edit.as_mut().unwrap().buf = crate::editor::TextBuf::new("{\"x\":1}");
+        let ed = s.body_editors.get(&new).unwrap().clone();
+        ed.update(cx, |e, cx| {
+            e.replace_all("{\"x\":1}", cx);
+        });
         s.commit_body_edit(cx);
     });
     assert_eq!(

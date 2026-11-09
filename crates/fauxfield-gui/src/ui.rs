@@ -193,3 +193,6 @@ pub(crate) fn tooltip(
         cx.new(|_| TextTip(s.clone())).into()
     }
 }
+
+/// The reusable code editor (SPEC §20.18); every surface that needs a text editor uses these.
+pub use crate::code_editor::{CodeEditor, EditorEvent, EditorSettings, Language as EditorLanguage};
