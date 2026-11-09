@@ -1,0 +1,14 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "days_left": "<days_left>",
+  "exists": true,
+  "fingerprint": "<fingerprint>",
+  "not_after": "<not_after>",
+  "path": "<path>",
+  "trust": "<trust>",
+  "trust_command": "<trust_command>",
+  "untrust_command": "<untrust_command>"
+}

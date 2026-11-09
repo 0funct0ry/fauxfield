@@ -23,6 +23,7 @@ use crate::router::RouteTable;
 use crate::sim::{self, BodyMode, Fault, FaultIo, Limiter, NetworkProfile, SimBody};
 use crate::testreq::{self, TEST_HEADER, TestRequest, TestResponse};
 use crate::time::{now_ms, rfc3339};
+use crate::tls::Conn;
 
 /// In-memory recordings kept per server (SPEC §4.2 `[recording] buffer`).
 const DEFAULT_BUFFER: usize = 2000;
@@ -42,6 +43,8 @@ pub struct EngineConfig {
     pub network: Option<NetworkProfile>,
     /// Chaos fault rate for every Server at start (`fauxfield run --chaos`).
     pub chaos: Option<f64>,
+    /// Where the dev CA lives (`<dir>/ca/`); default is the platform data dir (SPEC §5.8).
+    pub data_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -74,6 +77,12 @@ pub struct ServerInfo {
     /// Chaos fault rate while the chaos switch is on (runtime only, SPEC §5.6).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chaos: Option<f64>,
+    /// Serves HTTPS (SPEC §5.8).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub https: bool,
+    /// Certificate expiry details while a TLS server is running.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cert: Option<crate::tls::CertStatus>,
 }
 
 #[derive(Debug, Clone)]
@@ -148,6 +157,10 @@ struct Running {
     addr: SocketAddr,
     stop: watch::Sender<bool>,
     task: JoinHandle<()>,
+    /// The `also_http_port` listener.
+    extra: Option<JoinHandle<()>>,
+    https: bool,
+    cert: Option<crate::tls::CertStatus>,
 }
 
 struct ServerRt {
@@ -253,6 +266,7 @@ impl Engine {
                 let table = Arc::new(self.compile(&s));
                 if let Some((_, rt)) = list.iter().find(|(id, _)| *id == s.id) {
                     let old = self.bind_of(&rt.def.lock().unwrap());
+                    let old_tls = rt.def.lock().unwrap().tls.clone();
                     let new = self.bind_of(&s);
                     let disabled = !s.enabled;
                     *rt.def.lock().unwrap() = s.clone();
@@ -265,7 +279,7 @@ impl Engine {
                     if rt.run.lock().unwrap().is_some() {
                         if disabled {
                             to_stop.push((s.id.clone(), rt.clone()));
-                        } else if old != new {
+                        } else if old != new || old_tls != s.tls {
                             to_restart.push(s.id.clone());
                         }
                     }
@@ -317,8 +331,16 @@ impl Engine {
             .map(|(id, rt)| {
                 let d = rt.def.lock().unwrap();
                 let (host, port) = self.bind_of(&d);
+                let run = rt
+                    .run
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .map(|r| (r.https, r.cert.clone()));
                 ServerInfo {
                     chaos: *rt.chaos.lock().unwrap(),
+                    https: run.as_ref().is_some_and(|r| r.0),
+                    cert: run.and_then(|r| r.1),
                     id: id.clone(),
                     name: d.name.clone(),
                     host,
@@ -370,15 +392,95 @@ impl Engine {
             server: name.clone(),
             message: e.to_string(),
         })?;
+        let def = rt.def.lock().unwrap().clone();
+        let tls = match def.tls.as_ref().filter(|t| t.enabled) {
+            None => None,
+            Some(_) => match crate::tls::build(
+                &def,
+                &self.inner.cfg.root,
+                self.inner.cfg.data_dir.as_deref(),
+                &host,
+            ) {
+                Ok(t) => Some(t),
+                Err(message) => {
+                    self.set_status(
+                        &id,
+                        &rt,
+                        ServerStatus::Failed {
+                            error: format!("TLS: {message}"),
+                            port_in_use: false,
+                        },
+                    );
+                    return Err(EngineError::Bind {
+                        server: name,
+                        message: format!("TLS: {message}"),
+                    });
+                }
+            },
+        };
+        let also = def
+            .tls
+            .as_ref()
+            .filter(|t| t.enabled)
+            .and_then(|t| t.also_http_port)
+            .map(|p| p.saturating_add(self.inner.cfg.port_offset));
+        let extra_listener = match also {
+            None => None,
+            Some(p) => match self.inner.handle.block_on_bind(&host, p) {
+                Ok(l) => Some(l),
+                Err(e) => {
+                    let in_use = e.kind() == std::io::ErrorKind::AddrInUse;
+                    self.set_status(
+                        &id,
+                        &rt,
+                        ServerStatus::Failed {
+                            error: e.to_string(),
+                            port_in_use: in_use,
+                        },
+                    );
+                    return Err(if in_use {
+                        EngineError::PortInUse {
+                            server: name,
+                            port: p,
+                        }
+                    } else {
+                        EngineError::Bind {
+                            server: name,
+                            message: e.to_string(),
+                        }
+                    });
+                }
+            },
+        };
         let (stop, stop_rx) = watch::channel(false);
+        let https = tls.is_some();
+        let cert = tls.as_ref().and_then(|t| t.status.clone());
+        let extra = extra_listener.map(|l| {
+            self.inner.handle.spawn(serve(
+                self.clone(),
+                id.clone(),
+                rt.clone(),
+                l,
+                None,
+                stop_rx.clone(),
+            ))
+        });
         let task = self.inner.handle.spawn(serve(
             self.clone(),
             id.clone(),
             rt.clone(),
             listener,
+            tls.map(|t| t.acceptor),
             stop_rx,
         ));
-        *rt.run.lock().unwrap() = Some(Running { addr, stop, task });
+        *rt.run.lock().unwrap() = Some(Running {
+            addr,
+            stop,
+            task,
+            extra,
+            https,
+            cert,
+        });
         self.set_status(
             &id,
             &rt,
@@ -408,6 +510,9 @@ impl Engine {
             let _ = r.stop.send(true);
             // Wait for the drain so the port is free when this returns.
             let _ = self.inner.handle.block_on_join(r.task);
+            if let Some(x) = r.extra {
+                let _ = self.inner.handle.block_on_join(x);
+            }
         }
         self.set_status(id, rt, ServerStatus::Stopped);
     }
@@ -743,12 +848,12 @@ impl Engine {
         req: &TestRequest,
     ) -> Result<TestResponse, EngineError> {
         let (_, rt) = self.find(key)?;
-        let addr = rt
+        let (addr, https) = rt
             .run
             .lock()
             .unwrap()
             .as_ref()
-            .map(|r| r.addr)
+            .map(|r| (r.addr, r.https))
             .ok_or_else(|| EngineError::NotRunning(key.to_string()))?;
         // Always loopback, even when the server binds 0.0.0.0.
         let target = SocketAddr::from(([127, 0, 0, 1], addr.port()));
@@ -757,16 +862,21 @@ impl Engine {
         } else {
             target
         };
-        testreq::send(target, req)
-            .await
-            .map_err(EngineError::Request)
+        testreq::send(
+            target,
+            req,
+            https.then(|| crate::tls::client_config(self.inner.cfg.data_dir.as_deref())),
+        )
+        .await
+        .map_err(EngineError::Request)
     }
 
     /// Base URL of a running server, for cURL.
     pub fn base_url(&self, key: &str) -> Option<String> {
         let (_, rt) = self.find(key).ok()?;
         let r = rt.run.lock().unwrap();
-        r.as_ref().map(|r| format!("http://{}", r.addr))
+        r.as_ref()
+            .map(|r| format!("{}://{}", if r.https { "https" } else { "http" }, r.addr))
     }
 
     fn record(&self, rt: &ServerRt, rec: Recording) {
@@ -829,6 +939,7 @@ async fn serve(
     id: String,
     rt: Arc<ServerRt>,
     listener: TcpListener,
+    acceptor: Option<tokio_rustls::TlsAcceptor>,
     mut stop: watch::Receiver<bool>,
 ) {
     let graceful = GracefulShutdown::new();
@@ -869,16 +980,25 @@ async fn serve(
                 let eng = engine.clone();
                 let rt2 = rt.clone();
                 let id2 = id.clone();
-                let (io, reset) = FaultIo::new(stream);
-                let svc = service_fn(move |req| {
-                    let (eng, rt, id, ip, reset) =
-                        (eng.clone(), rt2.clone(), id2.clone(), ip.clone(), reset.clone());
-                    async move { handle(eng, id, rt, ip, reset, req).await }
-                });
-                let conn = hyper::server::conn::http1::Builder::new().serve_connection(io, svc);
-                let watched = graceful.watch(conn);
+                let watcher = graceful.watcher();
+                let acceptor = acceptor.clone();
                 tokio::spawn(async move {
-                    let _ = watched.await;
+                    // The TLS handshake runs here so a slow client never blocks accept.
+                    let conn = match acceptor {
+                        None => Conn::Plain(stream),
+                        Some(a) => match a.accept(stream).await {
+                            Ok(t) => Conn::Tls(Box::new(t)),
+                            Err(_) => return,
+                        },
+                    };
+                    let (io, reset) = FaultIo::new(conn);
+                    let svc = service_fn(move |req| {
+                        let (eng, rt, id, ip, reset) =
+                            (eng.clone(), rt2.clone(), id2.clone(), ip.clone(), reset.clone());
+                        async move { handle(eng, id, rt, ip, reset, req).await }
+                    });
+                    let conn = hyper::server::conn::http1::Builder::new().serve_connection(io, svc);
+                    let _ = watcher.watch(conn).await;
                 });
             }
         }
@@ -959,11 +1079,15 @@ async fn handle(
     let match_us = match_start.elapsed().as_micros() as u64;
 
     let profile = engine.network_profile();
-    let (server_net, rate_cfg) = {
+    let (server_net, rate_cfg, cors_cfg) = {
         let d = rt.def.lock().unwrap();
-        (d.network.clone(), d.rate_limit.clone())
+        (d.network.clone(), d.rate_limit.clone(), d.cors.clone())
     };
-    let rate = rate_cfg.as_ref().and_then(|c| {
+    // Automatic preflight (SPEC §5.7) unless a Route explicitly handles the request.
+    let preflight = route.is_none()
+        && cors_cfg.as_ref().is_some_and(|c| c.enabled)
+        && crate::cors::is_preflight(&method, &req_headers);
+    let rate = rate_cfg.as_ref().filter(|_| !preflight).and_then(|c| {
         sim::rate_key(c, &ip, &req_headers, &url).and_then(|k| rt.limiter.check(c, &k))
     });
     let rate_limited = rate.as_ref().is_some_and(|r| r.limited);
@@ -974,6 +1098,7 @@ async fn handle(
     let mut chosen: (String, String) = Default::default();
     let mut render_error: Option<String> = None;
     let (route_id, (mut status, mut headers, mut bytes)) = match &route {
+        _ if preflight => ("cors-preflight".to_string(), (204, vec![], Bytes::new())),
         _ if rate_limited => {
             let st = rate.clone().unwrap_or_else(|| unreachable!());
             let mut out = json_response(
@@ -999,6 +1124,55 @@ async fn handle(
                     "application/problem+json",
                 ),
             )
+        }
+        Some(r) if r.kind == "static" => {
+            let call = rt.counters.bump(&r.id);
+            let rel = params
+                .iter()
+                .find(|(k, _)| k == "*")
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default();
+            let server_def = rt.def.lock().unwrap().clone();
+            let req_id = engine.inner.seq.load(Ordering::Relaxed);
+            let tpl = crate::render::TplEnv {
+                context: crate::render::context(
+                    &server_def,
+                    &method,
+                    &url,
+                    &req_headers,
+                    &params,
+                    Some(&ip),
+                    &body,
+                    req_id,
+                    call,
+                    &engine.inner.vars.read().unwrap(),
+                    Some(&r.id),
+                ),
+                seed: server_def.fake_seed,
+                route_id: r.id.clone(),
+                counter: call,
+                seq: Some(rt.seq.clone()),
+            };
+            let t0 = Instant::now();
+            let o = crate::statics::serve(
+                &engine.inner.cfg.root,
+                r,
+                &rel,
+                &method,
+                &req_headers,
+                &tpl,
+                &path,
+            );
+            render_us = t0.elapsed().as_micros() as u64;
+            chosen = (String::new(), o.file.clone().unwrap_or_default());
+            render_error = o.error;
+            let mut headers = o.headers;
+            for (k, v) in &r.headers {
+                if !headers.iter().any(|(n, _)| n.eq_ignore_ascii_case(k)) {
+                    headers.push((k.to_ascii_lowercase(), v.clone()));
+                }
+            }
+            (r.id.clone(), (o.status, headers, o.body))
         }
         Some(r) if r.kind == "crud" => {
             let call = rt.counters.bump(&r.id);
@@ -1177,6 +1351,9 @@ async fn handle(
         && !r.limited
     {
         headers.extend(r.headers());
+    }
+    if let Some(c) = &cors_cfg {
+        crate::cors::apply(c, &req_headers, &mut headers, preflight);
     }
     let net = profile.network().or(server_net);
     let network_ms = net.as_ref().map_or(0, sim::latency_ms);

@@ -76,6 +76,16 @@ pub enum InlineTarget {
     },
     /// A Response's `fault_rate` (M9).
     FaultRate(String),
+    /// A TLS or CORS field of a Server (M10).
+    Https {
+        server: String,
+        field: crate::https_ui::HttpsField,
+    },
+    /// A static Route field (M10).
+    Static {
+        route: String,
+        field: crate::https_ui::StaticField,
+    },
 }
 
 impl InlineTarget {
@@ -318,6 +328,12 @@ impl Shell {
             }
             InlineTarget::Net { server, field } => self.commit_net_field(&server, field, &v, cx),
             InlineTarget::FaultRate(id) => self.commit_fault_rate(&id, &v, cx),
+            InlineTarget::Https { server, field } => {
+                self.commit_https_field(&server, field, &v, cx)
+            }
+            InlineTarget::Static { route, field } => {
+                self.commit_static_field(&route, field, &v, cx)
+            }
             InlineTarget::Seed(server) => match v.parse::<u64>() {
                 Ok(n) => {
                     self.store_op(cx, |s| s.set_fake_seed(&server, Some(n)));

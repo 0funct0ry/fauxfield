@@ -33,6 +33,16 @@ urlencoding = "2"
 tera = "1"
 fake = { version = "5", features = ["chrono", "uuid"] }
 uuid = { version = "1", features = ["v4"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+rcgen = { version = "0.13", default-features = false, features = ["crypto", "ring", "pem"] }
+rustls-pemfile = "2"
+x509-parser = "0.16"
+directories = "6"
+httpdate = "1"
+rustls-pki-types = "1"
+mime_guess = "2"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+time = "0.3"
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -1,0 +1,28 @@
+# M10 scenario: Static files, CORS and HTTPS. The Server tab has TLS and CORS sections with
+# presets and a trust-confirmation that shows the exact command; a static Route has a file
+# browser. Needs fixtures/static-workspace as the launch workspace. Not yet run in CI.
+name: m10-static-cors-tls
+size: default
+steps:
+  - state: [reset]
+  - click_element: {id: row-srv_web}
+  - wait_for_idle: {}
+  - assert_find: {text: TLS, ids: [tls-enabled-srv_web, tls-mode-srv_web]}
+  - assert_find: {text: CORS, ids: [cors-preset-local, cors-preset-all]}
+  - click_element: {id: cors-preset-all}
+  - wait_for_idle: {}
+  - assert: {pointer: /servers/0/cors/origins, equals: ["*"]}
+  - click_element: {id: cors-preset-local}
+  - wait_for_idle: {}
+  - assert: {pointer: /servers/0/cors/credentials, equals: true}
+  - click_element: {id: tls-trust}
+  - wait_for_idle: {}
+  - assert_find: {text: Run, ids: [tls-trust-command, tls-trust-run, tls-trust-cancel]}
+  - screenshot: {name: m10-tls-trust-confirm}
+  - click_element: {id: tls-trust-cancel}
+  - click_element: {id: row-rte_public}
+  - wait_for_idle: {}
+  - assert_find: {text: index.html.tera, ids: [static-dir, static-pick-dir]}
+  - click_element: {id: "static-file-index.html.tera"}
+  - wait_for_idle: {}
+  - screenshot: {name: m10-static-route}

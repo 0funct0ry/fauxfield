@@ -13,6 +13,7 @@ pub mod dev_mcp;
 pub mod editor;
 pub mod header_catalog;
 pub mod header_table;
+pub mod https_ui;
 pub mod keymap;
 pub mod layout;
 pub mod left_dock;

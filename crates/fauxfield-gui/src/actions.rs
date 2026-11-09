@@ -45,6 +45,8 @@ actions!(
         Duplicate,
         ResetState,
         NewCrudResource,
+        NewStaticRoute,
+        TrustDevCa,
         NewFolder,
         NewResponse,
         Rename,
@@ -220,6 +222,12 @@ pub static ACTIONS: &[ActionInfo] = &[
         "Dataset: New CRUD Resource…",
         NewCrudResource
     ),
+    row!(
+        "new_static_route",
+        "Route: New Static Files…",
+        NewStaticRoute
+    ),
+    row!("trust_dev_ca", "HTTPS: Trust Dev CA…", TrustDevCa),
     row!("new_folder", "Folder: New…", NewFolder),
     row!("new_response", "Response: New", NewResponse),
     row!("rename", "Edit: Rename…", Rename),

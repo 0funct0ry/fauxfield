@@ -22,6 +22,12 @@ struct ServerRef {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct StaticRef {
+    /// Route ID (`rte_…`) of a `static` Route.
+    route: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct OptServer {
     /// Only this Server (ID, name, or file slug).
     server: Option<String>,
@@ -423,6 +429,58 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                 s.flush().map_err(e)?;
                 Ok(json!({ "server": id, "dataset": a.name, "route": route }))
             });
+            Box::pin(async move { out })
+        },
+    ));
+    let p = provider.clone();
+    r.register(ToolDef::new::<StaticRef>(
+        "list_static_files",
+        "Files a `static` Route serves (path under its dir, size, MIME type, whether it is a Tera template).",
+        ToolClass::Read,
+        move |m| {
+            let Some(s) = p() else { return no_workspace() };
+            let out = parse::<StaticRef>(m).and_then(|a| {
+                let snap = s.snapshot();
+                let route = snap
+                    .servers
+                    .iter()
+                    .flat_map(|(_, x)| x.routes.iter())
+                    .find(|r| r.id == a.route)
+                    .ok_or_else(|| format!("no route `{}`", a.route))?;
+                if route.kind != "static" {
+                    return Err(format!("route `{}` is not a static Route", a.route));
+                }
+                Ok(json!({
+                    "route": route.id,
+                    "dir": route.dir,
+                    "files": fauxfield_engine::static_files(&s.root(), route),
+                }))
+            });
+            Box::pin(async move { out })
+        },
+    ));
+    r.register(ToolDef::new::<NoInput>(
+        "certs_status",
+        "Development CA status: path, fingerprint, expiry and whether this machine trusts it. Never changes a trust store.",
+        ToolClass::Read,
+        move |_| {
+            let out = fauxfield_engine::tls::default_data_dir()
+                .map(|d| serde_json::to_value(fauxfield_engine::tls::ca_status(&d)).unwrap_or_default())
+                .ok_or_else(|| "no platform data directory".to_string());
+            Box::pin(async move { out })
+        },
+    ));
+    r.register(ToolDef::new::<NoInput>(
+        "certs_trust_command",
+        "The exact platform command that trusts the development CA. It is only returned, never run: ask the user to run it.",
+        ToolClass::Read,
+        move |_| {
+            let out = fauxfield_engine::tls::default_data_dir()
+                .map(|d| {
+                    let st = fauxfield_engine::tls::ca_status(&d);
+                    json!({ "command": st.trust_command, "untrust_command": st.untrust_command, "trust": st.trust, "exists": st.exists })
+                })
+                .ok_or_else(|| "no platform data directory".to_string());
             Box::pin(async move { out })
         },
     ));

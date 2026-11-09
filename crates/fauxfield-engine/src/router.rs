@@ -114,7 +114,35 @@ pub const CRUD_OPS: [(&str, &str); 6] = [
 /// (same id, kind and priority; an `http` Route of higher priority overrides one of them).
 fn expand(server: &Server) -> Vec<Route> {
     let mut out = Vec::new();
-    for r in effective_routes_of(server, &["http", "crud"]) {
+    for r in effective_routes_of(server, &["http", "crud", "static"]) {
+        if r.kind == "static" {
+            // `/assets/*` (or a bare `/assets`) serves the directory: one entry for the base
+            // (index) and one wildcard entry, for GET and HEAD.
+            let mut base = r.path.trim_end_matches('/');
+            if let Some((head, last)) = base.rsplit_once('/')
+                && last.starts_with('*')
+            {
+                base = head;
+            }
+            for m in ["GET", "HEAD"] {
+                for p in [
+                    if base.is_empty() {
+                        "/".to_string()
+                    } else {
+                        base.to_string()
+                    },
+                    format!("{base}/*"),
+                ] {
+                    let mut c = r.clone();
+                    c.method = m.into();
+                    c.path = p;
+                    c.match_mode = None;
+                    c.response_mode = None;
+                    out.push(c);
+                }
+            }
+            continue;
+        }
         if r.kind != "crud" {
             out.push(r.clone());
             continue;

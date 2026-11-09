@@ -198,6 +198,9 @@ impl Shell {
         };
         match tab.kind {
             TabKind::Route => match self.ws.find_route(&tab.id) {
+                Some((s, r)) if r.is_static() => {
+                    self.render_static_route_tab(t, s, r, cx).into_any_element()
+                }
                 Some((s, r)) if r.is_crud() => {
                     self.render_crud_route_tab(t, s, r, cx).into_any_element()
                 }
@@ -1038,7 +1041,7 @@ impl Shell {
             .listen
             .clone()
             .unwrap_or_else(|| format!("{}:{}", s.host, s.port));
-        let url = format!("http://{addr}");
+        let url = format!("{}://{addr}", if s.https() { "https" } else { "http" });
         let url_copy = url.clone();
         div()
             .id(crate::ui::eid(format!("server-tab-{}", s.id)))
@@ -1132,6 +1135,12 @@ impl Shell {
                     .gap(px(2.))
                     .child(self.server_general(t, s, cx))
                     .children(SERVER_SECTIONS.iter().enumerate().skip(1).map(|(i, name)| {
+                        if i == 1 {
+                            return self.server_tls_section(t, s, cx);
+                        }
+                        if i == 2 {
+                            return self.server_cors_section(t, s, cx);
+                        }
                         if i == 3 {
                             return self.server_network_section(t, s, cx);
                         }

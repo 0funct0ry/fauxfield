@@ -53,11 +53,18 @@ pub struct Route {
     /// crud Routes: the Dataset served and the optional JSON Schema file.
     pub dataset: Option<String>,
     pub validate: Option<String>,
+    /// static Routes: directory, template extensions and index file (M10).
+    pub dir: Option<String>,
+    pub template_extensions: Vec<String>,
+    pub index: Option<String>,
 }
 
 impl Route {
     pub fn is_crud(&self) -> bool {
         self.kind == "crud"
+    }
+    pub fn is_static(&self) -> bool {
+        self.kind == "static"
     }
 }
 
@@ -91,6 +98,12 @@ pub struct Server {
     pub rate_limit: Option<fauxfield_model::RateLimit>,
     /// Chaos fault rate while the chaos switch is on (runtime only, SPEC §5.6).
     pub chaos: Option<f64>,
+    /// `[tls]` as written (M10); `https()` says whether it is enabled.
+    pub tls: Option<fauxfield_model::Tls>,
+    /// `[cors]` as written (M10).
+    pub cors: Option<fauxfield_model::Cors>,
+    /// Certificate details while an HTTPS Server runs (engine status).
+    pub cert: Option<fauxfield_engine::tls::CertStatus>,
     pub running: bool,
     /// `host:port` while running (engine status).
     pub listen: Option<String>,
@@ -161,6 +174,10 @@ pub struct Dataset {
 pub const RANDOM_OUTPUT_TIP: &str = "Output is random: set a fake_seed for deterministic data";
 
 impl Server {
+    /// `[tls] enabled` (M10): the Server speaks HTTPS.
+    pub fn https(&self) -> bool {
+        self.tls.as_ref().is_some_and(|t| t.enabled)
+    }
     /// True when the Server has no `fake_seed` and a templated body, Response header or Route
     /// header uses a random function (shows the dice icon).
     pub fn random_output(&self) -> bool {
@@ -295,7 +312,12 @@ impl Workspace {
             kind: r.kind.clone(),
             dataset: r.dataset.clone(),
             validate: r.validate.clone(),
-            method: if r.kind == "crud" {
+            dir: r.dir.clone(),
+            template_extensions: r.template_extensions.clone(),
+            index: r.index.clone(),
+            method: if r.kind == "static" {
+                "FILES".to_string()
+            } else if r.kind == "crud" {
                 "CRUD".to_string()
             } else {
                 r.method.clone()
@@ -376,6 +398,9 @@ impl Workspace {
                     network: s.network.clone().unwrap_or_default(),
                     rate_limit: s.rate_limit.clone(),
                     chaos: None,
+                    tls: s.tls.clone(),
+                    cors: s.cors.clone(),
+                    cert: None,
                     running: false,
                     listen: None,
                     error: None,

@@ -375,7 +375,22 @@ impl Shell {
                 | RowKind::Route { disabled: true, .. }
         );
         let lead: gpui::AnyElement = match &r.kind {
-            RowKind::Server { running, .. } => status_dot(t, *running).into_any_element(),
+            RowKind::Server { running, https, .. } => div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(4.))
+                .child(status_dot(t, *running))
+                .when(*https, |d| {
+                    d.child(crate::dev_id!(
+                        div().child(icon("lock", 11., t.icon_muted)),
+                        format!("tree-lock-{}", r.id),
+                        Text,
+                        "HTTPS",
+                        None
+                    ))
+                })
+                .into_any_element(),
             RowKind::Folder { .. } => icon(
                 if r.expanded { "folder-open" } else { "folder" },
                 14.,

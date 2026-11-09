@@ -91,6 +91,13 @@ pub enum Command {
         #[command(subcommand)]
         action: crate::data_cmd::DataAction,
     },
+    /// Show, trust and untrust the development CA used by HTTPS Servers.
+    Certs {
+        #[command(subcommand)]
+        action: crate::certs_cmd::CertsAction,
+    },
+    /// Check ports, the development CA trust state and certificate expiry.
+    Doctor(crate::workspace_cmd::WsArgs),
     /// Render a Response template against a sample request, without running a server.
     Render(crate::workspace_cmd::RenderArgs),
     /// Serve a workspace headless: become the host and run its servers until stopped.
@@ -203,6 +210,8 @@ pub fn run() -> i32 {
         Some(Command::Env { action }) => crate::env_cmd::env(action),
         Some(Command::Var { action }) => crate::env_cmd::var(action),
         Some(Command::Data { action }) => crate::data_cmd::data(action),
+        Some(Command::Certs { action }) => crate::certs_cmd::certs(action),
+        Some(Command::Doctor(a)) => crate::doctor_cmd::doctor(a),
         Some(Command::Render(a)) => crate::workspace_cmd::render(a),
         Some(Command::Run(a)) => crate::host_cmd::run(a),
         Some(Command::Status(a)) => crate::host_cmd::status(a),
@@ -434,8 +443,8 @@ mod tests {
                 .command,
             Some(Command::Open { .. })
         ));
-        // Unimplemented subcommands are not exposed: `doctor` is read as a PATH and rejected.
-        let c = Cli::try_parse_from(["fauxfield", "doctor"]).unwrap();
+        // Unimplemented subcommands are not exposed: `tail` is read as a PATH and rejected.
+        let c = Cli::try_parse_from(["fauxfield", "tail"]).unwrap();
         assert!(c.command.is_none());
         assert_eq!(check_path(&c.path), Err(EXIT_RUNTIME));
         assert_eq!(check_path(&Some(std::env::temp_dir())), Ok(()));

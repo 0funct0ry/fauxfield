@@ -374,6 +374,13 @@ pub struct Shell {
     pub(crate) port_offset: u16,
     /// Workspace network profile (runtime only, SPEC §5.6); mirrors the engine.
     pub(crate) network_profile: fauxfield_engine::NetworkProfile,
+    /// TLS section: a trust (`true`) or untrust (`false`) command awaits confirmation (M10).
+    pub(crate) trust_confirm: Option<bool>,
+    pub(crate) trust_note: Option<String>,
+    /// Cached dev CA status (the trust check runs a process); cleared after a trust change.
+    pub(crate) ca_cache: std::cell::RefCell<Option<fauxfield_engine::tls::CaStatus>>,
+    /// static Route tab: `(route id, file)` shown in the preview.
+    pub(crate) static_preview: Option<(String, String)>,
     pub(crate) focus: FocusHandle,
     pub(crate) picker_focus: FocusHandle,
     /// The Response body being edited inline (committed on blur or Cmd/Ctrl+Enter).
@@ -592,6 +599,10 @@ impl Shell {
             select_next_test: false,
             port_offset: opts.port_offset,
             network_profile: Default::default(),
+            trust_confirm: None,
+            trust_note: None,
+            ca_cache: Default::default(),
+            static_preview: None,
             focus,
             picker_focus: cx.focus_handle(),
             body_edit: None,
@@ -3166,6 +3177,19 @@ impl Render for Shell {
             EditSampleRequest => |this, _w, cx| this.open_sample_dialog(cx),
             ResetState => |this, _w, cx| this.reset_state_action(cx),
             NewCrudResource => |this, w, cx| this.begin_new_crud(w, cx),
+            NewStaticRoute => |this, w, cx| this.begin_new_static(w, cx),
+            TrustDevCa => |this, _w, cx| match this.current_server_id() {
+                Some(server) => {
+                    this.click_row(&server, 2, cx);
+                    let add = this.ca_cache.borrow().as_ref().is_none_or(|c| {
+                        c.trust != fauxfield_engine::tls::TrustState::Trusted
+                    });
+                    this.trust_confirm = Some(add);
+                    this.trust_note = None;
+                    cx.notify();
+                }
+                None => this.notify("Select a server first.".into(), cx),
+            },
             RestartServer => |this, _w, cx| this.restart_current(cx),
             ClearTraffic => |this, _w, cx| this.clear_traffic(cx),
             CopyAsCurl => |this, _w, cx| this.copy_curl(cx),

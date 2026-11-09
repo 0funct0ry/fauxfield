@@ -472,6 +472,24 @@ pub struct ServerState {
     pub rate_limit: Option<RateLimitState>,
     /// Chaos fault rate while the switch is on (runtime only).
     pub chaos: Option<f64>,
+    /// `[tls]` (M10): enabled, mode and the extra plain-HTTP port.
+    pub https: bool,
+    pub tls_mode: &'static str,
+    pub also_http_port: Option<u16>,
+    /// Days until the running certificate expires.
+    pub cert_days_left: Option<i64>,
+    /// `[cors]` as written; absent when the table is.
+    pub cors: Option<CorsState>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct CorsState {
+    pub enabled: bool,
+    pub origins: Vec<String>,
+    pub methods: Vec<String>,
+    pub headers: Vec<String>,
+    pub credentials: bool,
+    pub max_age: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -718,6 +736,22 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
                         key: r.key.clone(),
                     }),
                     chaos: s.chaos,
+                    https: s.https(),
+                    tls_mode: if s.tls.as_ref().is_some_and(|t| t.mode_name() == "files") {
+                        "files"
+                    } else {
+                        "dev-ca"
+                    },
+                    also_http_port: s.tls.as_ref().and_then(|t| t.also_http_port),
+                    cert_days_left: s.cert.as_ref().map(|c| c.days_left),
+                    cors: s.cors.as_ref().map(|c| CorsState {
+                        enabled: c.enabled,
+                        origins: c.origins.clone(),
+                        methods: c.methods.clone(),
+                        headers: c.headers.clone(),
+                        credentials: c.credentials,
+                        max_age: c.max_age,
+                    }),
                 }
             })
             .collect(),

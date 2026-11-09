@@ -2046,3 +2046,90 @@ fn network_and_fault_controls(cx: &mut TestAppContext) {
     view.update(cx, |s, cx| s.toggle_chaos_at(0, cx));
     assert_eq!(read(&view, cx, |s| s.ws.servers[0].chaos), None);
 }
+
+/// M10: TLS and CORS fields of the Server tab, the CORS presets and static Route editing.
+#[gpui::test]
+fn tls_cors_and_static_controls(cx: &mut TestAppContext) {
+    use crate::https_ui::{HttpsField, StaticField};
+    use crate::response_pane::{InlineTarget as I, Nav};
+    let (view, cx) = setup(cx, None);
+    let sid = read(&view, cx, |s| s.ws.servers[0].id.clone());
+    let type_field = |view: &Entity<Shell>, cx: &mut VisualTestContext, t: I, text: &str| {
+        view.update_in(cx, |s, w, cx| {
+            s.begin_inline(t, "", false, w, cx);
+            s.inline.as_mut().unwrap().buf = crate::editor::TextBuf::new(text);
+            s.commit_inline(Nav::Stay, w, cx);
+        });
+    };
+    let https = |f| I::Https {
+        server: sid.clone(),
+        field: f,
+    };
+    // TLS: toggle, mode, also-HTTP port (the server's own port is rejected).
+    assert!(!read(&view, cx, |s| s.ws.servers[0].https()));
+    view.update(cx, |s, cx| s.toggle_tls(&sid, cx));
+    assert!(read(&view, cx, |s| s.ws.servers[0].https()));
+    view.update(cx, |s, cx| s.cycle_tls_mode(&sid, cx));
+    type_field(&view, cx, https(HttpsField::Cert), "certs/s.pem");
+    type_field(&view, cx, https(HttpsField::Cert), "../escape.pem"); // rejected
+    let port = read(&view, cx, |s| s.ws.servers[0].port);
+    type_field(&view, cx, https(HttpsField::AlsoHttp), &port.to_string()); // rejected
+    type_field(&view, cx, https(HttpsField::AlsoHttp), "8080");
+    let t = read(&view, cx, |s| s.ws.servers[0].tls.clone().unwrap());
+    assert_eq!(t.mode_name(), "files");
+    assert_eq!(t.cert.as_deref(), Some("certs/s.pem"));
+    assert_eq!(t.also_http_port, Some(8080));
+
+    // CORS: presets then edits.
+    view.update(cx, |s, cx| s.apply_cors_preset(&sid, true, cx));
+    let c = read(&view, cx, |s| s.ws.servers[0].cors.clone().unwrap());
+    assert!(c.enabled && c.credentials && c.origins.contains(&"http://localhost:*".to_string()));
+    view.update(cx, |s, cx| s.apply_cors_preset(&sid, false, cx));
+    let c = read(&view, cx, |s| s.ws.servers[0].cors.clone().unwrap());
+    assert_eq!(c.origins, vec!["*".to_string()]);
+    assert!(!c.credentials);
+    type_field(&view, cx, https(HttpsField::Methods), "get, post");
+    type_field(&view, cx, https(HttpsField::MaxAge), "600");
+    view.update(cx, |s, cx| s.toggle_cors(&sid, "enabled", cx));
+    let c = read(&view, cx, |s| s.ws.servers[0].cors.clone().unwrap());
+    assert_eq!(
+        (c.methods, c.max_age, c.enabled),
+        (vec!["GET".into(), "POST".into()], Some(600), false)
+    );
+
+    // Static Route: created in the workspace, then edited.
+    let dir = read(&view, cx, |s| s.store.as_ref().unwrap().root());
+    std::fs::create_dir_all(dir.join("public")).unwrap();
+    std::fs::write(dir.join("public/index.html.tera"), "x").unwrap();
+    view.update(cx, |s, cx| {
+        s.new_static_chosen(&sid, dir.join("public"), cx)
+    });
+    let rid = read(&view, cx, |s| {
+        s.ws.servers[0]
+            .all_routes()
+            .find(|r| r.is_static())
+            .map(|r| r.id.clone())
+    })
+    .expect("static route created");
+    let (path, d, idx) = read(&view, cx, |s| {
+        let r = s.ws.find_route(&rid).unwrap().1;
+        (r.path.clone(), r.dir.clone(), r.index.clone())
+    });
+    assert_eq!(
+        (path.as_str(), d.as_deref(), idx.as_deref()),
+        ("/public/*", Some("public"), Some("index.html"))
+    );
+    let st = |f| I::Static {
+        route: rid.clone(),
+        field: f,
+    };
+    type_field(&view, cx, st(StaticField::TemplateExt), "tera"); // rejected: no dot
+    type_field(&view, cx, st(StaticField::TemplateExt), ".tera, .tpl");
+    type_field(&view, cx, st(StaticField::Index), "home.html");
+    let r = read(&view, cx, |s| s.ws.find_route(&rid).unwrap().1.clone());
+    assert_eq!(
+        r.template_extensions,
+        vec![".tera".to_string(), ".tpl".to_string()]
+    );
+    assert_eq!(r.index.as_deref(), Some("home.html"));
+}

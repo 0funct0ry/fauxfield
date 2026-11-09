@@ -10,13 +10,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
+use crate::tls::Conn;
 use bytes::Bytes;
 use fauxfield_model::{Network, RateLimit};
 use hyper::body::{Body, Frame, SizeHint};
 use hyper_util::rt::TokioIo;
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
-use tokio::net::TcpStream;
 use tokio::time::Sleep;
 
 /// Workspace-wide runtime network profile (SPEC §5.6). Overrides every server's `[network]`.
@@ -423,12 +423,12 @@ impl Body for SimBody {
 
 /// A connection that sends a TCP RST on drop when `reset` is set.
 pub struct FaultIo {
-    inner: TokioIo<TcpStream>,
+    inner: TokioIo<Conn>,
     pub reset: Arc<AtomicBool>,
 }
 
 impl FaultIo {
-    pub fn new(stream: TcpStream) -> (Self, Arc<AtomicBool>) {
+    pub fn new(stream: Conn) -> (Self, Arc<AtomicBool>) {
         let reset = Arc::new(AtomicBool::new(false));
         (
             Self {
@@ -444,7 +444,7 @@ impl Drop for FaultIo {
     fn drop(&mut self) {
         if self.reset.load(Ordering::SeqCst) {
             #[allow(deprecated)]
-            let _ = self.inner.inner().set_linger(Some(Duration::ZERO));
+            let _ = self.inner.inner().tcp().set_linger(Some(Duration::ZERO));
         }
     }
 }

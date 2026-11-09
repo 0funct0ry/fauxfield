@@ -57,7 +57,7 @@ fn completions_for_every_shell_mention_the_binary() {
 
 #[test]
 fn unknown_subcommand_is_rejected_as_a_missing_folder() {
-    let (code, _, err) = run(&["doctor"]);
+    let (code, _, err) = run(&["tail"]);
     assert_eq!(code, 1);
     assert!(err.contains("not a folder"));
 }
@@ -506,4 +506,80 @@ fn run_rejects_bad_network_and_chaos_values_with_exit_2() {
     let (code, _, err) = run(&["run", "--chaos", "1.5"]);
     assert_eq!(code, 2);
     assert!(err.contains("between 0 and 1"), "{err}");
+}
+
+/// `run` with the dev CA directory pointed at a temp dir (never the real platform one).
+fn run_with_data(data: &std::path::Path, args: &[&str]) -> (i32, String, String) {
+    let out = Command::cargo_bin("fauxfield")
+        .unwrap()
+        .env("FAUXFIELD_DATA_DIR", data)
+        .args(args)
+        .output()
+        .unwrap();
+    (
+        out.status.code().unwrap(),
+        String::from_utf8(out.stdout).unwrap(),
+        String::from_utf8(out.stderr).unwrap(),
+    )
+}
+
+#[test]
+fn certs_and_doctor_are_stable() {
+    let data = tempfile::tempdir().unwrap();
+    let ws = workspace();
+    let w = ws.path().to_str().unwrap();
+    let redact = |mut v: serde_json::Value| {
+        for k in [
+            "path",
+            "trust",
+            "trust_command",
+            "untrust_command",
+            "fingerprint",
+            "not_after",
+            "days_left",
+            "workspace",
+            "command",
+        ] {
+            if v.get(k).is_some_and(|x| !x.is_null()) {
+                v[k] = format!("<{k}>").into();
+            }
+        }
+        v
+    };
+    let (code, out, _) = run_with_data(data.path(), &["certs", "status", "--json"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["exists"], false);
+    snap_json(Some("certs_status_none"), &redact(v));
+    // `trust --json` creates the CA, prints the command and never runs it.
+    let (code, out, _) = run_with_data(data.path(), &["certs", "trust", "--json"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["ran"], false);
+    assert!(v["command"].as_str().unwrap().contains("ca.pem"));
+    snap_json(Some("certs_trust"), &redact(v));
+    let (_, out, _) = run_with_data(data.path(), &["certs", "status", "--json"]);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["exists"], true);
+    assert!(v["fingerprint"].is_string() && v["days_left"].as_i64().unwrap() > 3000);
+    snap_json(Some("certs_status_created"), &redact(v));
+    // Without --yes and without a terminal the command is printed, not run.
+    let (code, out, err) = run_with_data(data.path(), &["certs", "untrust"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("ca") && err.contains("Not run"));
+    let (code, out, _) = run_with_data(data.path(), &["doctor", "-w", w, "--json"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let mut v = redact(v);
+    v["version"] = "<version>".into();
+    v["gui"] = "<bool>".into();
+    v["ports"] = v["ports"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| serde_json::json!({"server": p["server"], "available": "<bool>"}))
+        .collect::<Vec<_>>()
+        .into();
+    v["ca"] = redact(v["ca"].clone());
+    snap_json(Some("doctor"), &v);
 }

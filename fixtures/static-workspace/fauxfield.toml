@@ -1,0 +1,6 @@
+schema = 1
+name = "static-workspace"
+default_environment = "local"
+
+[variables]
+app_title = "Fauxfield static demo"

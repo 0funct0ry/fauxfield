@@ -114,6 +114,10 @@ impl Shell {
         self.network_profile = h.engine().network_profile();
         for s in &mut self.ws.servers {
             s.chaos = list.iter().find(|x| x.id == s.id).and_then(|x| x.chaos);
+            s.cert = list
+                .iter()
+                .find(|x| x.id == s.id)
+                .and_then(|x| x.cert.clone());
             let st = list.iter().find(|x| x.id == s.id).map(|x| &x.status);
             s.running = matches!(st, Some(ServerStatus::Running { .. }));
             s.listen = match st {

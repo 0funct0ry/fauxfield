@@ -1,0 +1,9 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "command": "<command>",
+  "ran": false,
+  "trust": "<trust>"
+}

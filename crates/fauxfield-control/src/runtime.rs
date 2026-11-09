@@ -94,6 +94,7 @@ impl Host {
                 buffer: 0,
                 network: opts.network,
                 chaos: opts.chaos,
+                data_dir: None,
             },
         );
         let control = Arc::new(LocalControl::new(engine.clone()));

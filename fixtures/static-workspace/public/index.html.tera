@@ -1,0 +1,5 @@
+<!doctype html>
+<title>{{ vars.app_title }}</title>
+<h1>Environment: {{ env }}</h1>
+<p>{{ vars.greeting }}</p>
+<script src="/app.js"></script>

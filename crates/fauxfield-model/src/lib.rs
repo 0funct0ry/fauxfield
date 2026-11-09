@@ -12,9 +12,9 @@ pub mod vars;
 pub use diagnostic::{Diagnostic, Severity};
 pub use id::new_id;
 pub use types::{
-    Dataset, Delay, Environment, FAULTS, Folder, ID_STRATEGIES, Manifest, Network, ROUTE_KINDS,
-    RateLimit, Response, Route, Rule, SCHEMA_VERSION, Server, parse_delay, parse_environment,
-    parse_manifest, parse_server, parse_window, valid_rate_key,
+    Cors, Dataset, Delay, Environment, FAULTS, Folder, ID_STRATEGIES, Manifest, Network,
+    ROUTE_KINDS, RateLimit, Response, Route, Rule, SCHEMA_VERSION, Server, TLS_MODES, Tls,
+    parse_delay, parse_environment, parse_manifest, parse_server, parse_window, valid_rate_key,
 };
 pub use validate::{validate_environment_names, validate_servers};
 

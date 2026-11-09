@@ -1129,6 +1129,69 @@ impl Store {
         self.set_server_table(server_id, table, key, val.map(value))
     }
 
+    /// Set (or with an empty list, remove) a string-array key of a Server sub-table (`cors.origins`).
+    pub fn set_server_table_list(
+        &self,
+        server_id: &str,
+        table: &str,
+        key: &str,
+        items: &[String],
+    ) -> Result<(), StoreError> {
+        let v = (!items.is_empty()).then(|| {
+            let mut a = toml_edit::Array::new();
+            for i in items {
+                a.push(i.as_str());
+            }
+            value(a)
+        });
+        self.set_server_table(server_id, table, key, v)
+    }
+
+    /// Set (or remove when empty) a string-array key of a Route, e.g. `template_extensions`.
+    pub fn set_str_list(
+        &self,
+        target: &Target,
+        key: &str,
+        items: &[String],
+    ) -> Result<(), StoreError> {
+        let v = (!items.is_empty()).then(|| {
+            let mut a = toml_edit::Array::new();
+            for i in items {
+                a.push(i.as_str());
+            }
+            value(a)
+        });
+        self.set_item(target, key, v)
+    }
+
+    /// Create a `static` Route serving `dir` at `path` (`/assets/*`), with `index.html` as index.
+    pub fn create_static_route(
+        &self,
+        server_id: &str,
+        folder: Option<&str>,
+        path: &str,
+        dir: &str,
+    ) -> Result<String, StoreError> {
+        let file = self
+            .server_file(server_id)
+            .ok_or_else(|| StoreError::NotFound(server_id.into()))?;
+        let id = new_id("rte");
+        self.edit(&file, |d| {
+            let mut t = Table::new();
+            t["id"] = value(id.clone());
+            if let Some(f) = folder {
+                t["folder"] = value(f);
+            }
+            t["kind"] = value("static");
+            t["path"] = value(path);
+            t["dir"] = value(dir);
+            t["index"] = value("index.html");
+            array_mut(d, "routes").push(t);
+            Ok(())
+        })?;
+        Ok(id)
+    }
+
     pub fn set_server_table_bool(
         &self,
         server_id: &str,

@@ -87,6 +87,8 @@ pub enum RowKind {
         enabled: bool,
         /// Chaos switch is on (runtime only).
         chaos: bool,
+        /// Serves HTTPS (lock icon, M10).
+        https: bool,
     },
     /// The workspace root header (rendered above the tree, not part of `flatten`).
     Workspace,
@@ -252,6 +254,7 @@ pub fn flatten(
                     running: s.running,
                     enabled: s.enabled,
                     chaos: s.chaos.is_some(),
+                    https: s.https(),
                 },
                 true,
             );
@@ -677,6 +680,7 @@ mod tests {
             running: true,
             enabled: true,
             chaos: false,
+            https: false,
         };
         assert_eq!(
             labels(&srv, true),
@@ -701,6 +705,7 @@ mod tests {
             running: false,
             enabled: false,
             chaos: false,
+            https: false,
         };
         let l = labels(&off, false);
         assert_eq!((l[0], l[1], l[2]), ("Start", "New route…", "New folder…"));

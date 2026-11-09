@@ -170,6 +170,61 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                     ));
                 }
             }
+            if r.kind == "static" {
+                match r.dir.as_deref() {
+                    None | Some("") => out.push(Diagnostic::error(
+                        file,
+                        format!("{rp}.dir"),
+                        "E090",
+                        "a static Route needs `dir`",
+                    )),
+                    Some(d) if d.starts_with('/') || d.split(['/', '\\']).any(|c| c == "..") => out
+                        .push(Diagnostic::error(
+                            file,
+                            format!("{rp}.dir"),
+                            "E042",
+                            "dir must stay inside the workspace",
+                        )),
+                    _ => {}
+                }
+                if !r.path.starts_with('/') {
+                    out.push(Diagnostic::error(
+                        file,
+                        format!("{rp}.path"),
+                        "E031",
+                        "path must start with `/`",
+                    ));
+                }
+                if r.template_extensions
+                    .iter()
+                    .any(|e| !e.starts_with('.') || e.len() < 2)
+                {
+                    out.push(Diagnostic::error(
+                        file,
+                        format!("{rp}.template_extensions"),
+                        "E091",
+                        "template extensions must start with `.`, e.g. `.tera`",
+                    ));
+                }
+                if let Some(i) = &r.index
+                    && (i.starts_with('/') || i.split(['/', '\\']).any(|c| c == ".."))
+                {
+                    out.push(Diagnostic::error(
+                        file,
+                        format!("{rp}.index"),
+                        "E042",
+                        "index must stay inside the directory",
+                    ));
+                }
+                if !r.responses.is_empty() {
+                    out.push(Diagnostic::warning(
+                        file,
+                        format!("{rp}.responses"),
+                        "W070",
+                        "responses are ignored on a static Route",
+                    ));
+                }
+            }
             if r.kind == "http" {
                 let strict = s.strict_slash.unwrap_or(false);
                 match pattern::parse_mode(r.match_mode.as_deref()) {
@@ -396,6 +451,58 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                 }
             }
         }
+        if let Some(t) = &s.tls {
+            if !crate::TLS_MODES.contains(&t.mode_name()) {
+                out.push(Diagnostic::error(
+                    file,
+                    "tls.mode",
+                    "E092",
+                    format!("tls mode must be dev-ca or files, got `{}`", t.mode_name()),
+                ));
+            }
+            if t.enabled && t.mode_name() == "files" {
+                for (k, v) in [("cert", &t.cert), ("key", &t.key)] {
+                    match v.as_deref() {
+                        None | Some("") => out.push(Diagnostic::error(
+                            file,
+                            format!("tls.{k}"),
+                            "E093",
+                            format!("tls mode `files` needs `{k}`"),
+                        )),
+                        Some(p)
+                            if p.starts_with('/') || p.split(['/', '\\']).any(|c| c == "..") =>
+                        {
+                            out.push(Diagnostic::error(
+                                file,
+                                format!("tls.{k}"),
+                                "E042",
+                                format!("{k} must stay inside the workspace"),
+                            ))
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            if t.also_http_port == Some(s.port) {
+                out.push(Diagnostic::error(
+                    file,
+                    "tls.also_http_port",
+                    "E094",
+                    "also_http_port must differ from the server port",
+                ));
+            }
+        }
+        if let Some(c) = &s.cors
+            && c.enabled
+            && c.origins.is_empty()
+        {
+            out.push(Diagnostic::warning(
+                file,
+                "cors.origins",
+                "W090",
+                "CORS is enabled but no origins are allowed",
+            ));
+        }
         for sh in pattern::shadowed_routes(s) {
             let by = s.routes.iter().find(|r| r.id == sh.by);
             let me = s.routes.iter().find(|r| r.id == sh.route);
@@ -461,9 +568,11 @@ mod tests {
 
     #[test]
     fn unknown_fields_are_tolerated() {
-        let s = parse_server("id=\"srv_a\"\nname=\"n\"\nport=1\nfuture=1\n[tls]\nenabled=false\n")
-            .unwrap();
-        assert!(s.extra.contains_key("future") && s.extra.contains_key("tls"));
+        let s = parse_server(
+            "id=\"srv_a\"\nname=\"n\"\nport=1\nfuture=1\n[future_table]\nenabled=false\n",
+        )
+        .unwrap();
+        assert!(s.extra.contains_key("future") && s.extra.contains_key("future_table"));
     }
 
     #[test]
@@ -477,6 +586,20 @@ mod tests {
         let d = validate_servers(&[("servers/a.toml".into(), parse_server(t).unwrap())]);
         let codes: Vec<_> = d.iter().map(|d| d.code.as_str()).collect();
         for c in ["E070", "E071", "E072", "E073", "E074", "E075"] {
+            assert!(codes.contains(&c), "{c} in {codes:?}");
+        }
+    }
+
+    #[test]
+    fn static_tls_cors_checks() {
+        let t = "id=\"srv_a\"\nname=\"n\"\nport=1\n\
+            [tls]\nenabled=true\nmode=\"files\"\nalso_http_port=1\n\
+            [cors]\nenabled=true\n\
+            [[routes]]\nid=\"r1\"\nkind=\"static\"\npath=\"/a/*\"\n\
+            [[routes]]\nid=\"r2\"\nkind=\"static\"\npath=\"/b/*\"\ndir=\"../x\"\ntemplate_extensions=[\"tera\"]\n";
+        let d = validate_servers(&[("servers/a.toml".into(), parse_server(t).unwrap())]);
+        let codes: Vec<_> = d.iter().map(|d| d.code.as_str()).collect();
+        for c in ["E090", "E091", "E042", "E093", "E094", "W090"] {
             assert!(codes.contains(&c), "{c} in {codes:?}");
         }
     }

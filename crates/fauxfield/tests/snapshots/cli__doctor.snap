@@ -1,0 +1,27 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "ca": {
+    "days_left": "<days_left>",
+    "exists": true,
+    "fingerprint": "<fingerprint>",
+    "not_after": "<not_after>",
+    "path": "<path>",
+    "trust": "<trust>",
+    "trust_command": "<trust_command>",
+    "untrust_command": "<untrust_command>"
+  },
+  "certs": [],
+  "gui": "<bool>",
+  "ok": true,
+  "ports": [
+    {
+      "available": "<bool>",
+      "server": "Example API"
+    }
+  ],
+  "version": "<version>",
+  "workspace": "<workspace>"
+}

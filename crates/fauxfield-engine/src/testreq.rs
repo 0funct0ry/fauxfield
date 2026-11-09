@@ -27,9 +27,24 @@ pub struct TestResponse {
 }
 
 /// Minimal HTTP/1.1 client for loopback Send test; one request, `Connection: close`.
-pub(crate) async fn send(addr: SocketAddr, req: &TestRequest) -> Result<TestResponse, String> {
+pub(crate) async fn send(
+    addr: SocketAddr,
+    req: &TestRequest,
+    tls: Option<std::sync::Arc<rustls::ClientConfig>>,
+) -> Result<TestResponse, String> {
     let work = async {
-        let mut s = TcpStream::connect(addr).await.map_err(|e| e.to_string())?;
+        let tcp = TcpStream::connect(addr).await.map_err(|e| e.to_string())?;
+        let mut s: Box<dyn Stream> = match tls {
+            None => Box::new(tcp),
+            Some(cfg) => {
+                let name = rustls_pki_types::ServerName::try_from("localhost").expect("name");
+                let t = tokio_rustls::TlsConnector::from(cfg)
+                    .connect(name, tcp)
+                    .await
+                    .map_err(|e| format!("TLS handshake failed: {e}"))?;
+                Box::new(t)
+            }
+        };
         let mut head = format!(
             "{} {} HTTP/1.1\r\nhost: {addr}\r\nconnection: close\r\n{TEST_HEADER}: 1\r\n",
             req.method.to_ascii_uppercase(),
@@ -53,6 +68,9 @@ pub(crate) async fn send(addr: SocketAddr, req: &TestRequest) -> Result<TestResp
         .await
         .map_err(|_| "timed out waiting for the response".to_string())?
 }
+
+trait Stream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> Stream for T {}
 
 fn parse(buf: &[u8]) -> Result<TestResponse, String> {
     let split = buf

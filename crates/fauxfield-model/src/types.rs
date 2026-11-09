@@ -85,6 +85,12 @@ pub struct Server {
     /// Request rate limit (SPEC §5.6).
     #[serde(default)]
     pub rate_limit: Option<RateLimit>,
+    /// HTTPS settings (SPEC §5.8).
+    #[serde(default)]
+    pub tls: Option<Tls>,
+    /// CORS settings (SPEC §5.7).
+    #[serde(default)]
+    pub cors: Option<Cors>,
     /// Seed for fake data and random functions; unset means random (SPEC §8.3).
     #[serde(default)]
     pub fake_seed: Option<u64>,
@@ -194,6 +200,15 @@ pub struct Route {
     /// `crud` routes: JSON Schema file (workspace-relative) checked on POST/PUT/PATCH.
     #[serde(default)]
     pub validate: Option<String>,
+    /// `static` routes: directory served (workspace-relative).
+    #[serde(default)]
+    pub dir: Option<String>,
+    /// `static` routes: extensions rendered through Tera, e.g. `[".tera"]`.
+    #[serde(default)]
+    pub template_extensions: Vec<String>,
+    /// `static` routes: file served for a directory request (default none).
+    #[serde(default)]
+    pub index: Option<String>,
     #[serde(flatten)]
     #[schemars(skip)]
     pub extra: Extra,
@@ -309,6 +324,56 @@ pub fn parse_delay(s: &str) -> Option<(u64, u64)> {
         }
         None => s.parse().ok().map(|n| (n, n)),
     }
+}
+
+/// TLS modes (SPEC §5.8).
+pub const TLS_MODES: &[&str] = &["dev-ca", "files"];
+
+/// Server `[tls]` table.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Tls {
+    #[serde(default)]
+    pub enabled: bool,
+    /// `dev-ca` (default) or `files`.
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// `files` mode: PEM certificate chain (workspace-relative).
+    #[serde(default)]
+    pub cert: Option<String>,
+    /// `files` mode: PEM private key (workspace-relative).
+    #[serde(default)]
+    pub key: Option<String>,
+    /// Also serve plain HTTP on this port (same routes).
+    #[serde(default)]
+    pub also_http_port: Option<u16>,
+}
+
+impl Tls {
+    pub fn mode_name(&self) -> &str {
+        self.mode
+            .as_deref()
+            .filter(|m| !m.is_empty())
+            .unwrap_or("dev-ca")
+    }
+}
+
+/// Server `[cors]` table.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Cors {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Allowed origins; `*` allows any.
+    #[serde(default)]
+    pub origins: Vec<String>,
+    #[serde(default)]
+    pub methods: Vec<String>,
+    #[serde(default)]
+    pub headers: Vec<String>,
+    #[serde(default)]
+    pub credentials: bool,
+    /// Preflight cache seconds.
+    #[serde(default)]
+    pub max_age: Option<u64>,
 }
 
 /// Server `[network]` table: simulated latency and bandwidth.

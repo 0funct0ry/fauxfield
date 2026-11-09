@@ -1,0 +1,11 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "exists": false,
+  "path": "<path>",
+  "trust": "<trust>",
+  "trust_command": "<trust_command>",
+  "untrust_command": "<untrust_command>"
+}

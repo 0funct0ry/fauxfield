@@ -245,7 +245,8 @@ pub fn run(a: RunArgs) -> i32 {
     }
     for s in engine.list() {
         if let ServerStatus::Running { addr } = &s.status {
-            eprintln!("serving {} on http://{addr}", s.name);
+            let scheme = if s.https { "https" } else { "http" };
+            eprintln!("serving {} on {scheme}://{addr}", s.name);
         }
     }
     eprintln!("press Ctrl+C to stop");
@@ -342,7 +343,12 @@ pub fn status(a: StatusArgs) -> i32 {
         );
         for s in &servers {
             let state = match &s.status {
-                ServerStatus::Running { addr } => format!("running on http://{addr}"),
+                ServerStatus::Running { addr } => {
+                    format!(
+                        "running on {}://{addr}",
+                        if s.https { "https" } else { "http" }
+                    )
+                }
                 ServerStatus::Stopped => "stopped".into(),
                 ServerStatus::Failed { error, .. } => format!("failed: {error}"),
             };
