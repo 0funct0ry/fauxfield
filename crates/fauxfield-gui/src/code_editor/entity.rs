@@ -534,6 +534,21 @@ impl CodeEditor {
         });
     }
 
+    /// Moves the popup selection (wrapping); false when no popup is open.
+    fn step_completion(&mut self, forward: bool, cx: &mut Context<Self>) -> bool {
+        let Some(c) = self.comp.as_mut().filter(|c| !c.items.is_empty()) else {
+            return false;
+        };
+        let n = c.items.len();
+        c.selected = if forward {
+            (c.selected + 1) % n
+        } else {
+            (c.selected + n - 1) % n
+        };
+        cx.notify();
+        true
+    }
+
     fn accept_completion(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(c) = self.comp.take() else {
             return false;
@@ -682,6 +697,11 @@ impl CodeEditor {
         match k.key.as_str() {
             "enter" if plain && !k.modifiers.shift => {
                 if self.opts.read_only {
+                    return;
+                }
+                // Enter, like Tab, accepts the open completion.
+                if self.accept_completion(cx) {
+                    cx.stop_propagation();
                     return;
                 }
                 let plan = ops::newline(&self.buf, self.lang, self.indent());
@@ -971,8 +991,14 @@ impl Render for CodeEditor {
             let o = s.buf.next_boundary(s.buf.head());
             s.move_to(o, true, cx)
         });
-        d = on!(d, act::Up, |s, cx| s.vertical(false, false, 1, cx));
-        d = on!(d, act::Down, |s, cx| s.vertical(true, false, 1, cx));
+        // Bound keys run as actions before key listeners, so the popup must claim Up/Down here
+        // (this also covers Ctrl-P / Ctrl-N).
+        d = on!(d, act::Up, |s, cx| if !s.step_completion(false, cx) {
+            s.vertical(false, false, 1, cx)
+        });
+        d = on!(d, act::Down, |s, cx| if !s.step_completion(true, cx) {
+            s.vertical(true, false, 1, cx)
+        });
         d = on!(d, act::SelectUp, |s, cx| s.vertical(false, true, 1, cx));
         d = on!(d, act::SelectDown, |s, cx| s.vertical(true, true, 1, cx));
         d = on!(d, act::WordLeft, |s, cx| {
@@ -1156,6 +1182,9 @@ impl Render for CodeEditor {
             s.on_key_down(ev, w, cx);
         });
         let popup = self.comp.as_ref().and_then(|c| self.render_popup(c, &t));
+        if self.comp.is_some() && popup.is_none() && self.layout.is_some() {
+            cx.notify(); // stale layout: draw the popup again once this paint refreshed it
+        }
         let goto = self.goto.as_ref().map(|g| {
             div()
                 .absolute()
@@ -1231,6 +1260,10 @@ impl CodeEditor {
 
     fn render_popup(&self, c: &CompState, t: &crate::theme::Theme) -> Option<gpui::AnyElement> {
         let l = self.layout.as_ref()?;
+        // The layout is rebuilt at paint; right after an edit it is one frame stale.
+        if !l.dm.is_for_len(self.buf.len()) {
+            return None;
+        }
         let row = l.dm.row_of(self.buf.head());
         let col = l.dm.col_of(self.buf.text(), self.buf.head());
         let x = l.text_x + col as f32 * l.cell_w - self.scroll_x;

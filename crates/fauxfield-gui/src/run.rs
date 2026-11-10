@@ -415,6 +415,48 @@ impl Shell {
         self.notify("Copied cURL command".into(), cx);
     }
 
+    /// Rules tab: copy a `curl` that triggers rule `idx` of Response `resp` (all rules of the
+    /// Response when they are combined with AND, since each must hold).
+    pub fn copy_rule_curl(&mut self, resp: &str, idx: usize, cx: &mut Context<Self>) {
+        let Some(route_id) = self.ws.servers.iter().find_map(|s| {
+            s.all_routes()
+                .find(|r| r.responses.iter().any(|x| x.id == resp))
+                .map(|r| r.id.clone())
+        }) else {
+            return;
+        };
+        let Some((server, route)) = self.ws.find_route(&route_id) else {
+            return;
+        };
+        let Some(response) = route.responses.iter().find(|x| x.id == resp) else {
+            return;
+        };
+        let Some(rule) = response.rules.get(idx) else {
+            return;
+        };
+        let rules: Vec<&fauxfield_model::Rule> = if response.rules_logic == "or" {
+            vec![rule]
+        } else {
+            response.rules.iter().collect()
+        };
+        let base = self
+            .host
+            .as_ref()
+            .and_then(|h| h.engine().base_url(&server.id))
+            .unwrap_or_else(|| {
+                let host = match server.host.as_str() {
+                    "" | "0.0.0.0" | "::" => "127.0.0.1",
+                    h => h,
+                };
+                let scheme = if server.https() { "https" } else { "http" };
+                format!("{scheme}://{host}:{}", server.port)
+            });
+        let curl =
+            crate::rule_curl::build(&base, &server.prefix, &route.method, &route.path, &rules);
+        cx.write_to_clipboard(ClipboardItem::new_string(curl));
+        self.notify("Copied cURL command".into(), cx);
+    }
+
     pub fn clear_traffic(&mut self, cx: &mut Context<Self>) {
         self.traffic.clear();
         self.traffic_selected = None;

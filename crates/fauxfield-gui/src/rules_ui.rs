@@ -55,16 +55,129 @@ pub fn parse_value(op: &str, text: &str) -> toml::Value {
     }
 }
 
+/// A combobox trigger: value and chevron; its menu opens under it at the same width.
+pub(crate) struct ComboSpec {
+    pub id: String,
+    /// dev-mcp `ui.click_element` op (`name:id[:index]`).
+    pub press: String,
+    /// Row id of the menu (`<response>#<rule>` or the Response id).
+    pub row_id: String,
+    pub kind: RowKind,
+    pub label: String,
+    /// Fixed width, or `None` to share the row equally.
+    pub width: Option<f32>,
+    pub color: gpui::Hsla,
+    pub tip: Option<String>,
+}
+
 impl Shell {
-    pub(crate) fn render_rules(&self, t: &Theme, r: &Route, cx: &mut Context<Self>) -> AnyElement {
-        let head = |s: &str, w: f32| {
+    pub(crate) fn combo_trigger(
+        &self,
+        t: &Theme,
+        spec: ComboSpec,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let ComboSpec {
+            id,
+            press,
+            row_id,
+            kind,
+            label,
+            width,
+            color,
+            tip,
+        } = spec;
+        let _ = &press; // only read by the dev-mcp element tag
+        let (menu_id, bounds, paint_id) = (id.clone(), self.combo_bounds.clone(), id.clone());
+        let focus = self
+            .combo_focus
+            .borrow_mut()
+            .entry(id.clone())
+            .or_insert_with(|| cx.focus_handle().tab_stop(true))
+            .clone();
+        let (key_row, key_kind, key_menu) = (row_id.clone(), kind.clone(), menu_id.clone());
+        crate::dev_id!(
             div()
-                .w(px(w))
-                .flex_none()
-                .text_size(px(11.))
-                .text_color(t.text_muted)
-                .child(s.to_uppercase())
-        };
+                .id(crate::ui::eid(id.clone()))
+                .relative()
+                .when_some(width, |d, w| d.w(px(w)).flex_none())
+                .when(width.is_none(), |d| d.flex_1().min_w(px(0.)))
+                .h(px(26.))
+                .pl(px(8.))
+                .pr(px(6.))
+                .flex()
+                .flex_row()
+                .items_center()
+                .justify_between()
+                .gap(px(4.))
+                .rounded(px(4.))
+                .border_1()
+                .border_color(t.border_variant)
+                .hover(|s| s.border_color(t.border))
+                .font_family(crate::assets::BUFFER_FONT)
+                .text_size(px(12.))
+                .text_color(color)
+                .cursor_pointer()
+                .track_focus(&focus)
+                .focus(|s| s.border_color(t.border_focused))
+                .on_key_down(cx.listener(move |this, ev: &gpui::KeyDownEvent, w, cx| {
+                    let k = &ev.keystroke;
+                    match k.key.as_str() {
+                        "enter" | "space" | "down" | "up" => {
+                            this.open_combo_menu(
+                                &key_row,
+                                key_kind.clone(),
+                                &key_menu,
+                                (0., 0.),
+                                cx,
+                            );
+                            cx.stop_propagation();
+                        }
+                        "tab" => {
+                            if k.modifiers.shift {
+                                w.focus_prev();
+                            } else {
+                                w.focus_next();
+                            }
+                            cx.stop_propagation();
+                        }
+                        _ => {}
+                    }
+                }))
+                .when_some(tip, |d, tip| d.tooltip(crate::ui::tooltip(tip)))
+                .child(
+                    gpui::canvas(
+                        move |b: gpui::Bounds<gpui::Pixels>, _, _| {
+                            bounds.borrow_mut().insert(paint_id.clone(), b);
+                        },
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .size_full(),
+                )
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
+                        this.open_combo_menu(
+                            &row_id,
+                            kind.clone(),
+                            &menu_id,
+                            (f32::from(ev.position.x), f32::from(ev.position.y)),
+                            cx,
+                        );
+                    }),
+                )
+                .child(div().min_w(px(0.)).truncate().child(label.clone()))
+                .child(crate::ui::icon("chevron-down", 12., t.icon_muted)),
+            id,
+            Button,
+            label,
+            Press(press)
+        )
+        .into_any_element()
+    }
+
+    pub(crate) fn render_rules(&self, t: &Theme, r: &Route, cx: &mut Context<Self>) -> AnyElement {
         let mut col = div()
             .id(crate::ui::eid(format!("rules-{}", r.id)))
             .size_full()
@@ -85,19 +198,6 @@ impl Shell {
                     )),
             );
         }
-        col = col.child(
-            div()
-                .flex()
-                .flex_row()
-                .gap(px(6.))
-                .pb(px(4.))
-                .child(head("Response", 130.))
-                .child(head("Target", 84.))
-                .child(head("Key", 140.))
-                .child(head("Op", 100.))
-                .child(head("Value", 180.))
-                .child(head("Not", 36.)),
-        );
         for resp in &r.responses {
             col = col.child(self.render_rule_group(t, resp, cx));
         }
@@ -206,72 +306,61 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let rid = resp.id.clone();
-        let picker = |id: String,
-                      pick_op: &'static str,
-                      label: String,
-                      kind: RowKind,
-                      cx: &mut Context<Self>| {
-            let _ = pick_op; // only read by the dev-mcp element tag
-            let row_id = format!("{rid}#{i}");
-            crate::dev_id!(
-                div()
-                    .id(crate::ui::eid(id.clone()))
-                    .h(px(26.))
-                    .px(px(8.))
-                    .flex()
-                    .items_center()
-                    .rounded(px(4.))
-                    .border_1()
-                    .border_color(t.border_variant)
-                    .hover(|s| s.border_color(t.border))
-                    .font_family(crate::assets::BUFFER_FONT)
-                    .text_size(px(12.))
-                    .cursor_pointer()
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
-                            this.open_picker_menu(
-                                &row_id,
-                                kind.clone(),
-                                f32::from(ev.position.x),
-                                f32::from(ev.position.y),
-                                cx,
-                            );
-                        }),
-                    )
-                    .child(label.clone()),
-                id,
-                Button,
-                label,
-                Press(format!("{pick_op}:{rid}:{i}"))
+        let combo = |id: String,
+                     pick_op: &'static str,
+                     label: String,
+                     kind: RowKind,
+                     cx: &mut Context<Self>| {
+            self.combo_trigger(
+                t,
+                ComboSpec {
+                    id,
+                    press: format!("{pick_op}:{rid}:{i}"),
+                    row_id: format!("{rid}#{i}"),
+                    kind,
+                    label,
+                    width: None,
+                    color: t.text,
+                    tip: None,
+                },
+                cx,
             )
         };
         let key_used = fauxfield_model::rules::needs_key(&rule.target) || rule.target == "body";
         let value_used = !matches!(rule.op.as_str(), "exists" | "absent");
-        let blank = |w: f32| {
+        let blank = || {
             div()
-                .w(px(w))
-                .flex_none()
+                .flex_1()
+                .min_w(px(0.))
                 .text_color(t.text_muted)
                 .child("–")
         };
         let negate_id = resp.id.clone();
-        let (up_id, down_id, del_id) = (resp.id.clone(), resp.id.clone(), resp.id.clone());
-        let small = |id: String, glyph: &'static str, enabled: bool| {
+        let (up_id, down_id, del_id, curl_id) = (
+            resp.id.clone(),
+            resp.id.clone(),
+            resp.id.clone(),
+            resp.id.clone(),
+        );
+        // Icon-only button with a tooltip.
+        let small = |id: String, glyph: &'static str, tip: &str, enabled: bool| {
             div()
                 .id(crate::ui::eid(id))
-                .size(px(22.))
+                .size(px(24.))
                 .flex_none()
                 .flex()
                 .items_center()
                 .justify_center()
-                .rounded(px(3.))
-                .text_size(px(13.))
-                .text_color(if enabled { t.text } else { t.text_placeholder })
+                .rounded(px(4.))
                 .when(enabled, |d| {
                     d.cursor_pointer().hover(|s| s.bg(t.element_hover))
                 })
-                .child(glyph)
+                .child(crate::ui::icon(
+                    glyph,
+                    14.,
+                    if enabled { t.text } else { t.text_placeholder },
+                ))
+                .tooltip(crate::ui::tooltip(tip.to_string()))
         };
         let error = fauxfield_model::rules::check_rule(rule).err();
         let mut row = div().flex().flex_col().child(
@@ -281,22 +370,13 @@ impl Shell {
                 .items_center()
                 .gap(px(6.))
                 .h(px(30.))
-                .child(
-                    div()
-                        .w(px(130.))
-                        .flex_none()
-                        .truncate()
-                        .text_size(px(12.))
-                        .text_color(t.text_muted)
-                        .child(resp.name.clone()),
-                )
-                .child(div().w(px(84.)).flex_none().child(picker(
+                .child(combo(
                     format!("rule-target-{}-{i}", resp.id),
                     "rule-target",
                     rule.target.clone(),
                     RowKind::RuleTarget,
                     cx,
-                )))
+                ))
                 .child(if key_used {
                     self.inline_field(
                         t,
@@ -311,20 +391,20 @@ impl Shell {
                         } else {
                             "name"
                         },
-                        140.,
+                        0.,
                         false,
                         cx,
                     )
                 } else {
-                    blank(140.).into_any_element()
+                    blank().into_any_element()
                 })
-                .child(div().w(px(100.)).flex_none().child(picker(
+                .child(combo(
                     format!("rule-op-{}-{i}", resp.id),
                     "rule-op",
                     rule.op.clone(),
                     RowKind::RuleOp,
                     cx,
-                )))
+                ))
                 .child(if value_used {
                     self.inline_field(
                         t,
@@ -339,70 +419,129 @@ impl Shell {
                         } else {
                             "value"
                         },
-                        180.,
+                        0.,
                         false,
                         cx,
                     )
                 } else {
-                    blank(180.).into_any_element()
+                    blank().into_any_element()
                 })
-                .child(crate::dev_id!(
-                    small(format!("rule-negate-{}-{i}", resp.id), "¬", true)
-                        .w(px(36.))
-                        .border_1()
-                        .border_color(if rule.negate {
-                            t.border_focused
+                .child(crate::dev_id_meta!(
+                    small(
+                        format!("rule-negate-{}-{i}", resp.id),
+                        "exclamation",
+                        if rule.negate {
+                            "Negated: matches when the condition is false (click to turn off)"
                         } else {
-                            t.border_variant
-                        })
-                        .bg(if rule.negate {
-                            t.element_selected
-                        } else {
-                            t.panel
-                        })
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.edit_rule(&negate_id, i, cx, |r| r.negate = !r.negate)
-                        })),
+                            "Negate: match when the condition is false"
+                        },
+                        true,
+                    )
+                    .border_1()
+                    .border_color(if rule.negate {
+                        t.border_focused
+                    } else {
+                        t.border_variant
+                    })
+                    .bg(if rule.negate {
+                        t.element_selected
+                    } else {
+                        t.panel
+                    })
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.edit_rule(&negate_id, i, cx, |r| r.negate = !r.negate)
+                    })),
+                    crate::dev_mcp::tree::Meta {
+                        tooltip: true,
+                        ..Default::default()
+                    },
                     format!("rule-negate-{}-{i}", resp.id),
                     Button,
                     "Negate rule",
                     Press(format!("rule-negate:{}:{i}", resp.id))
                 ))
-                .child(crate::dev_id!(
-                    small(format!("rule-up-{}-{i}", resp.id), "↑", i > 0).on_click(cx.listener(
-                        move |this, _, _, cx| {
-                            if i > 0 {
-                                let id = up_id.clone();
-                                this.store_op(cx, |s| s.move_rule(&id, i, i - 1));
-                            }
+                .child(crate::dev_id_meta!(
+                    small(
+                        format!("rule-up-{}-{i}", resp.id),
+                        "arrow-up",
+                        "Move rule up",
+                        i > 0
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if i > 0 {
+                            let id = up_id.clone();
+                            this.store_op(cx, |s| s.move_rule(&id, i, i - 1));
                         }
-                    )),
+                    })),
+                    crate::dev_mcp::tree::Meta {
+                        tooltip: true,
+                        ..Default::default()
+                    },
                     format!("rule-up-{}-{i}", resp.id),
                     Button,
                     "Move rule up",
                     Press(format!("rule-up:{}:{i}", resp.id))
                 ))
-                .child(crate::dev_id!(
-                    small(format!("rule-down-{}-{i}", resp.id), "↓", i + 1 < n).on_click(
-                        cx.listener(move |this, _, _, cx| {
-                            if i + 1 < n {
-                                let id = down_id.clone();
-                                this.store_op(cx, |s| s.move_rule(&id, i, i + 1));
-                            }
-                        })
-                    ),
+                .child(crate::dev_id_meta!(
+                    small(
+                        format!("rule-down-{}-{i}", resp.id),
+                        "arrow-down",
+                        "Move rule down",
+                        i + 1 < n
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if i + 1 < n {
+                            let id = down_id.clone();
+                            this.store_op(cx, |s| s.move_rule(&id, i, i + 1));
+                        }
+                    })),
+                    crate::dev_mcp::tree::Meta {
+                        tooltip: true,
+                        ..Default::default()
+                    },
                     format!("rule-down-{}-{i}", resp.id),
                     Button,
                     "Move rule down",
                     Press(format!("rule-down:{}:{i}", resp.id))
                 ))
-                .child(crate::dev_id!(
-                    small(format!("rule-remove-{}-{i}", resp.id), "×", true).on_click(cx.listener(
-                        move |this, _, _, cx| {
-                            let id = del_id.clone();
-                            this.store_op(cx, |s| s.delete_rule(&id, i));
-                        }
-                    )),
+                .child(crate::dev_id_meta!(
+                    small(
+                        format!("rule-curl-{}-{i}", resp.id),
+                        "terminal",
+                        if resp.rules_logic == "or" || n == 1 {
+                            "Copy cURL that triggers this rule"
+                        } else {
+                            "Copy cURL that satisfies all rules of this Response"
+                        },
+                        true
+                    )
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| { this.copy_rule_curl(&curl_id, i, cx) })
+                    ),
+                    crate::dev_mcp::tree::Meta {
+                        tooltip: true,
+                        ..Default::default()
+                    },
+                    format!("rule-curl-{}-{i}", resp.id),
+                    Button,
+                    "Copy rule cURL",
+                    Press(format!("rule-curl:{}:{i}", resp.id))
+                ))
+                .child(crate::dev_id_meta!(
+                    small(
+                        format!("rule-remove-{}-{i}", resp.id),
+                        "x",
+                        "Remove rule",
+                        true
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        let id = del_id.clone();
+                        this.store_op(cx, |s| s.delete_rule(&id, i));
+                    })),
+                    crate::dev_mcp::tree::Meta {
+                        tooltip: true,
+                        ..Default::default()
+                    },
                     format!("rule-remove-{}-{i}", resp.id),
                     Button,
                     "Remove rule",
@@ -413,7 +552,6 @@ impl Shell {
             row = row.child(crate::dev_id!(
                 div()
                     .id(crate::ui::eid(format!("rule-error-{}-{i}", resp.id)))
-                    .pl(px(136.))
                     .pb(px(2.))
                     .text_size(px(11.))
                     .text_color(t.deleted)
@@ -459,11 +597,16 @@ impl Shell {
                 self.store_op(cx, |s| s.set_rules_logic(&rid, next));
             }
             "rule-target" => {
-                self.open_picker_menu(&format!("{id}#{}", need()?), RowKind::RuleTarget, x, y, cx)
+                let i = need()?;
+                let cid = format!("rule-target-{id}-{i}");
+                self.open_combo_menu(&format!("{id}#{i}"), RowKind::RuleTarget, &cid, (x, y), cx)
             }
             "rule-op" => {
-                self.open_picker_menu(&format!("{id}#{}", need()?), RowKind::RuleOp, x, y, cx)
+                let i = need()?;
+                let cid = format!("rule-op-{id}-{i}");
+                self.open_combo_menu(&format!("{id}#{i}"), RowKind::RuleOp, &cid, (x, y), cx)
             }
+            "rule-curl" => self.copy_rule_curl(&id, need()?, cx),
             "rule-negate" => self.edit_rule(&id, need()?, cx, |r| r.negate = !r.negate),
             "rule-up" | "rule-down" => {
                 let i = need()?;
@@ -480,7 +623,10 @@ impl Shell {
                 self.store_op(cx, |s| s.delete_rule(&rid, i));
             }
             "resp-template" => self.toggle_response_template(&id, cx),
-            "resp-fault" => self.cycle_response_fault(&id, cx),
+            "resp-fault" => {
+                let cid = "resp-fault";
+                self.open_combo_menu(&id, RowKind::ResponseFault, cid, (x, y), cx)
+            }
             "rate-enabled" => self.toggle_rate_limit(&id, cx),
             "seed-mode" => self.set_seed_mode(&id, need()? == 1, cx),
             "route-header-add" => {

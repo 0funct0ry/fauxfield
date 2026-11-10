@@ -815,7 +815,10 @@ impl Shell {
         let editing = self.inline.as_ref().filter(|i| i.target == target);
         let base = div()
             .id(crate::ui::eid(dev_id.clone()))
-            .w(px(width))
+            .when(width > 0., |d| d.w(px(width)))
+            // 0: share a row equally; negative: fill a column.
+            .when(width == 0., |d| d.flex_1().min_w(px(0.)))
+            .when(width < 0., |d| d.w_full().min_w(px(0.)))
             .h(px(26.))
             .px(px(8.))
             .flex()
@@ -1028,46 +1031,58 @@ impl Shell {
                         crate::dev_id!(
                             div()
                                 .id("resp-template")
-                                .w(px(70.))
-                                .h(px(26.))
-                                .px(px(8.))
+                                .size(px(26.))
                                 .flex()
                                 .items_center()
-                                .rounded(px(4.))
-                                .border_1()
-                                .border_color(t.border_variant)
+                                .justify_center()
                                 .cursor_pointer()
-                                .hover(|s| s.border_color(t.border))
-                                .text_size(px(12.))
-                                .text_color(if on { t.text } else { t.text_muted })
                                 .tooltip(crate::ui::tooltip(
-                                    "Tera renders {{ }} and {% %} in the body and headers; Off sends them verbatim"
+                                    "Render {{ }} and {% %} in the body and headers; off sends them verbatim"
                                         .into()
                                 ))
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.toggle_response_template(&rid, cx)
                                 }))
-                                .child(if on { "Tera" } else { "Off" }),
+                                .child(
+                                    div()
+                                        .size(px(16.))
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .rounded(px(3.))
+                                        .border_1()
+                                        .border_color(if on { t.accent } else { t.border })
+                                        .when(on, |d| d.bg(t.accent))
+                                        .when(on, |d| {
+                                            d.child(crate::ui::icon("check", 12., t.background))
+                                        }),
+                                ),
                             "resp-template",
                             Button,
-                            if on { "Tera" } else { "Off" },
+                            if on { "Template: on" } else { "Template: off" },
                             Press(format!("resp-template:{}", resp.id))
                         )
                         .into_any_element()
                     }))
-                    .child(field(
-                        "Description",
-                        self.inline_field(
-                            t,
-                            "resp-description".into(),
-                            InlineTarget::Description(resp.id.clone()),
-                            &resp.description,
-                            "Only on the 3rd call",
-                            140.,
-                            false,
-                            cx,
-                        ),
-                    )),
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.))
+                            .flex()
+                            .flex_col()
+                            .gap(px(4.))
+                            .child(label("Description"))
+                            .child(self.inline_field(
+                                t,
+                                "resp-description".into(),
+                                InlineTarget::Description(resp.id.clone()),
+                                &resp.description,
+                                "",
+                                -1.,
+                                false,
+                                cx,
+                            )),
+                    ),
             )
             .child(
                 div()
@@ -1444,7 +1459,7 @@ impl Shell {
                         None
                     ))
                     .child(if editing {
-                        "Cmd/Ctrl+Enter or click outside to save · Esc to cancel"
+                        "Cmd/Ctrl+S or click outside to save · Esc to cancel"
                     } else {
                         "Click to edit"
                     }),

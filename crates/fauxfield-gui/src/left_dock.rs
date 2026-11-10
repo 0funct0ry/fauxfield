@@ -411,6 +411,7 @@ impl Shell {
             | RowKind::ErrorPresets
             | RowKind::RuleTarget
             | RowKind::RuleOp
+            | RowKind::ResponseFault
             | RowKind::ResponseMode => div().into_any_element(),
         };
         let chevron: gpui::AnyElement = if r.expandable {
@@ -733,33 +734,67 @@ impl Shell {
         )
     }
 
-    pub(crate) fn render_row_menu(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        let m = self.menu.as_ref().expect("menu is open");
+    /// (label, dev id, action) of every entry of menu `m`.
+    pub(crate) fn menu_item_list(
+        &self,
+        m: &crate::shell::RowMenu,
+    ) -> Vec<(String, String, tree::MenuAct)> {
         let running = self.ws.find_server(&m.row_id).is_some_and(|s| s.running);
-        let hover = t.element_hover;
-        let (is_ws, is_server) = (
-            matches!(m.kind, RowKind::Workspace),
-            matches!(m.kind, RowKind::Server { .. }),
-        );
-        // (label, dev id, action)
-        let items: Vec<(String, String, tree::MenuAct)> = if is_ws {
-            tree::workspace_menu_items(&self.recents)
+        let is_server = matches!(m.kind, RowKind::Server { .. });
+        if matches!(m.kind, RowKind::Workspace) {
+            return tree::workspace_menu_items(&self.recents)
                 .into_iter()
                 .map(|(l, a)| (l, format!("menu-workspace-{}", a.key()), a))
-                .collect()
-        } else {
-            tree::menu_items(&m.kind, running)
-                .into_iter()
-                .map(|(l, a)| {
-                    let id = if is_server {
-                        format!("menu-server-{}", slug(l))
+                .collect();
+        }
+        tree::menu_items(&m.kind, running)
+            .into_iter()
+            .map(|(l, a)| {
+                let id = if is_server {
+                    format!("menu-server-{}", slug(l))
+                } else {
+                    format!("menu-{l}")
+                };
+                (l.to_string(), id, a)
+            })
+            .collect()
+    }
+
+    /// The label of the current choice of a combobox menu.
+    pub(crate) fn menu_current(&self, m: &crate::shell::RowMenu) -> Option<String> {
+        match m.kind {
+            RowKind::RuleTarget | RowKind::RuleOp => {
+                m.row_id.split_once('#').and_then(|(resp, idx)| {
+                    let rule = self
+                        .find_response(resp)?
+                        .2
+                        .rules
+                        .get(idx.parse::<usize>().ok()?)?
+                        .clone();
+                    Some(if matches!(m.kind, RowKind::RuleTarget) {
+                        rule.target
                     } else {
-                        format!("menu-{l}")
-                    };
-                    (l.to_string(), id, a)
+                        rule.op
+                    })
                 })
-                .collect()
-        };
+            }
+            RowKind::ResponseFault => {
+                let f = self.find_response(&m.row_id)?.2.fault;
+                Some(if f.is_empty() { "none".into() } else { f })
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn render_row_menu(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        let m = self.menu.as_ref().expect("menu is open");
+        let hover = t.element_hover;
+        let items = self.menu_item_list(m);
+        // Comboboxes mark the current choice with a check.
+        let current = self.menu_current(m);
+        let is_combo = m.kind.is_combo();
+        let selected = self.menu_sel;
+        let (check_col, muted) = (t.accent, t.text);
         div()
             .id("row-menu-backdrop")
             .absolute()
@@ -778,7 +813,7 @@ impl Shell {
                     .absolute()
                     .left(px(m.x))
                     .top(px(m.y))
-                    .min_w(px(160.))
+                    .min_w(px(m.min_w))
                     .py(px(4.))
                     .rounded(px(6.))
                     .bg(t.elevated)
@@ -786,28 +821,48 @@ impl Shell {
                     .border_color(t.border)
                     .shadow_md()
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .children(items.into_iter().map(|(label, dev_id, act)| {
-                        crate::dev_id_z!(
-                            div()
-                                .id(crate::ui::eid(dev_id.clone()))
-                                .h(px(26.))
-                                .px(px(12.))
-                                .flex()
-                                .items_center()
-                                .cursor_pointer()
-                                .text_size(px(12.))
-                                .hover(move |s| s.bg(hover))
-                                .on_click(
-                                    cx.listener(move |this, _, w, cx| this.run_menu(act, w, cx))
+                    .children(
+                        items
+                            .into_iter()
+                            .enumerate()
+                            .map(|(i, (label, dev_id, act))| {
+                                crate::dev_id_z!(
+                                    div()
+                                        .id(crate::ui::eid(dev_id.clone()))
+                                        .h(px(26.))
+                                        .px(px(12.))
+                                        .flex()
+                                        .items_center()
+                                        .cursor_pointer()
+                                        .text_size(px(12.))
+                                        .when(i == selected, move |d| d.bg(hover))
+                                        .on_mouse_move(cx.listener(move |this, _, _, cx| {
+                                            if this.menu_sel != i {
+                                                this.menu_sel = i;
+                                                cx.notify();
+                                            }
+                                        }))
+                                        .on_click(cx.listener(move |this, _, w, cx| {
+                                            this.run_menu(act, w, cx)
+                                        }))
+                                        .when(is_combo, |d| {
+                                            let on = current.as_deref() == Some(label.as_str());
+                                            d.gap(px(6.)).child(
+                                                div().w(px(14.)).flex_none().when(on, |d| {
+                                                    d.child(icon("check", 12., check_col))
+                                                }),
+                                            )
+                                        })
+                                        .text_color(muted)
+                                        .child(label.clone()),
+                                    1,
+                                    dev_id,
+                                    MenuItem,
+                                    label,
+                                    Menu(act)
                                 )
-                                .child(label.clone()),
-                            1,
-                            dev_id,
-                            MenuItem,
-                            label,
-                            Menu(act)
-                        )
-                    })),
+                            }),
+                    ),
             )
     }
 }

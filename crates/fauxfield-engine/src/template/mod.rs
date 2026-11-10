@@ -6,6 +6,7 @@
 
 mod fake;
 mod funcs;
+mod sugar;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -17,7 +18,7 @@ use rand::SeedableRng;
 use rand::rngs::ChaCha8Rng;
 use sha2::{Digest, Sha256};
 
-pub use fake::FAKE_KINDS;
+pub use fake::{FAKE_KINDS, resolve_kind};
 pub use funcs::{FILTERS, FUNCTIONS};
 
 pub const CPU_BUDGET: Duration = Duration::from_millis(50);
@@ -135,7 +136,7 @@ pub fn check_syntax(src: &str) -> Result<(), RenderError> {
         return Ok(());
     }
     tera::Tera::default()
-        .add_raw_template("t", src)
+        .add_raw_template("t", &sugar::desugar(src))
         .map_err(|e| err(&e))
 }
 
@@ -152,7 +153,8 @@ pub fn render(src: &str, input: &Input<'_>) -> Result<String, RenderError> {
             if w.get_template_names().count() >= CACHE_CAP {
                 *w = new_tera();
             }
-            w.add_raw_template(&name, src).map_err(|e| err(&e))?;
+            w.add_raw_template(&name, &sugar::desugar(src))
+                .map_err(|e| err(&e))?;
         }
     }
     let ctx = tera::Context::from_value(input.context.clone()).map_err(|e| err(&e))?;
@@ -210,6 +212,7 @@ pub fn render(src: &str, input: &Input<'_>) -> Result<String, RenderError> {
 
 /// True when the template calls something random or time-dependent (dice icon, §8.3).
 pub fn is_nondeterministic(src: &str) -> bool {
+    let src = &*sugar::desugar(src);
     has_syntax(src)
         && [
             "fake(",

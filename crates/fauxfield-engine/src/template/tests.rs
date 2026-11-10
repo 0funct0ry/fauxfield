@@ -111,3 +111,48 @@ fn nondeterminism_scan() {
     assert!(is_nondeterministic("{{ uuid() }}"));
     assert!(!is_nondeterministic("{{ request.path }}"));
 }
+
+#[test]
+fn shorthand_renders_like_the_function_forms() {
+    let a = r(
+        "{{ fake.name }}|{{ uuid }}|{{ fake.address.city }}",
+        Some(7),
+    );
+    let b = r(
+        "{{ fake(kind='name') }}|{{ uuid() }}|{{ fake(kind='address.city') }}",
+        Some(7),
+    );
+    assert_eq!(a, b);
+    let parts: Vec<_> = a.split('|').collect();
+    assert_eq!(parts[1].len(), 36);
+    assert!(r("{{ fake.email }}", Some(1)).contains('@'));
+    assert!(r("{{ fake.color }}", Some(1)).starts_with('#'));
+    assert_eq!(r("{{ ulid }}", None).len(), 26);
+    assert!(is_nondeterministic("{{ uuid }}") && is_nondeterministic("{{ fake.name }}"));
+    assert!(!is_nondeterministic("{{ request.method }}"));
+}
+
+#[test]
+fn unknown_shorthand_kind_is_an_error() {
+    let e = render("{{ fake.nope }}", &input(None, 1)).unwrap_err();
+    assert!(
+        e.message.contains("unknown fake kind `nope`"),
+        "{}",
+        e.message
+    );
+}
+
+#[test]
+fn kind_shorthands_resolve() {
+    for (short, full) in [
+        ("email", "internet.email"),
+        ("city", "address.city"),
+        ("first_name", "name.first"),
+        ("name", "name"),
+        ("address.city", "address.city"),
+        ("company", "company.name"),
+    ] {
+        assert_eq!(fake::resolve_kind(short), Some(full), "{short}");
+    }
+    assert_eq!(fake::resolve_kind("nope"), None);
+}

@@ -26,6 +26,7 @@ pub mod overlay;
 pub mod preview;
 pub mod response_pane;
 pub mod route_headers;
+pub mod rule_curl;
 pub mod rules_ui;
 pub mod run;
 pub mod sample;

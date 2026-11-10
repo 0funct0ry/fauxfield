@@ -175,3 +175,72 @@ fn one_mib_text_loads_and_edits(cx: &mut TestAppContext) {
     cx.simulate_input("9");
     assert_eq!(ed.read_with(cx, |e, _| e.text().len()), big.len() + 1);
 }
+
+#[gpui::test]
+fn enter_and_tab_both_accept_the_open_completion(cx: &mut TestAppContext) {
+    for key in ["enter", "tab"] {
+        let (ed, cx) = editor(cx, Language::Plain, "", |e| {
+            e.completion_provider(super::tera_ctx::TeraCompletions {
+                variables: vec!["user_name".into()],
+            })
+        });
+        cx.simulate_input("{{");
+        assert!(ed.read_with(cx, |e, _| e.comp.is_some()), "popup open");
+        cx.simulate_keystrokes(key);
+        assert!(ed.read_with(cx, |e, _| e.comp.is_none()), "{key} closes it");
+        let t = text(&ed, cx);
+        assert!(!t.contains('\n'), "{key} must not insert a newline: {t:?}");
+        assert_ne!(t, "{{}}", "{key} inserted the selected item");
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[gpui::test]
+fn emacs_bindings_move_and_kill(cx: &mut TestAppContext) {
+    let (ed, cx) = editor(cx, Language::Plain, "hello world", |e| e);
+    ed.update(cx, |e, cx| e.set_cursor(0, cx));
+    cx.simulate_keystrokes("ctrl-e");
+    assert_eq!(ed.read_with(cx, |e, _| e.buf.head()), 11);
+    cx.simulate_keystrokes("ctrl-a ctrl-f ctrl-f");
+    assert_eq!(ed.read_with(cx, |e, _| e.buf.head()), 2);
+    cx.simulate_keystrokes("ctrl-k");
+    assert_eq!(text(&ed, cx), "he");
+}
+
+#[gpui::test]
+fn arrows_navigate_the_completion_popup(cx: &mut TestAppContext) {
+    let (ed, cx) = editor(cx, Language::Plain, "", |e| {
+        e.completion_provider(super::tera_ctx::TeraCompletions {
+            variables: vec!["alpha".into(), "beta".into()],
+        })
+    });
+    cx.simulate_input("{{");
+    let sel = |ed: &Entity<CodeEditor>, cx: &mut VisualTestContext| {
+        ed.read_with(cx, |e, _| e.comp.as_ref().map(|c| c.selected))
+    };
+    assert_eq!(sel(&ed, cx), Some(0));
+    cx.simulate_keystrokes("down");
+    assert_eq!(sel(&ed, cx), Some(1));
+    cx.simulate_keystrokes("up");
+    assert_eq!(sel(&ed, cx), Some(0));
+    cx.simulate_keystrokes("up");
+    assert!(sel(&ed, cx).unwrap() > 0, "wraps to the last item");
+}
+
+#[gpui::test]
+fn replacing_fake_kind_does_not_panic(cx: &mut TestAppContext) {
+    let src = "{\n  \"id\": 1,\n  \"name\": \"{{fake(kind='name')}}\"\n}";
+    let (ed, cx) = editor(cx, Language::Json, src, |e| {
+        e.completion_provider(super::tera_ctx::TeraCompletions {
+            variables: vec!["a".into()],
+        })
+    });
+    let at = src.find("'name'").unwrap() + 1;
+    ed.update(cx, |e, cx| {
+        e.set_cursor(at, cx);
+    });
+    cx.simulate_keystrokes("shift-right shift-right shift-right shift-right");
+    cx.simulate_input("c");
+    cx.simulate_input("o");
+    assert!(text(&ed, cx).contains("kind='co'"));
+}

@@ -105,6 +105,11 @@ body = """
 """
 ```
 
+Shorthand: `{{ fake.name }}`, `{{ fake.email }}` and `{{ fake.address.city }}` mean the same as
+`{{ fake(kind='name') }}` and so on (a kind may be shortened to its last segment when unambiguous),
+and `{{ uuid }}`, `{{ ulid }}` and `{{ now }}` work without parentheses. Use the call form to pass
+arguments, for example `now(format=...)`.
+
 Set `fake_seed = 42` on the Server for identical output across runs (the RNG derives from the seed,
 the Route ID and the call number); without it the output is random and the tree shows a dice icon.
 A Route header is added to every Response; a Response header of the same name wins. Syntax errors are

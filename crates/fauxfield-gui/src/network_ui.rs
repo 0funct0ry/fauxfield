@@ -3,10 +3,11 @@
 
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement,
-    StatefulInteractiveElement, Styled, div, prelude::*, px,
+    StatefulInteractiveElement, Styled, div, px,
 };
 
 use crate::response_pane::InlineTarget;
+use crate::rules_ui::ComboSpec;
 use crate::shell::Shell;
 use crate::theme::Theme;
 use crate::view::{Response, Server};
@@ -93,17 +94,6 @@ impl NetField {
 fn nz(n: u64) -> String {
     if n == 0 { String::new() } else { n.to_string() }
 }
-
-/// Faults a Response can inject, in cycling order (`""` = none).
-pub const FAULT_CYCLE: [&str; 7] = [
-    "",
-    "timeout",
-    "reset",
-    "close",
-    "empty",
-    "malformed",
-    "slow_body",
-];
 
 pub fn fault_tip(f: &str) -> &'static str {
     match f {
@@ -272,7 +262,7 @@ impl Shell {
             )
     }
 
-    /// Response properties: Fault kind (click to cycle) and Fault rate.
+    /// Response properties: Fault kind (combobox) and Fault rate.
     pub(crate) fn response_fault_fields(
         &self,
         t: &Theme,
@@ -286,35 +276,20 @@ impl Shell {
         } else {
             "none".to_string()
         };
-        let kind = crate::dev_id!(
-            div()
-                .id("resp-fault")
-                .w(px(88.))
-                .h(px(26.))
-                .px(px(8.))
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .rounded(px(4.))
-                .border_1()
-                .border_color(t.border_variant)
-                .cursor_pointer()
-                .hover(|s| s.border_color(t.border))
-                .text_size(px(12.))
-                .text_color(if has { t.modified } else { t.text_muted })
-                .tooltip(crate::ui::tooltip(format!(
-                    "{} (click to change)",
-                    fault_tip(&resp.fault)
-                )))
-                .on_click(cx.listener(move |this, _, _, cx| this.cycle_response_fault(&rid, cx)))
-                .when(has, |d| d.child(crate::ui::icon("zap", 12., t.modified)))
-                .child(name.clone()),
-            "resp-fault",
-            Button,
-            name,
-            Press(format!("resp-fault:{}", resp.id))
-        )
-        .into_any_element();
+        let kind = self.combo_trigger(
+            t,
+            ComboSpec {
+                id: "resp-fault".into(),
+                press: format!("resp-fault:{}", resp.id),
+                row_id: rid,
+                kind: crate::tree::RowKind::ResponseFault,
+                label: name,
+                width: Some(120.),
+                color: if has { t.modified } else { t.text },
+                tip: Some(fault_tip(&resp.fault).to_string()),
+            },
+            cx,
+        );
         let rate = self.inline_field(
             t,
             "resp-fault-rate".into(),
@@ -328,18 +303,15 @@ impl Shell {
         (kind, rate)
     }
 
-    pub(crate) fn cycle_response_fault(&mut self, id: &str, cx: &mut Context<Self>) {
+    /// Sets the Response fault (`none` clears it and its rate).
+    pub(crate) fn set_response_fault(&mut self, id: &str, fault: &str, cx: &mut Context<Self>) {
         use fauxfield_store::Target as T;
-        let Some(r) = self.response_by_id(id) else {
-            return;
-        };
-        let at = FAULT_CYCLE.iter().position(|f| *f == r.fault).unwrap_or(0);
-        let next = FAULT_CYCLE[(at + 1) % FAULT_CYCLE.len()];
-        let id = id.to_string();
+        let none = fault == "none" || fault.is_empty();
+        let (id, fault) = (id.to_string(), fault.to_string());
         self.store_op(cx, |s| {
             let t = T::Response(id.clone());
-            s.set_str(&t, "fault", (!next.is_empty()).then_some(next))?;
-            if next.is_empty() {
+            s.set_str(&t, "fault", (!none).then_some(fault.as_str()))?;
+            if none {
                 s.set_item_none(&t, "fault_rate")?;
             }
             Ok(())

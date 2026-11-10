@@ -40,6 +40,10 @@ action = "send_test"
 keys = "secondary-enter"
 
 [[binding]]
+action = "save"
+keys = "secondary-s"
+
+[[binding]]
 action = "toggle_left_dock"
 keys = "secondary-b"
 
@@ -518,3 +522,113 @@ context = "CodeEditor"
 action = "ed_escape"
 keys = "escape"
 context = "CodeEditor"
+
+# Emacs-style cursor and kill bindings in the code editor (macOS, like every native text field).
+
+[[binding]]
+action = "ed_line_start"
+keys = "ctrl-a"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_line_end"
+keys = "ctrl-e"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_left"
+keys = "ctrl-b"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_right"
+keys = "ctrl-f"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_up"
+keys = "ctrl-p"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_down"
+keys = "ctrl-n"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_delete"
+keys = "ctrl-d"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_backspace"
+keys = "ctrl-h"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_delete_to_line_end"
+keys = "ctrl-k"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_word_left"
+keys = "alt-b"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_word_right"
+keys = "alt-f"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_delete_word_right"
+keys = "alt-d"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_select_line_start"
+keys = "ctrl-shift-a"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_select_line_end"
+keys = "ctrl-shift-e"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_select_left"
+keys = "ctrl-shift-b"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_select_right"
+keys = "ctrl-shift-f"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_select_up"
+keys = "ctrl-shift-p"
+context = "CodeEditor"
+platform = "macos"
+
+[[binding]]
+action = "ed_select_down"
+keys = "ctrl-shift-n"
+context = "CodeEditor"
+platform = "macos"

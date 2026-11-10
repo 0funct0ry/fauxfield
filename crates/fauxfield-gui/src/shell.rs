@@ -279,6 +279,8 @@ pub struct RowMenu {
     pub kind: RowKind,
     pub x: f32,
     pub y: f32,
+    /// Minimum menu width (a combobox menu matches its trigger).
+    pub min_w: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -359,6 +361,13 @@ pub struct Shell {
     notice_gen: u64,
     pub(crate) resize: Option<Resize>,
     pub(crate) menu: Option<RowMenu>,
+    /// Highlighted entry of the open menu (keyboard and hover).
+    pub(crate) menu_sel: usize,
+    /// Focus handles of combobox triggers by dev id (keyboard operation).
+    pub(crate) combo_focus: std::cell::RefCell<HashMap<String, FocusHandle>>,
+    /// Painted bounds of comboboxes by dev id, so their menu opens under the trigger.
+    pub(crate) combo_bounds:
+        std::rc::Rc<std::cell::RefCell<HashMap<String, gpui::Bounds<gpui::Pixels>>>>,
     pub(crate) problems: Vec<Problem>,
     pub(crate) logs: Vec<String>,
     /// The host for the open workspace (engine, control socket). Declared before `rt` so it
@@ -383,7 +392,7 @@ pub struct Shell {
     pub(crate) static_preview: Option<(String, String)>,
     pub(crate) focus: FocusHandle,
     pub(crate) picker_focus: FocusHandle,
-    /// The Response body being edited inline (committed on blur or Cmd/Ctrl+Enter).
+    /// The Response body being edited inline (committed on blur or Cmd/Ctrl+S).
     pub(crate) body_edit: Option<BodyEdit>,
     /// One CodeEditor per Response (`<id>` for the body, `<id>#file` for the file preview).
     pub(crate) editor_settings: crate::code_editor::EditorSettings,
@@ -588,6 +597,9 @@ impl Shell {
             notice_gen: 0,
             resize: None,
             menu: None,
+            menu_sel: 0,
+            combo_focus: Default::default(),
+            combo_bounds: Default::default(),
             problems: store_problems,
             logs: Vec::new(),
             host: None,
@@ -1109,13 +1121,73 @@ impl Shell {
         }
     }
 
+    /// Opens `m`, highlighting the current choice of a combobox (else the first entry).
+    fn set_menu(&mut self, m: RowMenu) {
+        let current = self.menu_current(&m);
+        self.menu_sel = current
+            .and_then(|c| self.menu_item_list(&m).iter().position(|(l, _, _)| *l == c))
+            .unwrap_or(0);
+        self.menu = Some(m);
+    }
+
+    /// Keys of an open menu: Up/Down/Home/End move, Enter picks, Esc closes, letters jump to the
+    /// next entry starting with them. Returns true when the key was used.
+    pub(crate) fn menu_key(
+        &mut self,
+        ev: &KeyDownEvent,
+        w: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(m) = self.menu.clone() else {
+            return false;
+        };
+        let items = self.menu_item_list(&m);
+        let n = items.len();
+        let k = &ev.keystroke;
+        if n == 0 || k.modifiers.platform || k.modifiers.control || k.modifiers.alt {
+            return false;
+        }
+        match k.key.as_str() {
+            "down" => self.menu_sel = (self.menu_sel + 1) % n,
+            "up" => self.menu_sel = (self.menu_sel + n - 1) % n,
+            "home" => self.menu_sel = 0,
+            "end" => self.menu_sel = n - 1,
+            "escape" => {
+                self.close_menu(cx);
+                return true;
+            }
+            "enter" | "tab" => {
+                if let Some((_, _, act)) = items.get(self.menu_sel) {
+                    self.run_menu(*act, w, cx);
+                }
+                return true;
+            }
+            _ => {
+                let Some(c) = k.key_char.as_deref().and_then(|s| s.chars().next()) else {
+                    return false;
+                };
+                let c = c.to_ascii_lowercase();
+                let hit = (1..=n)
+                    .map(|d| (self.menu_sel + d) % n)
+                    .find(|i| items[*i].0.to_ascii_lowercase().starts_with(c));
+                match hit {
+                    Some(i) => self.menu_sel = i,
+                    None => return false,
+                }
+            }
+        }
+        cx.notify();
+        true
+    }
+
     pub fn open_menu(&mut self, row_id: &str, x: f32, y: f32, cx: &mut Context<Self>) {
         if row_id == tree::WORKSPACE_ROW {
-            self.menu = Some(RowMenu {
+            self.set_menu(RowMenu {
                 row_id: row_id.to_string(),
                 kind: RowKind::Workspace,
                 x,
                 y,
+                min_w: 160.,
             });
             cx.notify();
             return;
@@ -1133,11 +1205,12 @@ impl Shell {
             return;
         }
         self.selected = Some(row_id.to_string());
-        self.menu = Some(RowMenu {
+        self.set_menu(RowMenu {
             row_id: row_id.to_string(),
             kind: row.kind,
             x,
             y,
+            min_w: 160.,
         });
         cx.notify();
     }
@@ -1167,11 +1240,41 @@ impl Shell {
         y: f32,
         cx: &mut Context<Self>,
     ) {
-        self.menu = Some(RowMenu {
+        self.set_menu(RowMenu {
             row_id: row_id.to_string(),
             kind,
             x,
             y,
+            min_w: 160.,
+        });
+        cx.notify();
+    }
+
+    /// Open the menu of a combobox anchored under its trigger (`combo_id`), as wide as it.
+    /// Falls back to `(x, y)` when the trigger has not been painted yet.
+    pub fn open_combo_menu(
+        &mut self,
+        row_id: &str,
+        kind: RowKind,
+        combo_id: &str,
+        fallback: (f32, f32),
+        cx: &mut Context<Self>,
+    ) {
+        let b = self.combo_bounds.borrow().get(combo_id).copied();
+        let (x, y, min_w) = match b {
+            Some(b) => (
+                f32::from(b.origin.x),
+                f32::from(b.origin.y + b.size.height) + 2.,
+                f32::from(b.size.width),
+            ),
+            None => (fallback.0, fallback.1, 160.),
+        };
+        self.set_menu(RowMenu {
+            row_id: row_id.to_string(),
+            kind,
+            x,
+            y,
+            min_w,
         });
         cx.notify();
     }
@@ -1300,6 +1403,11 @@ impl Shell {
             MenuAct::ToggleChaos => {
                 if let Some(i) = self.ws.servers.iter().position(|s| s.id == m.row_id) {
                     self.toggle_chaos_at(i, cx);
+                }
+            }
+            MenuAct::SetResponseFault(i) => {
+                if let Some(f) = fauxfield_model::FAULTS.get(i) {
+                    self.set_response_fault(&m.row_id, f, cx);
                 }
             }
             MenuAct::SetRuleTarget(i) | MenuAct::SetRuleOp(i) | MenuAct::SetResponseMode(i)
@@ -1957,6 +2065,10 @@ impl Shell {
     }
 
     fn on_capture_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.menu.is_some() && self.menu_key(ev, window, cx) {
+            cx.stop_propagation();
+            return;
+        }
         if self.bar.open.is_some() && self.bar_key(ev, window, cx) {
             cx.stop_propagation();
             return;
@@ -3161,13 +3273,16 @@ impl Render for Shell {
                 // Cmd+Enter is also "open pinned" inside Quick Search.
                 if this.picker.is_some() {
                     this.run_picker_selection(OpenMode::Pinned, w, cx);
-                } else if this.body_edit.is_some() {
-                    // ... and "save" in the Response body editor.
+                } else {
+                    this.send_test(cx);
+                }
+            },
+            // Cmd+S writes the Response body or field being edited to its file.
+            Save => |this, w, cx| {
+                if this.body_edit.is_some() {
                     this.commit_body_edit(cx);
                 } else if this.inline.is_some() {
                     this.commit_inline(crate::response_pane::Nav::Stay, w, cx);
-                } else {
-                    this.send_test(cx);
                 }
             },
             Duplicate => |this, _w, cx| match this.current_response_id().filter(|_| this.selected_is_route()).or(this.selected_visible()) {

@@ -8,7 +8,7 @@ and response bodies in Traffic) uses one editor.
 
 ## Editing
 
-- Click a Response body to edit it. **Cmd/Ctrl+Enter** or clicking outside saves; **Esc** discards.
+- Click a Response body to edit it. **Cmd/Ctrl+S** or clicking outside saves; **Esc** discards.
 - Brackets and quotes close themselves, typing a closer steps over it, and typing a bracket over a
   selection wraps it. **Enter** keeps the indent and indents after `{ [ (` (and after `:` in YAML).
 - **Tab** indents (a multi-line selection indents as a block); **Shift+Tab** outdents.

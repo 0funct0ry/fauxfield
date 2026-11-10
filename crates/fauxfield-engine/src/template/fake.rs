@@ -40,8 +40,37 @@ pub const FAKE_KINDS: &[(&str, &str)] = &[
     ("image.url", "Placeholder image as a service-free data URI"),
 ];
 
+/// Resolves a `kind` to its canonical dotted name: an exact kind, or a shorthand such as
+/// `email`, `city` or `first_name` (the last segment, when only one kind ends with it).
+pub fn resolve_kind(kind: &str) -> Option<&'static str> {
+    let k = kind.trim().to_ascii_lowercase();
+    if let Some((name, _)) = FAKE_KINDS.iter().find(|(n, _)| *n == k) {
+        return Some(name);
+    }
+    let extra = match k.as_str() {
+        "first_name" | "firstname" => "name.first",
+        "last_name" | "lastname" => "name.last",
+        "company" => "company.name",
+        "ip" => "internet.ipv4",
+        "color" => "color.hex",
+        "image" => "image.url",
+        "card" => "finance.card_number",
+        _ => "",
+    };
+    if !extra.is_empty() {
+        return Some(extra);
+    }
+    let mut hits = FAKE_KINDS
+        .iter()
+        .filter(|(n, _)| n.rsplit('.').next() == Some(k.as_str()));
+    match (hits.next(), hits.next()) {
+        (Some((n, _)), None) => Some(n),
+        _ => None,
+    }
+}
+
 pub fn generate(kind: &str, rng: &mut ChaCha8Rng) -> Option<String> {
-    Some(match kind {
+    Some(match resolve_kind(kind)? {
         "name" => name::Name(EN).fake_with_rng(rng),
         "name.first" => name::FirstName(EN).fake_with_rng(rng),
         "name.last" => name::LastName(EN).fake_with_rng(rng),

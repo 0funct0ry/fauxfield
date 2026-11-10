@@ -169,6 +169,26 @@ impl CompletionProvider for TeraCompletions {
                     format!("vars.{v}"),
                 ));
             }
+            // Shorthand: `{{ fake.email }}`; `uuid`, `ulid` and `now` also work without `()`.
+            for (k, d) in FAKE_KINDS {
+                let last = k.rsplit('.').next().unwrap_or(k);
+                let short = if template::resolve_kind(last) == Some(*k) {
+                    last
+                } else {
+                    k
+                };
+                let label = format!("fake.{short}");
+                items.push(item(&label, Kind::Variable, "Fake data", d, label.clone()));
+            }
+            for f in ["uuid", "ulid", "now"] {
+                items.push(item(
+                    f,
+                    Kind::Variable,
+                    "Shorthand",
+                    "no parentheses needed",
+                    f.into(),
+                ));
+            }
             for (f, d) in FUNCTIONS {
                 items.push(item(f, Kind::Snippet, "Functions", d, format!("{f}($0)")));
             }
@@ -202,6 +222,11 @@ mod tests {
         assert!(labels("{{ x }} re").is_empty());
         assert!(labels("{{ re").contains(&"request.method".to_string()));
         assert!(labels("{{ ho").contains(&"vars.host".to_string()));
+        assert!(labels("{{ fa").contains(&"fake.email".to_string()));
+        assert!(
+            labels("{{ fa").contains(&"fake.address.postcode".to_string())
+                || labels("{{ fa").contains(&"fake.postcode".to_string())
+        );
     }
 
     #[test]

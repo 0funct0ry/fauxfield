@@ -73,6 +73,11 @@ impl DisplayMap {
         DisplayMap { rows, tab }
     }
 
+    /// True when this map was built for text of `len` bytes (a layout from before an edit is not).
+    pub fn is_for_len(&self, len: usize) -> bool {
+        self.rows.last().is_none_or(|r| r.end == len)
+    }
+
     pub fn row_count(&self) -> usize {
         self.rows.len()
     }
@@ -87,7 +92,11 @@ impl DisplayMap {
     pub fn col_of(&self, text: &str, offset: usize) -> usize {
         let r = &self.rows[self.row_of(offset)];
         let mut col = 0;
-        for (i, g) in text[r.start..r.end].grapheme_indices(true) {
+        for (i, g) in text
+            .get(r.start..r.end)
+            .unwrap_or("")
+            .grapheme_indices(true)
+        {
             if r.start + i >= offset {
                 break;
             }
@@ -101,7 +110,11 @@ impl DisplayMap {
     pub fn offset_at(&self, text: &str, row: usize, col: usize) -> usize {
         let r = &self.rows[row.min(self.rows.len() - 1)];
         let mut c = 0;
-        for (i, g) in text[r.start..r.end].grapheme_indices(true) {
+        for (i, g) in text
+            .get(r.start..r.end)
+            .unwrap_or("")
+            .grapheme_indices(true)
+        {
             let w = cells(g, c, self.tab);
             if col < c + w.div_ceil(2) {
                 return r.start + i;
@@ -121,7 +134,7 @@ impl DisplayMap {
 
     fn col_after(&self, text: &str, r: &Row) -> usize {
         let mut c = 0;
-        for g in text[r.start..r.end].graphemes(true) {
+        for g in text.get(r.start..r.end).unwrap_or("").graphemes(true) {
             c += cells(g, c, self.tab);
         }
         c

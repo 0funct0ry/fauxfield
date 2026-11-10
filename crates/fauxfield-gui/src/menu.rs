@@ -344,6 +344,7 @@ pub fn build_menus(ctx: &MenuContext) -> Vec<MenuDef> {
         act("open_folder", "Open Folder…"),
         sub("recent", "Open Recent", recent_entries(ctx)),
         MenuEntry::Separator,
+        act("save", "Save"),
         act("close_tab", "Close Tab"),
         act("pin_tab", "Pin Tab"),
         act("close_workspace", "Close Workspace"),
@@ -567,6 +568,7 @@ pub fn enabled(id: &str, ctx: &MenuContext) -> bool {
         | "new_environment"
         | "close_workspace"
         | "rename_workspace"
+        | "save"
         | "reveal_workspace"
         | "switch_environment"
         | "new_crud_resource"

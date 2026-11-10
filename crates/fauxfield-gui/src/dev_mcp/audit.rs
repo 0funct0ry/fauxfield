@@ -24,6 +24,7 @@ pub const SPEC_BINDINGS: &[(&str, &str)] = &[
     ("toggle_server", "secondary-r"),
     ("run_all", "secondary-shift-r"),
     ("send_test", "secondary-enter"),
+    ("save", "secondary-s"),
     ("toggle_left_dock", "secondary-b"),
     ("toggle_bottom_dock", "secondary-`"),
     ("toggle_right_dock", "secondary-alt-b"),

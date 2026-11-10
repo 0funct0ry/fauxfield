@@ -1332,8 +1332,21 @@ fn response_menu_body_editor_and_headers(cx: &mut TestAppContext) {
         ed.update(cx, |e, cx| {
             e.replace_all("{\"a\":[1,2]}", cx);
         });
-        s.commit_body_edit(cx);
     });
+    // Cmd+S saves the body; Cmd+Enter does not.
+    // The test window draws a different Route, so the editor is not in the focus tree.
+    view.update_in(cx, |s, w, cx| {
+        w.focus(&s.focus);
+        s.run_action_id("send_test", w, cx)
+    });
+    cx.run_until_parked();
+    assert!(
+        read(&view, cx, |s| s.body_edit.is_some()),
+        "Send Test must not save"
+    );
+    view.update_in(cx, |s, w, cx| s.run_action_id("save", w, cx));
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s.body_edit.is_none()), "Cmd+S saves");
     let (body, ct) = read(&view, cx, |s| {
         let x = s.find_response(&new).unwrap().2;
         (x.body, x.content_type)
@@ -1972,16 +1985,20 @@ fn network_and_fault_controls(cx: &mut TestAppContext) {
     type_field(&view, cx, I::Delay(r.clone()), "0");
     assert_eq!(resp(&view, cx).delay, "");
 
-    // Fault cycles none -> timeout -> reset…; the rate is validated.
-    view.update(cx, |s, cx| s.cycle_response_fault(&r, cx));
+    // Fault is picked from a menu (index 1 = timeout); the rate is validated.
+    view.update_in(cx, |s, w, cx| {
+        s.open_picker_menu(&r, crate::tree::RowKind::ResponseFault, 0., 0., cx);
+        s.run_menu(MenuAct::SetResponseFault(1), w, cx);
+    });
     assert_eq!(resp(&view, cx).fault, "timeout");
     type_field(&view, cx, I::FaultRate(r.clone()), "0.3");
     assert_eq!(resp(&view, cx).fault_rate, "0.3");
     type_field(&view, cx, I::FaultRate(r.clone()), "7");
     assert_eq!(resp(&view, cx).fault_rate, "0.3");
-    for _ in 0..6 {
-        view.update(cx, |s, cx| s.cycle_response_fault(&r, cx));
-    }
+    view.update_in(cx, |s, w, cx| {
+        s.open_picker_menu(&r, crate::tree::RowKind::ResponseFault, 0., 0., cx);
+        s.run_menu(MenuAct::SetResponseFault(0), w, cx);
+    });
     assert_eq!(resp(&view, cx).fault, "");
     assert_eq!(resp(&view, cx).fault_rate, "");
 
@@ -2132,4 +2149,52 @@ fn tls_cors_and_static_controls(cx: &mut TestAppContext) {
         vec![".tera".to_string(), ".tpl".to_string()]
     );
     assert_eq!(r.index.as_deref(), Some("home.html"));
+}
+
+#[gpui::test]
+fn menus_are_keyboard_navigable(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    let r = "rsp_users_get_2".to_string();
+    view.update(cx, |s, cx| {
+        s.open_picker_menu(&r, crate::tree::RowKind::ResponseFault, 0., 0., cx)
+    });
+    let sel = |v: &Entity<Shell>, cx: &mut VisualTestContext| read(v, cx, |s| s.menu_sel);
+    assert_eq!(sel(&view, cx), 0);
+    cx.simulate_keystrokes("down down");
+    assert_eq!(sel(&view, cx), 2);
+    cx.simulate_keystrokes("up up up");
+    assert_eq!(sel(&view, cx), fauxfield_model::FAULTS.len() - 1, "wraps");
+    cx.simulate_keystrokes("r");
+    assert_eq!(fauxfield_model::FAULTS[sel(&view, cx)], "reset");
+    cx.simulate_keystrokes("enter");
+    assert!(read(&view, cx, |s| s.menu.is_none()));
+    assert_eq!(
+        read(&view, cx, |s| s.find_response(&r).unwrap().2.fault),
+        "reset"
+    );
+    view.update(cx, |s, cx| {
+        s.open_picker_menu(&r, crate::tree::RowKind::ResponseFault, 0., 0., cx)
+    });
+    cx.simulate_keystrokes("escape");
+    assert!(read(&view, cx, |s| s.menu.is_none()));
+}
+
+#[gpui::test]
+fn copy_rule_curl_puts_a_matching_curl_on_the_clipboard(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    let r = "rsp_users_get_2".to_string();
+    view.update(cx, |s, cx| s.add_rule(&r, cx));
+    view.update(cx, |s, cx| {
+        s.edit_rule(&r, 0, cx, |x| {
+            x.key = Some("foo".into());
+            x.value = Some(toml::Value::String("1".into()));
+        })
+    });
+    view.update(cx, |s, cx| s.copy_rule_curl(&r, 0, cx));
+    let text = cx
+        .read_from_clipboard()
+        .and_then(|c| c.text())
+        .unwrap_or_default();
+    assert!(text.starts_with("curl -X "), "{text}");
+    assert!(text.contains("?foo=1"), "{text}");
 }
