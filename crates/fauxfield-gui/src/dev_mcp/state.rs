@@ -616,8 +616,8 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
         environment_picker: picker(shell, PickerKind::Environment),
         modal: if shell.quit_confirm {
             Some("quit_confirm".to_string())
-        } else if shell.lc.method_menu.is_some() {
-            Some("method_menu".to_string())
+        } else if shell.any_combo_open() {
+            Some("combo_menu".to_string())
         } else if let Some(d) = shell.dialog_name() {
             Some(d.to_string())
         } else {

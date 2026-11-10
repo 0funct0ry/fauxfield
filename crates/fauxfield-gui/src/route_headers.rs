@@ -222,7 +222,7 @@ impl Shell {
             // The live text of the cell being edited is checked, else the stored value.
             let editing = self.inline.as_ref().and_then(|e| match &e.target {
                 InlineTarget::RouteHeaderValue { route: r, row } if *r == rid && *row == i => {
-                    Some(e.buf.text.clone())
+                    Some(e.text.clone())
                 }
                 _ => None,
             });

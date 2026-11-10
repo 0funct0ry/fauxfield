@@ -387,6 +387,16 @@ impl Store {
     }
 
     pub fn create_server(&self, name: &str, port: u16) -> Result<String, StoreError> {
+        self.create_server_at(name, "127.0.0.1", port)
+    }
+
+    /// Create a server file with an explicit host (the New Server dialog).
+    pub fn create_server_at(
+        &self,
+        name: &str,
+        host: &str,
+        port: u16,
+    ) -> Result<String, StoreError> {
         let id = new_id("srv");
         let mut st = self.lock();
         let slug = slugify(name);
@@ -397,8 +407,9 @@ impl Store {
             n += 1;
         }
         let text = format!(
-            "schema = 1\nid = \"{id}\"\nname = {}\nenabled = true\nhost = \"127.0.0.1\"\nport = {port}\n",
-            value(name).to_string().trim()
+            "schema = 1\nid = \"{id}\"\nname = {}\nenabled = true\nhost = {}\nport = {port}\n",
+            value(name).to_string().trim(),
+            value(host).to_string().trim()
         );
         let mut d = Doc::parse(text);
         d.dirty = true;

@@ -127,7 +127,7 @@ fn reset_view(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) {
     shell.notice = None;
     shell.menu = None;
     shell.prompt = None;
-    shell.lc.method_menu = None;
+    shell.close_all_combos(window, cx);
     shell.lc.close_confirm = None;
     shell.lc.delete_confirm = None;
     shell.lc.create_confirm = None;

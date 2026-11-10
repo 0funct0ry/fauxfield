@@ -117,7 +117,7 @@ impl Shell {
     pub(crate) fn inline_suggestions(&self) -> Vec<Suggestion> {
         let Some(InlineEdit {
             target,
-            buf,
+            text,
             ac_open: true,
             ..
         }) = &self.inline
@@ -125,11 +125,11 @@ impl Shell {
             return Vec::new();
         };
         match target {
-            InlineTarget::HeaderKey { .. } => header_catalog::suggest(Col::Key, "", &buf.text),
+            InlineTarget::HeaderKey { .. } => header_catalog::suggest(Col::Key, "", text),
             InlineTarget::HeaderValue { response, row } => {
                 let rows = self.rows_of(response);
                 let name = rows.get(*row).map_or("", |r| r.key.as_str());
-                header_catalog::suggest(Col::Value, name, &buf.text)
+                header_catalog::suggest(Col::Value, name, text)
             }
             _ => Vec::new(),
         }
@@ -148,9 +148,8 @@ impl Shell {
             self.inline.as_ref().map(|e| &e.target),
             Some(InlineTarget::HeaderKey { .. })
         );
-        if let Some(e) = self.inline.as_mut() {
-            e.buf = crate::editor::TextBuf::new(sg.label);
-        }
+        let label = sg.label;
+        self.set_inline_text(label, cx);
         self.commit_inline(if is_key { Nav::Next } else { Nav::Stay }, window, cx);
     }
 

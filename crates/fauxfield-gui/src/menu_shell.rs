@@ -122,8 +122,10 @@ impl Shell {
         let mut c = MenuContext::welcome(Platform::current());
         c.workspace_open = self.store.is_some();
         c.modal_open = self.any_modal_open();
-        c.text_input_focused =
-            self.picker.is_some() || self.body_edit.is_some() || self.inline.is_some();
+        c.text_input_focused = self.picker.is_some()
+            || self.server_dialog.is_some()
+            || self.body_edit.is_some()
+            || self.inline.is_some();
         let sidx = self.current_server();
         c.current_server = sidx.map(|i| self.ws.servers[i].id.clone());
         c.current_server_enabled = sidx.is_some_and(|i| self.ws.servers[i].enabled);
@@ -179,11 +181,12 @@ impl Shell {
     /// Any modal, prompt, picker or confirmation is open (the menu greys almost everything).
     pub(crate) fn any_modal_open(&self) -> bool {
         self.picker.is_some()
+            || self.server_dialog.is_some()
             || self.any_dialog_open()
             || self.quit_confirm
             || self.about_open
             || self.sample_dialog.is_some()
-            || self.lc.method_menu.is_some()
+            || self.any_combo_open()
     }
 
     /// Whether the handler of the action type `ty` (e.g. "QuickSearch") is currently enabled.
@@ -253,77 +256,39 @@ impl Shell {
 
     // ---- edit_* on the focused single-line input (the picker query) -------------------------
 
-    /// The focused single-line buffer outside the picker: an inline field (the body editor is a
-    /// CodeEditor that handles its own clipboard actions).
-    fn focused_buf(&mut self) -> Option<&mut crate::editor::TextBuf> {
-        if self.picker.is_some() {
-            return None;
+    /// The query input of the open picker, else the New Server dialog's focused input.
+    fn focused_input(&self) -> Option<gpui::Entity<crate::text_input::TextInput>> {
+        if let Some(d) = &self.server_dialog {
+            return d.inputs.get(d.focus).cloned();
         }
-        self.inline.as_mut().map(|i| &mut i.buf)
+        if let Some(p) = &self.picker {
+            return Some(p.input.clone());
+        }
+        self.inline.as_ref().map(|i| i.input.clone())
     }
 
     pub(crate) fn edit_copy(&mut self, cx: &mut Context<Self>) {
-        if let Some(b) = self.focused_buf() {
-            // The selection, else everything.
-            let text = b.selected_text().unwrap_or(&b.text).to_string();
-            cx.write_to_clipboard(ClipboardItem::new_string(text));
-            return;
-        }
-        if let Some(p) = &self.picker {
-            let text = p
-                .selection()
-                .map_or(p.query.as_str(), |(a, z)| &p.query[a..z])
-                .to_string();
-            cx.write_to_clipboard(ClipboardItem::new_string(text));
+        if let Some(i) = self.focused_input() {
+            i.update(cx, |t, cx| t.copy(cx));
         }
     }
 
     pub(crate) fn edit_cut(&mut self, cx: &mut Context<Self>) {
-        self.edit_copy(cx);
-        if let Some(b) = self.focused_buf() {
-            if b.selection().is_none() {
-                b.select_all();
-            }
-            b.delete_selection();
-            cx.notify();
-            return;
+        if let Some(i) = self.focused_input() {
+            i.update(cx, |t, cx| t.cut(cx));
         }
-        if let Some(p) = &mut self.picker {
-            p.edit(|b| {
-                if b.selection().is_none() {
-                    b.select_all();
-                }
-                b.delete_selection();
-            });
-        }
-        self.refresh_picker(cx);
     }
 
     pub(crate) fn edit_paste(&mut self, cx: &mut Context<Self>) {
-        let Some(text) = cx.read_from_clipboard().and_then(|c| c.text()) else {
-            return;
-        };
-        if let Some(b) = self.focused_buf() {
-            // Fields take the first line.
-            let text = text.lines().next().unwrap_or("").to_string();
-            b.insert(&text);
-            cx.notify();
-            return;
+        if let Some(i) = self.focused_input() {
+            i.update(cx, |t, cx| t.paste(cx));
         }
-        let line = text.lines().next().unwrap_or("").to_string();
-        self.picker_type(&line, cx);
     }
 
     pub(crate) fn edit_select_all(&mut self, cx: &mut Context<Self>) {
-        if let Some(b) = self.focused_buf() {
-            b.select_all();
-            cx.notify();
-            return;
+        if let Some(i) = self.focused_input() {
+            i.update(cx, |t, cx| t.select_all(cx));
         }
-        if let Some(p) = &mut self.picker {
-            p.edit(|b| b.select_all());
-        }
-        cx.notify();
     }
 
     // ---- window, help, workspace -----------------------------------------------------------

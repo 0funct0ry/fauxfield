@@ -53,8 +53,8 @@ pub enum Click {
     Menu(MenuAct),
     /// Open a Recent workspace by path (Welcome list).
     Recent(String),
-    /// Pick a verb in the route method dropdown (route id, method or `custom`).
-    RouteMethod(String, String),
+    /// Pick an entry of a ComboBox (combo key, entry value or action key).
+    ComboItem(String, String),
     /// Remove a Recent entry by path (recent.json only).
     RemoveRecent(String),
     TrafficRow(usize),
@@ -537,12 +537,9 @@ pub fn click_element(
             cx.notify();
         }
         Click::Menu(act) => shell.run_menu(act, window, cx),
-        Click::RouteMethod(route, m) => {
-            if m == "custom" {
-                shell.lc.method_menu = None;
-                super::input::invoke_action("edit_route_method_custom", shell, window, cx)?;
-            } else {
-                shell.set_route_method(&route, &m, cx);
+        Click::ComboItem(key, value) => {
+            if !shell.combo_pick(&key, &value, window, cx) {
+                return fail(format!("combo box {key:?} has no enabled entry {value:?}"));
             }
         }
         Click::BarTitle(i) => shell.bar_toggle(i, cx),

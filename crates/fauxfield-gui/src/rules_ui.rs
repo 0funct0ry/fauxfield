@@ -2,14 +2,14 @@
 //! evaluation order, with a Response column and an and/or switch per group.
 
 use gpui::{
-    AnyElement, Context, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
-    ParentElement, StatefulInteractiveElement, Styled, div, prelude::*, px,
+    AnyElement, Context, InteractiveElement, IntoElement, ParentElement,
+    StatefulInteractiveElement, Styled, div, prelude::*, px,
 };
 
+use crate::combo_box::{ComboEvent, ComboItem, ComboLook, ComboSite, ComboSize, ComboWidth};
 use crate::response_pane::InlineTarget;
 use crate::shell::Shell;
 use crate::theme::Theme;
-use crate::tree::RowKind;
 use crate::ui::ROW_H;
 use crate::view::{Response, Route};
 
@@ -55,126 +55,77 @@ pub fn parse_value(op: &str, text: &str) -> toml::Value {
     }
 }
 
-/// A combobox trigger: value and chevron; its menu opens under it at the same width.
-pub(crate) struct ComboSpec {
-    pub id: String,
-    /// dev-mcp `ui.click_element` op (`name:id[:index]`).
-    pub press: String,
-    /// Row id of the menu (`<response>#<rule>` or the Response id).
-    pub row_id: String,
-    pub kind: RowKind,
-    pub label: String,
-    /// Fixed width, or `None` to share the row equally.
-    pub width: Option<f32>,
-    pub color: gpui::Hsla,
-    pub tip: Option<String>,
-}
-
 impl Shell {
-    pub(crate) fn combo_trigger(
+    pub(crate) fn set_rule_target(
+        &mut self,
+        resp: &str,
+        idx: usize,
+        target: &str,
+        cx: &mut Context<Self>,
+    ) {
+        self.edit_rule(resp, idx, cx, |r| {
+            r.target = target.into();
+            if !fauxfield_model::rules::needs_key(target) && target != "body" {
+                r.key = None;
+            }
+        });
+    }
+
+    pub(crate) fn set_rule_op(&mut self, resp: &str, idx: usize, op: &str, cx: &mut Context<Self>) {
+        self.edit_rule(resp, idx, cx, |r| {
+            r.op = op.into();
+            if matches!(op, "exists" | "absent") {
+                r.value = None;
+            } else if r.value.is_none() {
+                r.value = Some(toml::Value::String(String::new()));
+            }
+        });
+    }
+
+    pub(crate) fn set_response_mode_value(
+        &mut self,
+        route: &str,
+        mode: &str,
+        cx: &mut Context<Self>,
+    ) {
+        let (route, mode) = (route.to_string(), mode.to_string());
+        self.store_op(cx, |s| s.set_response_mode(&route, &mode));
+    }
+
+    /// A ComboBox over a fixed list of plain values, flexing with its row.
+    fn rule_combo(
         &self,
-        t: &Theme,
-        spec: ComboSpec,
+        kind: &'static str,
+        values: &'static [&'static str],
+        resp: &str,
+        i: usize,
+        current: &str,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let ComboSpec {
-            id,
-            press,
-            row_id,
-            kind,
-            label,
-            width,
-            color,
-            tip,
-        } = spec;
-        let _ = &press; // only read by the dev-mcp element tag
-        let (menu_id, bounds, paint_id) = (id.clone(), self.combo_bounds.clone(), id.clone());
-        let focus = self
-            .combo_focus
-            .borrow_mut()
-            .entry(id.clone())
-            .or_insert_with(|| cx.focus_handle().tab_stop(true))
-            .clone();
-        let (key_row, key_kind, key_menu) = (row_id.clone(), kind.clone(), menu_id.clone());
-        crate::dev_id!(
-            div()
-                .id(crate::ui::eid(id.clone()))
-                .relative()
-                .when_some(width, |d, w| d.w(px(w)).flex_none())
-                .when(width.is_none(), |d| d.flex_1().min_w(px(0.)))
-                .h(px(26.))
-                .pl(px(8.))
-                .pr(px(6.))
-                .flex()
-                .flex_row()
-                .items_center()
-                .justify_between()
-                .gap(px(4.))
-                .rounded(px(4.))
-                .border_1()
-                .border_color(t.border_variant)
-                .hover(|s| s.border_color(t.border))
-                .font_family(crate::assets::BUFFER_FONT)
-                .text_size(px(12.))
-                .text_color(color)
-                .cursor_pointer()
-                .track_focus(&focus)
-                .focus(|s| s.border_color(t.border_focused))
-                .on_key_down(cx.listener(move |this, ev: &gpui::KeyDownEvent, w, cx| {
-                    let k = &ev.keystroke;
-                    match k.key.as_str() {
-                        "enter" | "space" | "down" | "up" => {
-                            this.open_combo_menu(
-                                &key_row,
-                                key_kind.clone(),
-                                &key_menu,
-                                (0., 0.),
-                                cx,
-                            );
-                            cx.stop_propagation();
+        let (r, key) = (resp.to_string(), format!("rule-{kind}-{resp}-{i}"));
+        self.combo_field(
+            cx,
+            ComboSite {
+                key,
+                items: values.iter().map(|v| ComboItem::plain(*v)).collect(),
+                value: Some(current.to_string().into()),
+                fallback: Some(current.to_string().into()),
+                color: None,
+                tip: None,
+                width: ComboWidth::Flex,
+                look: ComboLook::Field,
+                size: ComboSize::Medium,
+                on_event: std::rc::Rc::new(move |this, ev, cx| {
+                    if let ComboEvent::Change(v) = ev {
+                        if kind == "target" {
+                            this.set_rule_target(&r, i, v, cx)
+                        } else {
+                            this.set_rule_op(&r, i, v, cx)
                         }
-                        "tab" => {
-                            if k.modifiers.shift {
-                                w.focus_prev();
-                            } else {
-                                w.focus_next();
-                            }
-                            cx.stop_propagation();
-                        }
-                        _ => {}
                     }
-                }))
-                .when_some(tip, |d, tip| d.tooltip(crate::ui::tooltip(tip)))
-                .child(
-                    gpui::canvas(
-                        move |b: gpui::Bounds<gpui::Pixels>, _, _| {
-                            bounds.borrow_mut().insert(paint_id.clone(), b);
-                        },
-                        |_, _, _, _| {},
-                    )
-                    .absolute()
-                    .size_full(),
-                )
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
-                        this.open_combo_menu(
-                            &row_id,
-                            kind.clone(),
-                            &menu_id,
-                            (f32::from(ev.position.x), f32::from(ev.position.y)),
-                            cx,
-                        );
-                    }),
-                )
-                .child(div().min_w(px(0.)).truncate().child(label.clone()))
-                .child(crate::ui::icon("chevron-down", 12., t.icon_muted)),
-            id,
-            Button,
-            label,
-            Press(press)
+                }),
+            },
         )
-        .into_any_element()
     }
 
     pub(crate) fn render_rules(&self, t: &Theme, r: &Route, cx: &mut Context<Self>) -> AnyElement {
@@ -305,27 +256,6 @@ impl Shell {
         rule: &fauxfield_model::Rule,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let rid = resp.id.clone();
-        let combo = |id: String,
-                     pick_op: &'static str,
-                     label: String,
-                     kind: RowKind,
-                     cx: &mut Context<Self>| {
-            self.combo_trigger(
-                t,
-                ComboSpec {
-                    id,
-                    press: format!("{pick_op}:{rid}:{i}"),
-                    row_id: format!("{rid}#{i}"),
-                    kind,
-                    label,
-                    width: None,
-                    color: t.text,
-                    tip: None,
-                },
-                cx,
-            )
-        };
         let key_used = fauxfield_model::rules::needs_key(&rule.target) || rule.target == "body";
         let value_used = !matches!(rule.op.as_str(), "exists" | "absent");
         let blank = || {
@@ -370,11 +300,12 @@ impl Shell {
                 .items_center()
                 .gap(px(6.))
                 .h(px(30.))
-                .child(combo(
-                    format!("rule-target-{}-{i}", resp.id),
-                    "rule-target",
-                    rule.target.clone(),
-                    RowKind::RuleTarget,
+                .child(self.rule_combo(
+                    "target",
+                    fauxfield_model::rules::TARGETS,
+                    &resp.id,
+                    i,
+                    &rule.target,
                     cx,
                 ))
                 .child(if key_used {
@@ -398,11 +329,12 @@ impl Shell {
                 } else {
                     blank().into_any_element()
                 })
-                .child(combo(
-                    format!("rule-op-{}-{i}", resp.id),
-                    "rule-op",
-                    rule.op.clone(),
-                    RowKind::RuleOp,
+                .child(self.rule_combo(
+                    "op",
+                    fauxfield_model::rules::OPS,
+                    &resp.id,
+                    i,
+                    &rule.op,
                     cx,
                 ))
                 .child(if value_used {
@@ -585,8 +517,14 @@ impl Shell {
         let need = || idx.ok_or_else(|| format!("{name} needs an index"));
         match name {
             "resp-add" => self.new_response_for(&id, cx),
-            "resp-add-preset" => self.open_picker_menu(&id, RowKind::ErrorPresets, x, y - 300., cx),
-            "response-mode" => self.open_picker_menu(&id, RowKind::ResponseMode, x, y, cx),
+            "resp-add-preset" => {
+                self.open_picker_menu(&id, crate::tree::RowKind::ErrorPresets, x, y - 300., cx)
+            }
+            "combo" => {
+                if !self.combo_open(&id, window, cx) {
+                    return Err(format!("no combo box {id:?} on screen"));
+                }
+            }
             "rules-add" => self.add_rule(&id, cx),
             "rules-logic" => {
                 let or = self
@@ -595,16 +533,6 @@ impl Shell {
                 let next = if or { "and" } else { "or" };
                 let rid = id.clone();
                 self.store_op(cx, |s| s.set_rules_logic(&rid, next));
-            }
-            "rule-target" => {
-                let i = need()?;
-                let cid = format!("rule-target-{id}-{i}");
-                self.open_combo_menu(&format!("{id}#{i}"), RowKind::RuleTarget, &cid, (x, y), cx)
-            }
-            "rule-op" => {
-                let i = need()?;
-                let cid = format!("rule-op-{id}-{i}");
-                self.open_combo_menu(&format!("{id}#{i}"), RowKind::RuleOp, &cid, (x, y), cx)
             }
             "rule-curl" => self.copy_rule_curl(&id, need()?, cx),
             "rule-negate" => self.edit_rule(&id, need()?, cx, |r| r.negate = !r.negate),
@@ -623,10 +551,6 @@ impl Shell {
                 self.store_op(cx, |s| s.delete_rule(&rid, i));
             }
             "resp-template" => self.toggle_response_template(&id, cx),
-            "resp-fault" => {
-                let cid = "resp-fault";
-                self.open_combo_menu(&id, RowKind::ResponseFault, cid, (x, y), cx)
-            }
             "rate-enabled" => self.toggle_rate_limit(&id, cx),
             "seed-mode" => self.set_seed_mode(&id, need()? == 1, cx),
             "route-header-add" => {

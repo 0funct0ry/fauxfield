@@ -53,8 +53,6 @@ pub struct Lifecycle {
     /// Generation of the store poll loop; a stale loop stops itself.
     pub poll_gen: u64,
     pub window_title: String,
-    /// Open route-method dropdown: (route id, x, y) in window coordinates.
-    pub method_menu: Option<(String, f32, f32)>,
     /// When each workspace was opened in this session.
     pub opened_at: std::collections::HashMap<PathBuf, SystemTime>,
 }
@@ -733,108 +731,90 @@ impl Shell {
 pub const METHODS: [&str; 7] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
 impl Shell {
-    /// Open the method dropdown for the current route; `at` is the anchor (window coordinates).
-    pub fn open_method_menu(&mut self, at: Option<(f32, f32)>, cx: &mut Context<Self>) {
+    /// Open the method ComboBox of the current route.
+    pub fn open_method_menu(&mut self, window: &mut gpui::Window, cx: &mut Context<Self>) {
         let Some(route) = self.current_route_id() else {
             return self.notify("Open a route first.".into(), cx);
         };
-        let (x, y) = at.unwrap_or((self.layout.left_width + 16., 100.));
-        self.lc.method_menu = Some((route, x, y));
-        cx.notify();
-    }
-
-    pub fn close_method_menu(&mut self, cx: &mut Context<Self>) {
-        if self.lc.method_menu.take().is_some() {
-            cx.notify();
+        if !self.combo_open(&format!("route-method-{route}"), window, cx) {
+            self.notify("Open the route tab first.".into(), cx);
         }
     }
 
     /// Set the route's verb from the dropdown.
     pub fn set_route_method(&mut self, route: &str, method: &str, cx: &mut Context<Self>) {
         use fauxfield_store::Target as T;
-        self.lc.method_menu = None;
         let r = route.to_string();
         let m = method.to_ascii_uppercase();
         self.store_op(cx, |s| s.set_str(&T::Route(r), "method", Some(&m)));
     }
 
-    pub(crate) fn render_method_menu(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        let (route, x, y) = self.lc.method_menu.clone().expect("method menu is open");
-        let current = self
-            .ws
-            .find_route(&route)
-            .map(|(_, r)| r.method.to_ascii_uppercase())
-            .unwrap_or_default();
-        let hover = t.element_hover;
-        let item =
-            |label: String, key: String, check: bool, color: gpui::Hsla| (label, key, check, color);
-        let mut items: Vec<_> = METHODS
+    /// The Route verb: a badge ComboBox with a "Custom…" entry for any other verb.
+    pub(crate) fn route_method_combo(
+        &self,
+        t: &Theme,
+        r: &crate::view::Route,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        use crate::combo_box::*;
+        let current = r.method.to_ascii_uppercase();
+        let mut items: Vec<ComboItem> = METHODS
             .iter()
-            .map(|m| {
-                item(
-                    m.to_string(),
-                    (*m).to_string(),
-                    *m == current,
-                    t.method_color(m),
-                )
-            })
+            .map(|m| ComboItem::plain(*m).color(t.method_color(m)))
             .collect();
-        items.push(item("Custom…".into(), "custom".into(), false, t.text));
-        div()
-            .id("method-menu-backdrop")
-            .absolute()
-            .size_full()
-            .on_mouse_down(
-                gpui::MouseButton::Left,
-                cx.listener(|this, _, _, cx| this.close_method_menu(cx)),
-            )
-            .child(
-                div()
-                    .id("method-menu")
-                    .absolute()
-                    .left(px(x))
-                    .top(px(y))
-                    .min_w(px(140.))
-                    .py(px(4.))
-                    .rounded(px(6.))
-                    .bg(t.elevated)
-                    .border_1()
-                    .border_color(t.border)
-                    .shadow_md()
-                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .children(items.into_iter().map(|(label, key, check, color)| {
-                        let (r, k) = (route.clone(), key.clone());
-                        crate::dev_id_z!(
-                            div()
-                                .id(crate::ui::eid(format!("route-method-option-{key}")))
-                                .h(px(26.))
-                                .px(px(12.))
-                                .flex()
-                                .flex_row()
-                                .items_center()
-                                .justify_between()
-                                .cursor_pointer()
-                                .text_size(px(12.))
-                                .text_color(color)
-                                .font_family(crate::assets::BUFFER_FONT)
-                                .hover(move |s| s.bg(hover))
-                                .on_click(cx.listener(move |this, _, w, cx| {
-                                    if k == "custom" {
-                                        this.lc.method_menu = None;
-                                        this.run_action_id("edit_route_method_custom", w, cx);
-                                    } else {
-                                        this.set_route_method(&r, &k, cx);
-                                    }
-                                }))
-                                .child(label.clone())
-                                .children(check.then(|| crate::ui::icon("check", 12., t.created)),),
-                            1,
-                            format!("route-method-option-{key}"),
-                            MenuItem,
-                            label,
-                            RouteMethod(route.clone(), key.clone())
-                        )
-                    })),
-            )
+        items.push(ComboItem::action("custom", "Custom…").separator());
+        let rid = r.id.clone();
+        self.combo_field(
+            cx,
+            ComboSite {
+                key: format!("route-method-{}", r.id),
+                items,
+                value: Some(current.clone().into()),
+                fallback: Some(r.method.clone().into()),
+                color: Some(t.method_color(&r.method)),
+                tip: None,
+                width: ComboWidth::Auto,
+                look: ComboLook::Badge,
+                size: ComboSize::Medium,
+                on_event: std::rc::Rc::new(move |this, ev, cx| match ev {
+                    ComboEvent::Change(m) => this.set_route_method(&rid, m, cx),
+                    ComboEvent::Action(_) => this.defer_action("edit_route_method_custom", cx),
+                    _ => {}
+                }),
+            },
+        )
+    }
+
+    /// The Response mode of a Route.
+    pub(crate) fn response_mode_combo(
+        &self,
+        route: &str,
+        mode: &str,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        use crate::combo_box::*;
+        let rid = route.to_string();
+        self.combo_field(
+            cx,
+            ComboSite {
+                key: format!("route-response-mode-{route}"),
+                items: fauxfield_model::rules::RESPONSE_MODES
+                    .iter()
+                    .map(|m| ComboItem::plain(*m))
+                    .collect(),
+                value: Some(mode.to_string().into()),
+                fallback: Some(mode.to_string().into()),
+                color: None,
+                tip: None,
+                width: ComboWidth::Fixed(140.),
+                look: ComboLook::Field,
+                size: ComboSize::Small,
+                on_event: std::rc::Rc::new(move |this, ev, cx| {
+                    if let ComboEvent::Change(m) = ev {
+                        this.set_response_mode_value(&rid, m, cx);
+                    }
+                }),
+            },
+        )
     }
 }

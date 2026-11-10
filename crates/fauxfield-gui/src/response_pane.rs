@@ -6,15 +6,16 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, Bounds, ClickEvent, Context, InteractiveElement, IntoElement, KeyDownEvent,
-    MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, StatefulInteractiveElement,
-    Styled, Window, canvas, div, prelude::*, px,
+    AnyElement, Bounds, ClickEvent, Context, InteractiveElement, IntoElement, MouseButton,
+    MouseDownEvent, ParentElement, Pixels, StatefulInteractiveElement, Styled, Window, canvas, div,
+    prelude::*, px,
 };
 
 use crate::assets::BUFFER_FONT;
 use crate::code_editor::{CodeEditor, EditorEvent, Language, format};
-use crate::editor::{self, TextBuf};
+use crate::editor;
 use crate::shell::{BodyEdit, Shell};
+use crate::text_input::{InputEvent, TextInput};
 use crate::theme::Theme;
 use crate::ui::icon;
 use crate::view::Response;
@@ -97,10 +98,13 @@ impl InlineTarget {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct InlineEdit {
     pub target: InlineTarget,
-    pub buf: TextBuf,
+    /// Mirror of the input's text (completions and validation read it without a context).
+    pub text: String,
+    /// The field's input.
+    pub input: gpui::Entity<TextInput>,
     /// Highlighted completion.
     pub ac_sel: usize,
     /// The highlight was moved with Up/Down. Until then only a completion that the typed text
@@ -152,25 +156,57 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.inline.as_ref().is_some_and(|i| i.target == target) {
-            window.focus(&self.field_focus);
+        if let Some(i) = self.inline.as_ref().filter(|i| i.target == target) {
+            i.input.read(cx).focus(window);
             return;
         }
         self.commit_inline(Nav::Stay, window, cx);
         self.commit_body_edit(cx);
-        let mut buf = TextBuf::new(initial);
-        if select_all {
-            buf.select_all();
-        }
+        let numeric = matches!(target, InlineTarget::Status(_) | InlineTarget::Seed(_))
+            || matches!(&target, InlineTarget::Net { field, .. } if field.numeric());
+        let vertical = target.is_header();
+        let input = cx.new(|cx| {
+            let t = TextInput::new(cx).flush();
+            let t = if select_all {
+                t.text_selected(initial)
+            } else {
+                t.text(initial)
+            };
+            let t = if numeric {
+                t.filter(crate::text_input::InputFilter::Digits)
+            } else {
+                t
+            };
+            // Up/Down walk the completion list of a header cell.
+            if vertical { t.vertical_events() } else { t }
+        });
+        self.inline_sub = Some(cx.subscribe_in(
+            &input,
+            window,
+            |this: &mut Shell, input, ev: &InputEvent, window, cx| {
+                this.on_inline_event(input, ev, window, cx)
+            },
+        ));
+        input.read(cx).focus(window);
+        self.inline_focus = Some(input.read(cx).focus_handle(cx));
         self.inline = Some(InlineEdit {
             target,
-            buf,
+            text: initial.to_string(),
+            input,
             ac_sel: 0,
             ac_explicit: false,
             ac_open: true,
         });
-        window.focus(&self.field_focus);
         cx.notify();
+    }
+
+    /// Replace the active field's text (completion picked, tests).
+    pub(crate) fn set_inline_text(&mut self, text: &str, cx: &mut Context<Self>) {
+        if let Some(e) = self.inline.as_mut() {
+            e.text = text.to_string();
+            let input = e.input.clone();
+            input.update(cx, |t, cx| t.set_value(text, cx));
+        }
     }
 
     pub(crate) fn cancel_inline(&mut self, cx: &mut Context<Self>) {
@@ -251,7 +287,7 @@ impl Shell {
         let Some(edit) = self.inline.take() else {
             return;
         };
-        let v = edit.buf.text.trim().to_string();
+        let v = edit.text.trim().to_string();
         match edit.target {
             InlineTarget::Status(id) => match v.parse::<u16>() {
                 Ok(n) if (100..=599).contains(&n) => {
@@ -315,16 +351,16 @@ impl Shell {
                 });
             }
             InlineTarget::HeaderKey { response, row } => {
-                self.commit_header_key(&response, row, &edit.buf.text, nav, window, cx)
+                self.commit_header_key(&response, row, &edit.text, nav, window, cx)
             }
             InlineTarget::HeaderValue { response, row } => {
-                self.commit_header_value(&response, row, &edit.buf.text, nav, window, cx)
+                self.commit_header_value(&response, row, &edit.text, nav, window, cx)
             }
             InlineTarget::RouteHeaderKey { route, row } => {
-                self.commit_route_header_key(&route, row, &edit.buf.text, nav, window, cx)
+                self.commit_route_header_key(&route, row, &edit.text, nav, window, cx)
             }
             InlineTarget::RouteHeaderValue { route, row } => {
-                self.commit_route_header_value(&route, row, &edit.buf.text, nav, window, cx)
+                self.commit_route_header_value(&route, row, &edit.text, nav, window, cx)
             }
             InlineTarget::Net { server, field } => self.commit_net_field(&server, field, &v, cx),
             InlineTarget::FaultRate(id) => self.commit_fault_rate(&id, &v, cx),
@@ -345,53 +381,57 @@ impl Shell {
         cx.notify();
     }
 
-    pub(crate) fn on_field_key(
+    /// The active field's input reported an event.
+    fn on_inline_event(
         &mut self,
-        ev: &KeyDownEvent,
+        input: &gpui::Entity<TextInput>,
+        ev: &InputEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let m = ev.keystroke.modifiers;
-        let key = ev.keystroke.key.as_str();
-        let sugg = self.inline_suggestions();
-        let is_header = self.inline.as_ref().is_some_and(|i| i.target.is_header());
         let is_key_cell = matches!(
             self.inline.as_ref().map(|i| &i.target),
             Some(InlineTarget::HeaderKey { .. } | InlineTarget::RouteHeaderKey { .. })
         );
-        let numeric = matches!(
-            self.inline.as_ref().map(|i| &i.target),
-            Some(InlineTarget::Status(_) | InlineTarget::Seed(_))
-        ) || matches!(
-            self.inline.as_ref().map(|i| &i.target),
-            Some(InlineTarget::Net { field, .. }) if field.numeric()
-        );
-        match key {
-            "escape" => {
-                if sugg.is_empty() {
+        match ev {
+            InputEvent::Change => {
+                let v = input.read(cx).value().to_string();
+                if let Some(i) = self.inline.as_mut() {
+                    i.text = v;
+                    i.ac_sel = 0;
+                    i.ac_explicit = false;
+                    i.ac_open = true;
+                }
+            }
+            InputEvent::Escape => {
+                if self.inline_suggestions().is_empty() {
                     self.cancel_inline(cx);
                 } else if let Some(i) = self.inline.as_mut() {
                     i.ac_open = false;
                 }
             }
-            "enter" | "tab" => {
+            InputEvent::PressEnter { .. } | InputEvent::Tab { .. } => {
                 // The chosen completion replaces the text first.
-                if let Some(i) = self.inline.as_mut()
-                    && let Some(at) = chosen(&sugg, i.ac_sel, i.ac_explicit)
-                {
-                    i.buf = TextBuf::new(sugg[at].label);
+                let sugg = self.inline_suggestions();
+                let pick = self
+                    .inline
+                    .as_ref()
+                    .and_then(|i| chosen(&sugg, i.ac_sel, i.ac_explicit));
+                if let Some(at) = pick {
+                    self.set_inline_text(sugg[at].label, cx);
                 }
-                let nav = match (key, m.shift) {
-                    ("tab", true) => Nav::Prev,
-                    ("tab", false) => Nav::Next,
+                let nav = match ev {
+                    InputEvent::Tab { reverse: true } => Nav::Prev,
+                    InputEvent::Tab { .. } => Nav::Next,
                     // Enter finishes a header key by moving on to its value.
                     _ if is_key_cell => Nav::Next,
                     _ => Nav::Stay,
                 };
                 self.commit_inline(nav, window, cx);
             }
-            "up" | "down" if is_header => {
-                let n = sugg.len();
+            InputEvent::Up | InputEvent::Down => {
+                let up = *ev == InputEvent::Up;
+                let n = self.inline_suggestions().len();
                 if let Some(i) = self.inline.as_mut() {
                     if n == 0 || !i.ac_open {
                         // Down reopens the popup for a known header.
@@ -401,9 +441,9 @@ impl Shell {
                     } else if !i.ac_explicit {
                         // The first Up/Down only shows the highlight (Down: first row).
                         i.ac_explicit = true;
-                        i.ac_sel = if key == "up" { n - 1 } else { 0 };
+                        i.ac_sel = if up { n - 1 } else { 0 };
                     } else {
-                        i.ac_sel = if key == "up" {
+                        i.ac_sel = if up {
                             i.ac_sel.saturating_sub(1)
                         } else {
                             (i.ac_sel + 1).min(n - 1)
@@ -411,86 +451,9 @@ impl Shell {
                     }
                 }
             }
-            _ => {
-                let Some(i) = self.inline.as_mut() else {
-                    return;
-                };
-                let b = &mut i.buf;
-                let mut edited = false;
-                match key {
-                    "backspace" => {
-                        b.backspace();
-                        edited = true;
-                    }
-                    "delete" => {
-                        b.delete();
-                        edited = true;
-                    }
-                    "left" => b.left(m.shift),
-                    "right" => b.right(m.shift),
-                    "home" | "up" => b.home(m.shift),
-                    "end" | "down" => b.end(m.shift),
-                    _ => {
-                        if m.secondary() || m.control || m.alt {
-                            return;
-                        }
-                        let Some(ch) = ev.keystroke.key_char.as_deref() else {
-                            return;
-                        };
-                        if numeric && !ch.chars().all(|c| c.is_ascii_digit()) {
-                            cx.stop_propagation();
-                            return;
-                        }
-                        b.insert(ch);
-                        edited = true;
-                    }
-                }
-                if edited {
-                    i.ac_sel = 0;
-                    i.ac_explicit = false;
-                    i.ac_open = true;
-                }
-            }
-        }
-        cx.stop_propagation();
-        cx.notify();
-    }
-
-    /// Column under window x inside the active field, from its painted bounds.
-    fn field_col(&self, x: Pixels) -> Option<usize> {
-        let b = self.inline_bounds.get()?;
-        let w = if self.mono_w > 0.0 { self.mono_w } else { 7.8 };
-        Some(((f32::from(x - b.origin.x)) / w).round().max(0.0) as usize)
-    }
-
-    pub(crate) fn field_mouse_down(&mut self, ev: &MouseDownEvent, cx: &mut Context<Self>) {
-        let Some(col) = self.field_col(ev.position.x) else {
-            return;
-        };
-        if let Some(i) = self.inline.as_mut() {
-            if ev.click_count >= 2 {
-                i.buf.select_all();
-                self.field_drag = false;
-            } else {
-                i.buf.set_line_col(0, col, ev.modifiers.shift);
-                self.field_drag = true;
-            }
-            i.ac_open = false;
+            _ => {}
         }
         cx.notify();
-    }
-
-    pub(crate) fn field_mouse_move(&mut self, ev: &MouseMoveEvent, cx: &mut Context<Self>) {
-        if !self.field_drag || ev.pressed_button != Some(MouseButton::Left) {
-            return;
-        }
-        let Some(col) = self.field_col(ev.position.x) else {
-            return;
-        };
-        if let Some(i) = self.inline.as_mut() {
-            i.buf.set_line_col(0, col, true);
-            cx.notify();
-        }
     }
 
     /// A press outside the field ends the edit, unless it landed on the completion popup
@@ -830,96 +793,53 @@ impl Shell {
             .border_1()
             .font_family(BUFFER_FONT)
             .text_size(px(12.));
-        let el =
-            match editing {
-                Some(e) => {
-                    let b = &e.buf;
-                    let (pre, sel, post, cur_before) = match b.selection() {
-                        Some((a, z)) => (
-                            b.text[..a].to_string(),
-                            b.text[a..z].to_string(),
-                            b.text[z..].to_string(),
-                            b.cursor == a,
-                        ),
-                        None => (
-                            b.text[..b.cursor].to_string(),
-                            String::new(),
-                            b.text[b.cursor..].to_string(),
-                            false,
-                        ),
-                    };
-                    let caret = || div().w(px(1.5)).h(px(15.)).bg(t.accent).flex_none();
-                    base.border_color(t.border_focused)
-                        .bg(t.editor)
-                        .key_context("Field")
-                        .track_focus(&self.field_focus)
-                        .on_key_down(cx.listener(|this, ev: &KeyDownEvent, w, cx| {
-                            this.on_field_key(ev, w, cx)
-                        }))
-                        .on_mouse_down_out(cx.listener(|this, ev: &MouseDownEvent, w, cx| {
-                            this.field_press_outside(ev, w, cx)
-                        }))
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(|this, ev: &MouseDownEvent, _, cx| {
-                                this.field_mouse_down(ev, cx);
-                                cx.stop_propagation();
-                            }),
-                        )
-                        .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _, cx| {
-                            this.field_mouse_move(ev, cx)
-                        }))
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _, _, _| this.field_drag = false),
-                        )
+        let el = match editing {
+            Some(e) => base
+                .border_color(t.border_focused)
+                .bg(t.editor)
+                .key_context("Field")
+                .on_mouse_down_out(cx.listener(|this, ev: &MouseDownEvent, w, cx| {
+                    this.field_press_outside(ev, w, cx)
+                }))
+                .child(
+                    // The painted bounds anchor the completion popup.
+                    div()
+                        .relative()
+                        .flex_1()
+                        .min_w_0()
+                        .h_full()
                         .child(
-                            // Text starts here: the painted bounds map a click to a column.
-                            div()
-                                .relative()
-                                .h_full()
-                                .flex()
-                                .flex_row()
-                                .items_center()
-                                .child(
-                                    canvas(
-                                        {
-                                            let cell = self.inline_bounds.clone();
-                                            move |b: Bounds<Pixels>, _, _| cell.set(Some(b))
-                                        },
-                                        |_, _, _, _| {},
-                                    )
-                                    .absolute()
-                                    .size_full(),
-                                )
-                                .child(div().child(pre))
-                                .when(cur_before, |d| d.child(caret()))
-                                .when(!sel.is_empty(), |d| {
-                                    d.child(div().bg(t.element_selected).child(sel))
-                                })
-                                .when(!cur_before, |d| d.child(caret()))
-                                .child(div().child(post)),
+                            canvas(
+                                {
+                                    let cell = self.inline_bounds.clone();
+                                    move |b: Bounds<Pixels>, _, _| cell.set(Some(b))
+                                },
+                                |_, _, _, _| {},
+                            )
+                            .absolute()
+                            .size_full(),
                         )
-                        .into_any_element()
-                }
-                None => {
-                    let (initial, tgt) = (value.to_string(), target.clone());
-                    base.border_color(t.border_variant)
-                        .cursor_text()
-                        .hover(|s| s.border_color(t.border))
-                        .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
-                            this.begin_inline(tgt.clone(), &initial, select_all, w, cx)
-                        }))
-                        .child(if value.is_empty() {
-                            div()
-                                .text_color(t.text_placeholder)
-                                .child(placeholder.to_string())
-                        } else {
-                            div().text_color(t.text).child(value.to_string())
-                        })
-                        .into_any_element()
-                }
-            };
+                        .child(e.input.clone()),
+                )
+                .into_any_element(),
+            None => {
+                let (initial, tgt) = (value.to_string(), target.clone());
+                base.border_color(t.border_variant)
+                    .cursor_text()
+                    .hover(|s| s.border_color(t.border))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, w, cx| {
+                        this.begin_inline(tgt.clone(), &initial, select_all, w, cx)
+                    }))
+                    .child(if value.is_empty() {
+                        div()
+                            .text_color(t.text_placeholder)
+                            .child(placeholder.to_string())
+                    } else {
+                        div().text_color(t.text).child(value.to_string())
+                    })
+                    .into_any_element()
+            }
+        };
         crate::dev_id!(el, dev_id, Input, placeholder, None).into_any_element()
     }
 

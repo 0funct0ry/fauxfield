@@ -272,35 +272,7 @@ impl Shell {
                     .gap(px(10.))
                     .border_b_1()
                     .border_color(t.border_variant)
-                    .child(crate::dev_id!(
-                        div()
-                            .id(crate::ui::eid(format!("route-method-{}", r.id)))
-                            .px(px(8.))
-                            .py(px(2.))
-                            .rounded(px(4.))
-                            .bg(t.element_selected)
-                            .cursor_pointer()
-                            .font_family(BUFFER_FONT)
-                            .text_size(px(12.))
-                            .text_color(t.method_color(&r.method))
-                            .flex()
-                            .flex_row()
-                            .items_center()
-                            .gap(px(4.))
-                            .on_click(cx.listener(|this, ev: &gpui::ClickEvent, _, cx| {
-                                let p = ev.position();
-                                this.open_method_menu(
-                                    Some((f32::from(p.x) - 8., f32::from(p.y) + 14.)),
-                                    cx,
-                                )
-                            }))
-                            .child(r.method.clone())
-                            .child(icon("chevron-down", 12., t.icon_muted)),
-                        format!("route-method-{}", r.id),
-                        Button,
-                        "Route method",
-                        Action("edit_route_method")
-                    ))
+                    .child(self.route_method_combo(t, r, cx))
                     .child(crate::dev_id!(
                         div()
                             .id(crate::ui::eid(format!("route-path-{}", r.id)))
@@ -642,34 +614,9 @@ impl Shell {
             )))
             .child({
                 let route_id = r.id.clone();
-                row().child(label("Response mode")).child(crate::dev_id!(
-                    div()
-                        .id("route-response-mode")
-                        .h(px(22.))
-                        .px(px(4.))
-                        .flex()
-                        .items_center()
-                        .font_family(BUFFER_FONT)
-                        .text_size(px(12.))
-                        .cursor_pointer()
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, ev: &gpui::MouseDownEvent, _, cx| {
-                                this.open_picker_menu(
-                                    &route_id,
-                                    crate::tree::RowKind::ResponseMode,
-                                    f32::from(ev.position.x),
-                                    f32::from(ev.position.y),
-                                    cx,
-                                );
-                            }),
-                        )
-                        .child(r.response_mode.clone()),
-                    "route-response-mode",
-                    Button,
-                    r.response_mode.clone(),
-                    Press(format!("response-mode:{}", r.id))
-                ))
+                row()
+                    .child(label("Response mode"))
+                    .child(self.response_mode_combo(&route_id, &r.response_mode, cx))
             })
             .child(row().child(label("Test a path")).child(field_button_with(
                 "route-test-path-input",
@@ -766,11 +713,9 @@ impl Shell {
             .flex_row()
             .child(
                 div()
-                    .w(px(200.))
+                    .w(px(self.layout.resp_list_width))
                     .h_full()
                     .flex_none()
-                    .border_r_1()
-                    .border_color(t.border_variant)
                     .bg(t.panel)
                     .flex()
                     .flex_col()
@@ -786,6 +731,7 @@ impl Shell {
                     )
                     .child(self.render_response_footer(t, r, cx)),
             )
+            .child(self.resize_handle_v(t, crate::shell::Resize::RespList, cx))
             .child(
                 div()
                     .flex_1()

@@ -407,12 +407,7 @@ impl Shell {
             .into_any_element(),
             RowKind::Dataset { .. } => icon("table", 13., t.icon_muted).into_any_element(),
             RowKind::CrudOp { method } => method_badge(t, method).into_any_element(),
-            RowKind::Response { .. }
-            | RowKind::ErrorPresets
-            | RowKind::RuleTarget
-            | RowKind::RuleOp
-            | RowKind::ResponseFault
-            | RowKind::ResponseMode => div().into_any_element(),
+            RowKind::Response { .. } | RowKind::ErrorPresets => div().into_any_element(),
         };
         let chevron: gpui::AnyElement = if r.expandable {
             crate::dev_id!(
@@ -760,41 +755,12 @@ impl Shell {
             .collect()
     }
 
-    /// The label of the current choice of a combobox menu.
-    pub(crate) fn menu_current(&self, m: &crate::shell::RowMenu) -> Option<String> {
-        match m.kind {
-            RowKind::RuleTarget | RowKind::RuleOp => {
-                m.row_id.split_once('#').and_then(|(resp, idx)| {
-                    let rule = self
-                        .find_response(resp)?
-                        .2
-                        .rules
-                        .get(idx.parse::<usize>().ok()?)?
-                        .clone();
-                    Some(if matches!(m.kind, RowKind::RuleTarget) {
-                        rule.target
-                    } else {
-                        rule.op
-                    })
-                })
-            }
-            RowKind::ResponseFault => {
-                let f = self.find_response(&m.row_id)?.2.fault;
-                Some(if f.is_empty() { "none".into() } else { f })
-            }
-            _ => None,
-        }
-    }
-
     pub(crate) fn render_row_menu(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let m = self.menu.as_ref().expect("menu is open");
         let hover = t.element_hover;
         let items = self.menu_item_list(m);
-        // Comboboxes mark the current choice with a check.
-        let current = self.menu_current(m);
-        let is_combo = m.kind.is_combo();
         let selected = self.menu_sel;
-        let (check_col, muted) = (t.accent, t.text);
+        let muted = t.text;
         div()
             .id("row-menu-backdrop")
             .absolute()
@@ -813,7 +779,7 @@ impl Shell {
                     .absolute()
                     .left(px(m.x))
                     .top(px(m.y))
-                    .min_w(px(m.min_w))
+                    .min_w(px(160.))
                     .py(px(4.))
                     .rounded(px(6.))
                     .bg(t.elevated)
@@ -845,14 +811,6 @@ impl Shell {
                                         .on_click(cx.listener(move |this, _, w, cx| {
                                             this.run_menu(act, w, cx)
                                         }))
-                                        .when(is_combo, |d| {
-                                            let on = current.as_deref() == Some(label.as_str());
-                                            d.gap(px(6.)).child(
-                                                div().w(px(14.)).flex_none().when(on, |d| {
-                                                    d.child(icon("check", 12., check_col))
-                                                }),
-                                            )
-                                        })
                                         .text_color(muted)
                                         .child(label.clone()),
                                     1,

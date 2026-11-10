@@ -7,9 +7,8 @@ steps:
   - assert: {pointer: /view, equals: workspace}
   - assert: {pointer: /servers/0/id, equals: srv_users}
   - assert: {pointer: /problems, equals: 0}
-  # New server through the action and a prompt.
+  # New server through the action and the New Server dialog (host and port prefilled).
   - invoke: new_server
-  - assert: {pointer: /prompt, equals: New server name}
   - type_text: Scenario API
   - key: enter
   - assert: {pointer: /servers/2/name, equals: Scenario API}

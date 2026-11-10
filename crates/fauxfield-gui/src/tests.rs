@@ -322,11 +322,40 @@ fn creating_renaming_and_deleting_edits_the_files(cx: &mut TestAppContext) {
     // New server through the palette action and a prompt.
     view.update_in(cx, |s, w, cx| s.run_action_id("new_server", w, cx));
     cx.run_until_parked();
-    assert_eq!(
-        read(&view, cx, |s| s.picker.as_ref().map(|p| p.kind)),
-        Some(PickerKind::Prompt)
-    );
-    type_prompt(&view, cx, "Billing API");
+    assert!(read(&view, cx, |s| s.server_dialog.is_some()));
+    let set = |view: &Entity<Shell>, cx: &mut VisualTestContext, vals: [&str; 3]| {
+        view.update_in(cx, |s, _, cx| {
+            let ins = s.server_dialog.as_ref().unwrap().inputs.clone();
+            for (inp, v) in ins.iter().zip(vals) {
+                inp.update(cx, |t, cx| t.set_value(v, cx));
+            }
+        });
+    };
+    // Host and port arrive prefilled; an empty name is refused and keeps the dialog open.
+    let (host, port0) = view.update_in(cx, |s, _, cx| {
+        let d = s.server_dialog.as_ref().unwrap();
+        (
+            d.inputs[1].read(cx).value().to_string(),
+            d.inputs[2].read(cx).value().to_string(),
+        )
+    });
+    assert_eq!(host, "127.0.0.1");
+    assert!(!port0.is_empty());
+    view.update_in(cx, |s, w, cx| s.submit_server_dialog(w, cx));
+    assert!(read(&view, cx, |s| s.server_dialog.is_some()));
+    // A port already used on the same host is refused.
+    let (used, uhost) = read(&view, cx, |s| {
+        (
+            s.ws.servers[0].port.to_string(),
+            s.ws.servers[0].host.clone(),
+        )
+    });
+    set(&view, cx, ["Dup", &uhost, &used]);
+    view.update_in(cx, |s, w, cx| s.submit_server_dialog(w, cx));
+    assert!(read(&view, cx, |s| s.server_dialog.is_some()));
+    set(&view, cx, ["Billing API", "127.0.0.1", "4021"]);
+    view.update_in(cx, |s, w, cx| s.submit_server_dialog(w, cx));
+    assert!(read(&view, cx, |s| s.server_dialog.is_none()));
     let (id, port) = read(&view, cx, |s| {
         let b =
             s.ws.servers
@@ -365,7 +394,7 @@ fn creating_renaming_and_deleting_edits_the_files(cx: &mut TestAppContext) {
     cx.run_until_parked();
     // The status is an inline field now: type over the selected value and commit.
     view.update_in(cx, |s, w, cx| {
-        s.inline.as_mut().unwrap().buf = crate::editor::TextBuf::new("418");
+        s.set_inline_text("418", cx);
         s.commit_inline(crate::response_pane::Nav::Stay, w, cx);
     });
     assert_eq!(
@@ -911,10 +940,13 @@ fn the_route_method_dropdown_changes_the_verb(cx: &mut TestAppContext) {
     cx.run_until_parked(); // render, so the menu gating sees the open tab
     view.update_in(cx, |s, w, cx| s.run_action_id("edit_route_method", w, cx));
     cx.run_until_parked();
-    assert!(read(&view, cx, |s| s.lc.method_menu.is_some()));
-    cx.run_until_parked(); // the dropdown renders
-    view.update(cx, |s, cx| s.set_route_method("rt_users_get", "patch", cx));
-    assert!(read(&view, cx, |s| s.lc.method_menu.is_none()));
+    assert!(read(&view, cx, |s| s.any_combo_open()));
+    cx.run_until_parked(); // the list renders
+    view.update_in(cx, |s, w, cx| {
+        assert!(s.combo_pick("route-method-rt_users_get", "PATCH", w, cx))
+    });
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| !s.any_combo_open()));
     assert_eq!(
         read(&view, cx, |s| s
             .ws
@@ -1290,7 +1322,7 @@ fn response_menu_body_editor_and_headers(cx: &mut TestAppContext) {
     let type_field = |view: &Entity<Shell>, cx: &mut VisualTestContext, t: I, text: &str| {
         view.update_in(cx, |s, w, cx| {
             s.begin_inline(t, "", false, w, cx);
-            s.inline.as_mut().unwrap().buf = crate::editor::TextBuf::new(text);
+            s.set_inline_text(text, cx);
             s.commit_inline(Nav::Stay, w, cx);
         });
     };
@@ -1302,7 +1334,7 @@ fn response_menu_body_editor_and_headers(cx: &mut TestAppContext) {
     // Body from a file, then back to inline.
     view.update_in(cx, |s, w, cx| s.set_body_file_mode(&r, true, w, cx));
     view.update_in(cx, |s, w, cx| {
-        s.inline.as_mut().unwrap().buf = crate::editor::TextBuf::new("bodies/user.json");
+        s.set_inline_text("bodies/user.json", cx);
         s.commit_inline(Nav::Stay, w, cx);
     });
     assert_eq!(
@@ -1466,6 +1498,8 @@ fn headers_table_edits_completes_and_navigates(cx: &mut TestAppContext) {
         s.reload(cx);
         id
     });
+    // The field's input is driven directly: the header cell may not be on screen in this test,
+    // so there is no input handler for simulated typing to reach.
     let key = |view: &Entity<Shell>, cx: &mut VisualTestContext, k: &str, ch: Option<&str>| {
         let mut ks = gpui::Keystroke::parse(k).unwrap();
         ks.key_char = ch.map(String::from);
@@ -1473,7 +1507,15 @@ fn headers_table_edits_completes_and_navigates(cx: &mut TestAppContext) {
             keystroke: ks,
             is_held: false,
         };
-        view.update_in(cx, |s, w, cx| s.on_field_key(&ev, w, cx));
+        let Some(input) = read(view, cx, |s| s.inline.as_ref().map(|i| i.input.clone())) else {
+            return;
+        };
+        match ch {
+            Some(c) => input.update(cx, |t, cx| t.insert_text(c, cx)),
+            None => {
+                input.update_in(cx, |t, w, cx| t.handle_key(&ev, w, cx));
+            }
+        }
     };
     let typed = |view: &Entity<Shell>, cx: &mut VisualTestContext, text: &str| {
         for c in text.chars() {
@@ -1615,20 +1657,7 @@ fn m5_rules_modes_reorder_presets_and_sample(cx: &mut TestAppContext) {
         read(view, cx, |s| s.find_response(&first).unwrap().2.rules)
     };
     assert_eq!(rules(&view, cx).len(), 1);
-    view.update_in(cx, |s, w, cx| {
-        s.open_picker_menu(
-            &format!("{first}#0"),
-            crate::tree::RowKind::RuleOp,
-            0.,
-            0.,
-            cx,
-        );
-        let i = fauxfield_model::rules::OPS
-            .iter()
-            .position(|o| *o == "regex")
-            .unwrap();
-        s.run_menu(MenuAct::SetRuleOp(i), w, cx);
-    });
+    view.update(cx, |s, cx| s.set_rule_op(&first, 0, "regex", cx));
     assert_eq!(rules(&view, cx)[0].op, "regex");
     view.update(cx, |s, cx| {
         s.edit_rule(&first, 0, cx, |r| {
@@ -1640,15 +1669,8 @@ fn m5_rules_modes_reorder_presets_and_sample(cx: &mut TestAppContext) {
     assert!(rules(&view, cx)[0].negate);
 
     // Response mode, disable, reorder, preset.
-    view.update_in(cx, |s, w, cx| {
-        s.open_picker_menu(
-            "rt_users_get",
-            crate::tree::RowKind::ResponseMode,
-            0.,
-            0.,
-            cx,
-        );
-        s.run_menu(MenuAct::SetResponseMode(1), w, cx);
+    view.update(cx, |s, cx| {
+        s.set_response_mode_value("rt_users_get", "sequential", cx)
     });
     assert_eq!(
         read(&view, cx, |s| s
@@ -1691,7 +1713,7 @@ fn m5_rules_modes_reorder_presets_and_sample(cx: &mut TestAppContext) {
     use crate::response_pane::{InlineTarget as I, Nav};
     view.update_in(cx, |s, w, cx| {
         s.begin_inline(I::Description(first.clone()), "", false, w, cx);
-        s.inline.as_mut().unwrap().buf = crate::editor::TextBuf::new("Only for admins");
+        s.set_inline_text("Only for admins", cx);
         s.commit_inline(Nav::Stay, w, cx);
     });
     assert_eq!(
@@ -1765,6 +1787,8 @@ fn templating_preview_route_headers_seed_and_dice(cx: &mut TestAppContext) {
         cx.notify();
     });
     cx.run_until_parked();
+    // The field's input is driven directly: the header cell may not be on screen in this test,
+    // so there is no input handler for simulated typing to reach.
     let key = |view: &Entity<Shell>, cx: &mut VisualTestContext, k: &str, ch: Option<&str>| {
         let mut ks = gpui::Keystroke::parse(k).unwrap();
         ks.key_char = ch.map(String::from);
@@ -1772,7 +1796,15 @@ fn templating_preview_route_headers_seed_and_dice(cx: &mut TestAppContext) {
             keystroke: ks,
             is_held: false,
         };
-        view.update_in(cx, |s, w, cx| s.on_field_key(&ev, w, cx));
+        let Some(input) = read(view, cx, |s| s.inline.as_ref().map(|i| i.input.clone())) else {
+            return;
+        };
+        match ch {
+            Some(c) => input.update(cx, |t, cx| t.insert_text(c, cx)),
+            None => {
+                input.update_in(cx, |t, w, cx| t.handle_key(&ev, w, cx));
+            }
+        }
     };
     let typed = |view: &Entity<Shell>, cx: &mut VisualTestContext, text: &str| {
         for c in text.chars() {
@@ -1969,7 +2001,7 @@ fn network_and_fault_controls(cx: &mut TestAppContext) {
     let type_field = |view: &Entity<Shell>, cx: &mut VisualTestContext, t: I, text: &str| {
         view.update_in(cx, |s, w, cx| {
             s.begin_inline(t, "", false, w, cx);
-            s.inline.as_mut().unwrap().buf = crate::editor::TextBuf::new(text);
+            s.set_inline_text(text, cx);
             s.commit_inline(Nav::Stay, w, cx);
         });
     };
@@ -1986,19 +2018,13 @@ fn network_and_fault_controls(cx: &mut TestAppContext) {
     assert_eq!(resp(&view, cx).delay, "");
 
     // Fault is picked from a menu (index 1 = timeout); the rate is validated.
-    view.update_in(cx, |s, w, cx| {
-        s.open_picker_menu(&r, crate::tree::RowKind::ResponseFault, 0., 0., cx);
-        s.run_menu(MenuAct::SetResponseFault(1), w, cx);
-    });
+    view.update(cx, |s, cx| s.set_response_fault(&r, "timeout", cx));
     assert_eq!(resp(&view, cx).fault, "timeout");
     type_field(&view, cx, I::FaultRate(r.clone()), "0.3");
     assert_eq!(resp(&view, cx).fault_rate, "0.3");
     type_field(&view, cx, I::FaultRate(r.clone()), "7");
     assert_eq!(resp(&view, cx).fault_rate, "0.3");
-    view.update_in(cx, |s, w, cx| {
-        s.open_picker_menu(&r, crate::tree::RowKind::ResponseFault, 0., 0., cx);
-        s.run_menu(MenuAct::SetResponseFault(0), w, cx);
-    });
+    view.update(cx, |s, cx| s.set_response_fault(&r, "none", cx));
     assert_eq!(resp(&view, cx).fault, "");
     assert_eq!(resp(&view, cx).fault_rate, "");
 
@@ -2074,7 +2100,7 @@ fn tls_cors_and_static_controls(cx: &mut TestAppContext) {
     let type_field = |view: &Entity<Shell>, cx: &mut VisualTestContext, t: I, text: &str| {
         view.update_in(cx, |s, w, cx| {
             s.begin_inline(t, "", false, w, cx);
-            s.inline.as_mut().unwrap().buf = crate::editor::TextBuf::new(text);
+            s.set_inline_text(text, cx);
             s.commit_inline(Nav::Stay, w, cx);
         });
     };
@@ -2152,31 +2178,47 @@ fn tls_cors_and_static_controls(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn menus_are_keyboard_navigable(cx: &mut TestAppContext) {
+fn comboboxes_are_keyboard_operable(cx: &mut TestAppContext) {
     let (view, cx) = setup(cx, None);
-    let r = "rsp_users_get_2".to_string();
-    view.update(cx, |s, cx| {
-        s.open_picker_menu(&r, crate::tree::RowKind::ResponseFault, 0., 0., cx)
+    view.update(cx, |s, _cx| {
+        s.open_tab("rt_users_get", TabKind::Route, "Get user", false)
     });
-    let sel = |v: &Entity<Shell>, cx: &mut VisualTestContext| read(v, cx, |s| s.menu_sel);
-    assert_eq!(sel(&view, cx), 0);
-    cx.simulate_keystrokes("down down");
-    assert_eq!(sel(&view, cx), 2);
-    cx.simulate_keystrokes("up up up");
-    assert_eq!(sel(&view, cx), fauxfield_model::FAULTS.len() - 1, "wraps");
-    cx.simulate_keystrokes("r");
-    assert_eq!(fauxfield_model::FAULTS[sel(&view, cx)], "reset");
-    cx.simulate_keystrokes("enter");
-    assert!(read(&view, cx, |s| s.menu.is_none()));
-    assert_eq!(
-        read(&view, cx, |s| s.find_response(&r).unwrap().2.fault),
-        "reset"
-    );
-    view.update(cx, |s, cx| {
-        s.open_picker_menu(&r, crate::tree::RowKind::ResponseFault, 0., 0., cx)
+    view.update(cx, |_, cx| cx.notify());
+    cx.run_until_parked();
+    let method = |v: &Entity<Shell>, cx: &mut VisualTestContext| {
+        read(v, cx, |s| {
+            s.ws.find_route("rt_users_get").unwrap().1.method.clone()
+        })
+    };
+    // Enter on the focused trigger opens the list; Down moves, Enter picks.
+    view.update_in(cx, |s, w, cx| {
+        assert!(s.combo_open("route-method-rt_users_get", w, cx))
     });
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s.any_combo_open()));
+    cx.simulate_keystrokes("down enter");
+    cx.run_until_parked();
+    assert_eq!(method(&view, cx), "POST");
+    assert!(read(&view, cx, |s| !s.any_combo_open()));
+    // Esc closes without a change; the "Custom…" entry runs its palette action.
+    view.update_in(cx, |s, w, cx| {
+        s.combo_open("route-method-rt_users_get", w, cx)
+    });
+    cx.run_until_parked();
     cx.simulate_keystrokes("escape");
-    assert!(read(&view, cx, |s| s.menu.is_none()));
+    assert!(read(&view, cx, |s| !s.any_combo_open()));
+    assert_eq!(method(&view, cx), "POST");
+    view.update_in(cx, |s, w, cx| {
+        s.combo_open("route-method-rt_users_get", w, cx)
+    });
+    cx.run_until_parked();
+    cx.simulate_keystrokes("end enter");
+    cx.run_until_parked();
+    cx.run_until_parked();
+    assert_eq!(
+        read(&view, cx, |s| s.picker.as_ref().map(|p| p.kind)),
+        Some(PickerKind::Prompt)
+    );
 }
 
 #[gpui::test]
@@ -2197,4 +2239,34 @@ fn copy_rule_curl_puts_a_matching_curl_on_the_clipboard(cx: &mut TestAppContext)
         .unwrap_or_default();
     assert!(text.starts_with("curl -X "), "{text}");
     assert!(text.contains("?foo=1"), "{text}");
+}
+
+#[gpui::test]
+fn route_tab_panes_resize_by_drag_and_clamp(cx: &mut TestAppContext) {
+    use crate::shell::Resize;
+    let (view, cx) = setup(cx, None);
+    let mv = |x: f32, y: f32| gpui::MouseMoveEvent {
+        position: gpui::point(gpui::px(x), gpui::px(y)),
+        pressed_button: Some(gpui::MouseButton::Left),
+        modifiers: gpui::Modifiers::default(),
+    };
+    // Dragging the Responses list edge right by 60 px widens it by 60 px.
+    let w0 = read(&view, cx, |s| s.layout.resp_list_width);
+    view.update_in(cx, |s, w, cx| {
+        s.begin_resize(Resize::RespList, (500., 300.), cx);
+        s.on_resize_move(&mv(560., 300.), w, cx);
+    });
+    assert_eq!(read(&view, cx, |s| s.layout.resp_list_width), w0 + 60.);
+    view.update_in(cx, |s, w, cx| s.on_resize_move(&mv(-9000., 300.), w, cx));
+    assert_eq!(
+        read(&view, cx, |s| s.layout.resp_list_width),
+        crate::layout::RESP_LIST.0
+    );
+    // Dragging the Preview edge up grows the preview.
+    let h0 = read(&view, cx, |s| s.layout.preview_height);
+    view.update_in(cx, |s, w, cx| {
+        s.begin_resize(Resize::Preview, (500., 700.), cx);
+        s.on_resize_move(&mv(500., 650.), w, cx);
+    });
+    assert_eq!(read(&view, cx, |s| s.layout.preview_height), h0 + 50.);
 }

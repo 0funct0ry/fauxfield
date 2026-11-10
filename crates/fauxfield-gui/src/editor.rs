@@ -48,6 +48,25 @@ impl TextBuf {
         self.cursor = self.text.len();
     }
 
+    /// The grapheme-cluster boundary before `at` (an emoji or a letter with combining marks
+    /// is one step).
+    pub fn prev_boundary(&self, at: usize) -> usize {
+        use unicode_segmentation::UnicodeSegmentation;
+        self.text[..at]
+            .grapheme_indices(true)
+            .next_back()
+            .map_or(0, |(i, _)| i)
+    }
+
+    /// The grapheme-cluster boundary after `at`.
+    pub fn next_boundary(&self, at: usize) -> usize {
+        use unicode_segmentation::UnicodeSegmentation;
+        self.text[at..]
+            .graphemes(true)
+            .next()
+            .map_or(at, |g| at + g.len())
+    }
+
     /// Start (`extend`) or drop the selection before a cursor move.
     fn begin_move(&mut self, extend: bool) {
         if extend {
@@ -67,7 +86,8 @@ impl TextBuf {
         if self.delete_selection() {
             return;
         }
-        if let Some((i, _)) = self.text[..self.cursor].char_indices().next_back() {
+        let i = self.prev_boundary(self.cursor);
+        if i < self.cursor {
             self.text.replace_range(i..self.cursor, "");
             self.cursor = i;
         }
@@ -77,9 +97,9 @@ impl TextBuf {
         if self.delete_selection() {
             return;
         }
-        if let Some(c) = self.text[self.cursor..].chars().next() {
-            self.text
-                .replace_range(self.cursor..self.cursor + c.len_utf8(), "");
+        let z = self.next_boundary(self.cursor);
+        if z > self.cursor {
+            self.text.replace_range(self.cursor..z, "");
         }
     }
 
@@ -90,9 +110,7 @@ impl TextBuf {
             return;
         }
         self.begin_move(extend);
-        if let Some((i, _)) = self.text[..self.cursor].char_indices().next_back() {
-            self.cursor = i;
-        }
+        self.cursor = self.prev_boundary(self.cursor);
     }
 
     pub fn right(&mut self, extend: bool) {
@@ -102,9 +120,106 @@ impl TextBuf {
             return;
         }
         self.begin_move(extend);
-        if let Some(c) = self.text[self.cursor..].chars().next() {
-            self.cursor += c.len_utf8();
+        self.cursor = self.next_boundary(self.cursor);
+    }
+
+    fn is_word(c: char) -> bool {
+        c.is_alphanumeric() || c == '_'
+    }
+
+    /// Byte offset of the previous word start before `from` (skips separators first).
+    pub fn word_start_before(&self, from: usize) -> usize {
+        let mut i = from;
+        let mut seen = false;
+        for (j, c) in self.text[..from].char_indices().rev() {
+            if Self::is_word(c) {
+                seen = true;
+            } else if seen {
+                return i;
+            }
+            i = j;
         }
+        if seen || from > 0 { i } else { 0 }
+    }
+
+    /// Byte offset of the next word end after `from` (skips separators first).
+    pub fn word_end_after(&self, from: usize) -> usize {
+        let mut seen = false;
+        for (j, c) in self.text[from..].char_indices() {
+            if Self::is_word(c) {
+                seen = true;
+            } else if seen {
+                return from + j;
+            }
+        }
+        self.text.len()
+    }
+
+    pub fn word_left(&mut self, extend: bool) {
+        self.begin_move(extend);
+        self.cursor = self.word_start_before(self.cursor);
+    }
+
+    pub fn word_right(&mut self, extend: bool) {
+        self.begin_move(extend);
+        self.cursor = self.word_end_after(self.cursor);
+    }
+
+    pub fn delete_word_left(&mut self) {
+        if self.delete_selection() {
+            return;
+        }
+        let a = self.word_start_before(self.cursor);
+        self.text.replace_range(a..self.cursor, "");
+        self.cursor = a;
+    }
+
+    pub fn delete_word_right(&mut self) {
+        if self.delete_selection() {
+            return;
+        }
+        let z = self.word_end_after(self.cursor);
+        self.text.replace_range(self.cursor..z, "");
+    }
+
+    pub fn delete_to_end(&mut self) {
+        if self.delete_selection() {
+            return;
+        }
+        self.text.truncate(self.cursor);
+    }
+
+    pub fn delete_to_start(&mut self) {
+        if self.delete_selection() {
+            return;
+        }
+        self.text.replace_range(..self.cursor, "");
+        self.cursor = 0;
+    }
+
+    /// Select the word (or separator run) around byte offset `at` (double-click).
+    pub fn select_word_at(&mut self, at: usize) {
+        let at = at.min(self.text.len());
+        let class = |c: char| Self::is_word(c);
+        let before = self.text[..at].chars().next_back().map(class);
+        let after = self.text[at..].chars().next().map(class);
+        let want = after.or(before).unwrap_or(true);
+        let mut a = at;
+        for (j, c) in self.text[..at].char_indices().rev() {
+            if class(c) != want {
+                break;
+            }
+            a = j;
+        }
+        let mut z = at;
+        for (j, c) in self.text[at..].char_indices() {
+            if class(c) != want {
+                break;
+            }
+            z = at + j + c.len_utf8();
+        }
+        self.anchor = Some(a);
+        self.cursor = z;
     }
 
     /// `(line, column in chars)` of a byte offset, both 0-based.
@@ -286,6 +401,37 @@ mod tests {
         // Clicks past the end of a line clamp to it.
         c.set_line_col(5, 99, false);
         assert_eq!(c.cursor, 3);
+    }
+
+    #[test]
+    fn graphemes_move_and_delete_as_one() {
+        // A family emoji (ZWJ sequence) and "e" + combining acute are one step each.
+        let mut b = TextBuf::new("a👨\u{200d}👩\u{200d}👧e\u{301}");
+        b.backspace();
+        assert_eq!(b.text, "a👨\u{200d}👩\u{200d}👧");
+        b.left(false);
+        assert_eq!(b.cursor, 1);
+        b.delete();
+        assert_eq!(b.text, "a");
+    }
+
+    #[test]
+    fn words() {
+        let mut b = TextBuf::new("foo bar_1  baz");
+        b.word_left(false);
+        assert_eq!(b.cursor, 11);
+        b.word_left(false);
+        assert_eq!(b.cursor, 4);
+        b.word_right(false);
+        assert_eq!(b.cursor, 9);
+        b.delete_word_left();
+        assert_eq!(b.text, "foo   baz");
+        b.select_word_at(1);
+        assert_eq!(b.selected_text(), Some("foo"));
+        b.delete_to_start();
+        assert_eq!(b.text, "   baz");
+        b.delete_word_right();
+        assert_eq!(b.text, "");
     }
 
     #[test]

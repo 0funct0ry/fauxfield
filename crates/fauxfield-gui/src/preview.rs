@@ -20,9 +20,6 @@ use crate::ui::icon;
 
 /// Debounce between the last edit and the render.
 pub const PREVIEW_DEBOUNCE_MS: u64 = 150;
-/// Height of the rendered body viewer.
-const PREVIEW_BODY_H: f32 = 160.0;
-
 /// Render time as shown in the pane: `0.12 ms`.
 pub fn fmt_ms(ms: f64) -> String {
     format!("{ms:.2} ms")
@@ -320,15 +317,14 @@ impl Shell {
                 .flex_col()
                 .child(head)
                 .when(open, |d| {
-                    d.child(
-                        div()
-                            .id("preview-body")
-                            .h(px(PREVIEW_BODY_H))
-                            .flex_none()
-                            .border_t_1()
-                            .border_color(t.border_variant)
-                            .children(viewer),
-                    )
+                    d.child(self.resize_handle_h(t, crate::shell::Resize::Preview, cx))
+                        .child(
+                            div()
+                                .id("preview-body")
+                                .h(px(self.layout.preview_height))
+                                .flex_none()
+                                .children(viewer),
+                        )
                 }),
             "preview-pane",
             Panel,

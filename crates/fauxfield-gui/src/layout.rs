@@ -13,6 +13,9 @@ pub const VERSION: u32 = 1;
 pub const LEFT: (f32, f32, f32) = (160.0, 260.0, 520.0);
 pub const RIGHT: (f32, f32, f32) = (200.0, 300.0, 560.0);
 pub const BOTTOM: (f32, f32, f32) = (120.0, 260.0, 700.0);
+/// Responses list of a Route tab (width) and the Preview body below the editor (height).
+pub const RESP_LIST: (f32, f32, f32) = (140.0, 200.0, 480.0);
+pub const PREVIEW: (f32, f32, f32) = (80.0, 160.0, 600.0);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -45,6 +48,8 @@ pub struct Layout {
     pub left_width: f32,
     pub right_width: f32,
     pub bottom_height: f32,
+    pub resp_list_width: f32,
+    pub preview_height: f32,
     pub bottom_tab: BottomTab,
     /// Selected sidebar tab id (`servers`|`environments`|`datasets`); unknown loads as servers.
     pub sidebar_tab: String,
@@ -65,6 +70,8 @@ impl Default for Layout {
             left_width: LEFT.1,
             right_width: RIGHT.1,
             bottom_height: BOTTOM.1,
+            resp_list_width: RESP_LIST.1,
+            preview_height: PREVIEW.1,
             bottom_tab: BottomTab::Traffic,
             sidebar_tab: "servers".into(),
             theme: None,
@@ -88,6 +95,8 @@ impl Layout {
         self.left_width = clamp(self.left_width, LEFT);
         self.right_width = clamp(self.right_width, RIGHT);
         self.bottom_height = clamp(self.bottom_height, BOTTOM);
+        self.resp_list_width = clamp(self.resp_list_width, RESP_LIST);
+        self.preview_height = clamp(self.preview_height, PREVIEW);
         self.sidebar_tab = crate::tree::SidebarTab::from_id(&self.sidebar_tab)
             .id()
             .into();
@@ -100,6 +109,14 @@ impl Layout {
 
     pub fn set_right_width(&mut self, w: f32) {
         self.right_width = clamp(w, RIGHT);
+    }
+
+    pub fn set_resp_list_width(&mut self, w: f32) {
+        self.resp_list_width = clamp(w, RESP_LIST);
+    }
+
+    pub fn set_preview_height(&mut self, h: f32) {
+        self.preview_height = clamp(h, PREVIEW);
     }
 
     pub fn set_bottom_height(&mut self, h: f32) {
@@ -175,6 +192,10 @@ mod tests {
         let mut l = Layout::default();
         l.set_bottom_height(1.0);
         assert_eq!(l.bottom_height, BOTTOM.0);
+        l.set_resp_list_width(1.0);
+        assert_eq!(l.resp_list_width, RESP_LIST.0);
+        l.set_preview_height(99999.0);
+        assert_eq!(l.preview_height, PREVIEW.2);
         l.set_right_width(f32::NAN);
         assert_eq!(l.right_width, RIGHT.1);
     }

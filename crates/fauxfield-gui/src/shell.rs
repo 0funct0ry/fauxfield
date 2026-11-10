@@ -228,40 +228,13 @@ impl PromptAction {
 
 pub struct Picker {
     pub kind: PickerKind,
+    /// Mirror of the input's text; the search runs on it.
     pub query: String,
-    /// Caret as a byte offset into `query`.
-    pub cursor: usize,
-    /// Selection anchor; the selection is the range between it and the caret.
-    pub anchor: Option<usize>,
     pub selected: usize,
     pub hits: Vec<Hit>,
-}
-
-impl Picker {
-    /// Run an edit through the shared text buffer (cursor, selection, char boundaries).
-    pub fn edit(&mut self, f: impl FnOnce(&mut crate::editor::TextBuf)) {
-        let mut b = crate::editor::TextBuf {
-            text: std::mem::take(&mut self.query),
-            cursor: self.cursor,
-            anchor: self.anchor,
-        };
-        f(&mut b);
-        self.query = b.text;
-        self.cursor = b.cursor.min(self.query.len());
-        self.anchor = b.anchor;
-    }
-
-    /// Replace the text; the caret goes to the end.
-    pub fn set_query(&mut self, text: &str) {
-        self.query = text.to_string();
-        self.cursor = self.query.len();
-        self.anchor = None;
-    }
-
-    pub fn selection(&self) -> Option<(usize, usize)> {
-        let a = self.anchor?;
-        (a != self.cursor).then(|| (a.min(self.cursor), a.max(self.cursor)))
-    }
+    /// The query box.
+    pub input: gpui::Entity<crate::text_input::TextInput>,
+    pub _sub: gpui::Subscription,
 }
 
 /// Inline Response body editor state (runtime-only until committed to the file).
@@ -279,8 +252,6 @@ pub struct RowMenu {
     pub kind: RowKind,
     pub x: f32,
     pub y: f32,
-    /// Minimum menu width (a combobox menu matches its trigger).
-    pub min_w: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -288,6 +259,10 @@ pub enum Resize {
     Left,
     Right,
     Bottom,
+    /// Responses list inside a Route tab (width).
+    RespList,
+    /// Preview body inside a Route tab (height).
+    Preview,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -360,14 +335,19 @@ pub struct Shell {
     pub(crate) notice: Option<(u64, String)>,
     notice_gen: u64,
     pub(crate) resize: Option<Resize>,
+    /// Pointer position and the size when the drag began (for the in-tab panes).
+    pub(crate) resize_origin: (f32, f32, f32),
     pub(crate) menu: Option<RowMenu>,
     /// Highlighted entry of the open menu (keyboard and hover).
     pub(crate) menu_sel: usize,
-    /// Focus handles of combobox triggers by dev id (keyboard operation).
-    pub(crate) combo_focus: std::cell::RefCell<HashMap<String, FocusHandle>>,
-    /// Painted bounds of comboboxes by dev id, so their menu opens under the trigger.
-    pub(crate) combo_bounds:
-        std::rc::Rc<std::cell::RefCell<HashMap<String, gpui::Bounds<gpui::Pixels>>>>,
+    /// The ComboBox entities by key; a screen asks for one with `combo_field`.
+    pub(crate) combos:
+        std::cell::RefCell<HashMap<String, gpui::Entity<crate::combo_box::ComboBox>>>,
+    pub(crate) combo_subs: std::cell::RefCell<Vec<gpui::Subscription>>,
+    /// Keys of the ComboBoxes whose list is open.
+    pub(crate) open_combos: std::collections::HashSet<String>,
+    /// A palette action requested by a ComboBox entry, run on the next render.
+    pub(crate) pending_action: Option<String>,
     pub(crate) problems: Vec<Problem>,
     pub(crate) logs: Vec<String>,
     /// The host for the open workspace (engine, control socket). Declared before `rt` so it
@@ -392,6 +372,9 @@ pub struct Shell {
     pub(crate) static_preview: Option<(String, String)>,
     pub(crate) focus: FocusHandle,
     pub(crate) picker_focus: FocusHandle,
+    /// The New Server dialog (Name, Host, Port), when open.
+    pub(crate) server_dialog: Option<crate::server_dialog::ServerDialog>,
+    pub(crate) server_dialog_focus: FocusHandle,
     /// The Response body being edited inline (committed on blur or Cmd/Ctrl+S).
     pub(crate) body_edit: Option<BodyEdit>,
     /// One CodeEditor per Response (`<id>` for the body, `<id>#file` for the file preview).
@@ -401,8 +384,6 @@ pub struct Shell {
     /// Read-only request and response body viewers of the Traffic detail.
     pub(crate) traffic_editors: Option<[gpui::Entity<crate::code_editor::CodeEditor>; 2]>,
     /// Painted bounds of the picker's text input, and a drag in progress in it.
-    pub(crate) picker_bounds: crate::response_pane::BoundsCell,
-    pub(crate) picker_drag: bool,
     /// Painted bounds of the body editor's text area (mouse → line/column).
     /// A mouse drag is extending the body selection.
     /// Advance width of the buffer font at the body size (measured each frame).
@@ -410,11 +391,13 @@ pub struct Shell {
     /// The single-line field being edited in the Response pane.
     pub(crate) inline: Option<crate::response_pane::InlineEdit>,
     pub(crate) field_focus: FocusHandle,
+    pub(crate) inline_sub: Option<gpui::Subscription>,
+    /// Focus handle of the inline field's input; reclaimed once the field is gone.
+    pub(crate) inline_focus: Option<FocusHandle>,
     /// Painted bounds of the active field's text, of the completion popup, and a mouse drag
     /// that is extending the field's selection.
     pub(crate) inline_bounds: crate::response_pane::BoundsCell,
     pub(crate) popup_bounds: crate::response_pane::BoundsCell,
-    pub(crate) field_drag: bool,
     /// A header row whose key was typed but whose value is not written yet: (response, key).
     pub(crate) pending_header: Option<(String, String)>,
     /// Same for a Route header: (route, key).
@@ -596,10 +579,13 @@ impl Shell {
             notice: None,
             notice_gen: 0,
             resize: None,
+            resize_origin: (0., 0., 0.),
             menu: None,
             menu_sel: 0,
-            combo_focus: Default::default(),
-            combo_bounds: Default::default(),
+            combos: Default::default(),
+            combo_subs: Default::default(),
+            open_combos: Default::default(),
+            pending_action: None,
             problems: store_problems,
             logs: Vec::new(),
             host: None,
@@ -617,18 +603,19 @@ impl Shell {
             static_preview: None,
             focus,
             picker_focus: cx.focus_handle(),
+            server_dialog: None,
+            server_dialog_focus: cx.focus_handle(),
             body_edit: None,
             editor_settings,
             body_editors: Default::default(),
             traffic_editors: None,
-            picker_bounds: Default::default(),
-            picker_drag: false,
             mono_w: 0.0,
             inline: None,
             field_focus: cx.focus_handle(),
+            inline_sub: None,
+            inline_focus: None,
             inline_bounds: Default::default(),
             popup_bounds: Default::default(),
-            field_drag: false,
             pending_header: None,
             pending_route_header: None,
             preview_epoch: 0,
@@ -897,7 +884,12 @@ impl Shell {
         cx.notify();
     }
 
-    fn on_resize_move(&mut self, ev: &MouseMoveEvent, window: &Window, cx: &mut Context<Self>) {
+    pub(crate) fn on_resize_move(
+        &mut self,
+        ev: &MouseMoveEvent,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(r) = self.resize else { return };
         let size = window.viewport_size();
         let (x, y) = (f32::from(ev.position.x), f32::from(ev.position.y));
@@ -907,6 +899,14 @@ impl Shell {
             Resize::Bottom => self
                 .layout
                 .set_bottom_height(f32::from(size.height) - y - STATUS_BAR_H),
+            Resize::RespList => {
+                let (x0, _, w0) = self.resize_origin;
+                self.layout.set_resp_list_width(w0 + x - x0);
+            }
+            Resize::Preview => {
+                let (_, y0, h0) = self.resize_origin;
+                self.layout.set_preview_height(h0 - (y - y0));
+            }
         }
         cx.notify();
     }
@@ -918,7 +918,13 @@ impl Shell {
         }
     }
 
-    pub(crate) fn begin_resize(&mut self, r: Resize, cx: &mut Context<Self>) {
+    pub(crate) fn begin_resize(&mut self, r: Resize, at: (f32, f32), cx: &mut Context<Self>) {
+        let start = match r {
+            Resize::RespList => self.layout.resp_list_width,
+            Resize::Preview => self.layout.preview_height,
+            _ => 0.,
+        };
+        self.resize_origin = (at.0, at.1, start);
         self.resize = Some(r);
         cx.notify();
     }
@@ -1121,12 +1127,9 @@ impl Shell {
         }
     }
 
-    /// Opens `m`, highlighting the current choice of a combobox (else the first entry).
+    /// Opens `m` with the first entry highlighted.
     fn set_menu(&mut self, m: RowMenu) {
-        let current = self.menu_current(&m);
-        self.menu_sel = current
-            .and_then(|c| self.menu_item_list(&m).iter().position(|(l, _, _)| *l == c))
-            .unwrap_or(0);
+        self.menu_sel = 0;
         self.menu = Some(m);
     }
 
@@ -1187,7 +1190,6 @@ impl Shell {
                 kind: RowKind::Workspace,
                 x,
                 y,
-                min_w: 160.,
             });
             cx.notify();
             return;
@@ -1210,7 +1212,6 @@ impl Shell {
             kind: row.kind,
             x,
             y,
-            min_w: 160.,
         });
         cx.notify();
     }
@@ -1245,36 +1246,6 @@ impl Shell {
             kind,
             x,
             y,
-            min_w: 160.,
-        });
-        cx.notify();
-    }
-
-    /// Open the menu of a combobox anchored under its trigger (`combo_id`), as wide as it.
-    /// Falls back to `(x, y)` when the trigger has not been painted yet.
-    pub fn open_combo_menu(
-        &mut self,
-        row_id: &str,
-        kind: RowKind,
-        combo_id: &str,
-        fallback: (f32, f32),
-        cx: &mut Context<Self>,
-    ) {
-        let b = self.combo_bounds.borrow().get(combo_id).copied();
-        let (x, y, min_w) = match b {
-            Some(b) => (
-                f32::from(b.origin.x),
-                f32::from(b.origin.y + b.size.height) + 2.,
-                f32::from(b.size.width),
-            ),
-            None => (fallback.0, fallback.1, 160.),
-        };
-        self.set_menu(RowMenu {
-            row_id: row_id.to_string(),
-            kind,
-            x,
-            y,
-            min_w,
         });
         cx.notify();
     }
@@ -1405,47 +1376,6 @@ impl Shell {
                     self.toggle_chaos_at(i, cx);
                 }
             }
-            MenuAct::SetResponseFault(i) => {
-                if let Some(f) = fauxfield_model::FAULTS.get(i) {
-                    self.set_response_fault(&m.row_id, f, cx);
-                }
-            }
-            MenuAct::SetRuleTarget(i) | MenuAct::SetRuleOp(i) | MenuAct::SetResponseMode(i)
-                if i >= 64 => {}
-            MenuAct::SetRuleTarget(i) => {
-                if let Some((resp, idx)) = m.row_id.split_once('#')
-                    && let (Some(t), Ok(idx)) =
-                        (fauxfield_model::rules::TARGETS.get(i), idx.parse::<usize>())
-                {
-                    self.edit_rule(resp, idx, cx, |r| {
-                        r.target = (*t).into();
-                        if !fauxfield_model::rules::needs_key(t) && *t != "body" {
-                            r.key = None;
-                        }
-                    });
-                }
-            }
-            MenuAct::SetRuleOp(i) => {
-                if let Some((resp, idx)) = m.row_id.split_once('#')
-                    && let (Some(op), Ok(idx)) =
-                        (fauxfield_model::rules::OPS.get(i), idx.parse::<usize>())
-                {
-                    self.edit_rule(resp, idx, cx, |r| {
-                        r.op = (*op).into();
-                        if matches!(*op, "exists" | "absent") {
-                            r.value = None;
-                        } else if r.value.is_none() {
-                            r.value = Some(toml::Value::String(String::new()));
-                        }
-                    });
-                }
-            }
-            MenuAct::SetResponseMode(i) => {
-                if let Some(mode) = fauxfield_model::rules::RESPONSE_MODES.get(i) {
-                    let route = m.row_id.clone();
-                    self.store_op(cx, |s| s.set_response_mode(&route, mode));
-                }
-            }
             MenuAct::ResetDataset => {
                 if let Some(k) = m.row_id.strip_prefix("ds:") {
                     self.reset_dataset(k, cx);
@@ -1476,11 +1406,7 @@ impl Shell {
         // A picker item vanishes with its menu; keep keyboard shortcuts routed to the shell.
         if matches!(
             act,
-            MenuAct::ErrorPreset(_)
-                | MenuAct::SetRuleTarget(_)
-                | MenuAct::SetRuleOp(_)
-                | MenuAct::SetResponseMode(_)
-                | MenuAct::ToggleResponseDisabled
+            MenuAct::ErrorPreset(_) | MenuAct::ToggleResponseDisabled
         ) {
             window.focus(&self.focus);
         }
@@ -1673,17 +1599,55 @@ impl Shell {
                 .position(|h| matches!(&h.target, Target::Theme(n) if *n == current))
                 .unwrap_or(0);
         }
+        let prompt = kind == PickerKind::Prompt;
+        let input = cx.new(|cx| {
+            let t = crate::text_input::TextInput::new(cx)
+                .placeholder(crate::overlay::placeholder(kind))
+                .appearance(false);
+            // Up and Down move the result highlight; in a prompt they stay in the text.
+            if prompt { t } else { t.vertical_events() }
+        });
+        let sub = cx.subscribe_in(
+            &input,
+            window,
+            |this: &mut Shell, input, ev: &crate::text_input::InputEvent, window, cx| {
+                use crate::text_input::InputEvent as E;
+                match ev {
+                    E::Change => {
+                        let v = input.read(cx).value().to_string();
+                        if let Some(p) = &mut this.picker {
+                            p.query = v;
+                        }
+                        this.refresh_picker(cx);
+                    }
+                    E::PressEnter { secondary, alt } => {
+                        let mode = if *alt {
+                            OpenMode::Reveal
+                        } else if *secondary {
+                            OpenMode::Pinned
+                        } else {
+                            OpenMode::Preview
+                        };
+                        this.run_picker_selection(mode, window, cx);
+                    }
+                    E::Escape => this.close_picker(true, window, cx),
+                    E::Up => this.move_selection(-1, cx),
+                    E::Down => this.move_selection(1, cx),
+                    _ => {}
+                }
+            },
+        );
         self.picker = Some(Picker {
             kind,
             query: String::new(),
-            cursor: 0,
-            anchor: None,
             selected,
             hits,
+            input: input.clone(),
+            _sub: sub,
         });
         self.picker_scroll
             .scroll_to_item(selected, gpui::ScrollStrategy::Top);
-        window.focus(&self.picker_focus);
+        input.read(cx).focus(window);
         cx.notify();
     }
 
@@ -1743,103 +1707,15 @@ impl Shell {
     }
 
     pub fn picker_type(&mut self, text: &str, cx: &mut Context<Self>) {
-        if let Some(p) = &mut self.picker {
-            p.edit(|b| b.insert(text));
+        if let Some(p) = &self.picker {
+            p.input.update(cx, |t, cx| t.insert_text(text, cx));
         }
-        self.refresh_picker(cx);
-    }
-
-    /// Move the caret / selection only (no re-search).
-    pub fn picker_caret(
-        &mut self,
-        f: impl FnOnce(&mut crate::editor::TextBuf),
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(p) = &mut self.picker {
-            p.edit(f);
-        }
-        cx.notify();
-    }
-
-    /// Edit the text and re-run the search.
-    pub fn picker_edit(
-        &mut self,
-        f: impl FnOnce(&mut crate::editor::TextBuf),
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(p) = &mut self.picker {
-            p.edit(f);
-        }
-        self.refresh_picker(cx);
-    }
-
-    /// Byte offset in the query under window x, by shaping the text in the input's font.
-    fn picker_index_at(&self, window: &Window, x: gpui::Pixels) -> Option<usize> {
-        let p = self.picker.as_ref()?;
-        let b = self.picker_bounds.get()?;
-        let style = window.text_style();
-        let size = style.font_size.to_pixels(window.rem_size());
-        let run = style.to_run(p.query.len());
-        let line = window
-            .text_system()
-            .shape_line(p.query.clone().into(), size, &[run], None);
-        Some(line.closest_index_for_x(x - b.origin.x).min(p.query.len()))
-    }
-
-    pub fn picker_mouse_down(
-        &mut self,
-        ev: &gpui::MouseDownEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(i) = self.picker_index_at(window, ev.position.x) else {
-            return;
-        };
-        if let Some(p) = &mut self.picker {
-            if ev.click_count >= 2 {
-                p.edit(|b| b.select_all());
-            } else {
-                p.edit(|b| {
-                    b.anchor = if ev.modifiers.shift {
-                        b.anchor.or(Some(b.cursor))
-                    } else {
-                        None
-                    };
-                    b.cursor = i;
-                });
-            }
-            self.picker_drag = ev.click_count < 2;
-        }
-        window.focus(&self.picker_focus);
-        cx.notify();
-    }
-
-    pub fn picker_mouse_move(
-        &mut self,
-        ev: &gpui::MouseMoveEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if !self.picker_drag || ev.pressed_button != Some(MouseButton::Left) {
-            return;
-        }
-        let Some(i) = self.picker_index_at(window, ev.position.x) else {
-            return;
-        };
-        if let Some(p) = &mut self.picker {
-            p.edit(|b| {
-                b.anchor.get_or_insert(b.cursor);
-                b.cursor = i;
-            });
-        }
-        cx.notify();
     }
 
     pub fn picker_backspace(&mut self, cx: &mut Context<Self>) {
-        if let Some(p) = &mut self.picker {
-            p.edit(|b| b.backspace());
+        if let Some(p) = &self.picker {
+            p.input.update(cx, |t, cx| t.backspace(cx));
         }
-        self.refresh_picker(cx);
     }
 
     pub fn picker_select(
@@ -1962,50 +1838,18 @@ impl Shell {
         }
     }
 
+    /// Keys that reach the picker frame: the query input consumed the editing keys already.
     pub(crate) fn on_picker_key(
         &mut self,
         ev: &KeyDownEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let m = ev.keystroke.modifiers;
-        let prompt = self
-            .picker
-            .as_ref()
-            .is_some_and(|p| p.kind == PickerKind::Prompt);
         match ev.keystroke.key.as_str() {
             "escape" => self.close_picker(true, window, cx),
-            "enter" => {
-                let mode = if m.alt {
-                    OpenMode::Reveal
-                } else if m.secondary() {
-                    OpenMode::Pinned
-                } else {
-                    OpenMode::Preview
-                };
-                self.run_picker_selection(mode, window, cx);
-            }
-            "up" if prompt => self.picker_caret(|b| b.home(m.shift), cx),
-            "down" if prompt => self.picker_caret(|b| b.end(m.shift), cx),
-            "up" => self.move_selection(-1, cx),
-            "down" => self.move_selection(1, cx),
             "pageup" => self.move_selection(-8, cx),
             "pagedown" => self.move_selection(8, cx),
-            "backspace" => self.picker_backspace(cx),
-            "delete" => self.picker_edit(|b| b.delete(), cx),
-            "left" => self.picker_caret(|b| b.left(m.shift), cx),
-            "right" => self.picker_caret(|b| b.right(m.shift), cx),
-            "home" => self.picker_caret(|b| b.home(m.shift), cx),
-            "end" => self.picker_caret(|b| b.end(m.shift), cx),
-            _ => {
-                if !m.secondary()
-                    && !m.control
-                    && !m.alt
-                    && let Some(ch) = ev.keystroke.key_char.as_deref()
-                {
-                    self.picker_type(ch, cx);
-                }
-            }
+            _ => return,
         }
         cx.stop_propagation();
     }
@@ -2065,6 +1909,10 @@ impl Shell {
     }
 
     fn on_capture_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        // The New Server dialog is modal: its inputs own every key (no chords).
+        if self.server_dialog.is_some() {
+            return;
+        }
         if self.menu.is_some() && self.menu_key(ev, window, cx) {
             cx.stop_propagation();
             return;
@@ -2135,6 +1983,9 @@ impl Shell {
             self.notify("Open a workspace first.".into(), cx);
             return;
         }
+        if matches!(action, PromptAction::NewServer) {
+            return self.begin_server_dialog(window, cx);
+        }
         if self.picker.is_some() {
             self.close_picker(true, window, cx);
         }
@@ -2142,7 +1993,9 @@ impl Shell {
         self.prompt = Some(action);
         self.open_picker(PickerKind::Prompt, window, cx);
         if let Some(p) = &mut self.picker {
-            p.set_query(initial);
+            p.query = initial.to_string();
+            let input = p.input.clone();
+            input.update(cx, |t, cx| t.set_value(initial, cx));
         }
         self.refresh_picker(cx);
     }
@@ -3048,10 +2901,20 @@ macro_rules! on_actions {
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sync_window_title(window);
+        if let Some(id) = self.pending_action.take() {
+            self.run_action_id_next_frame(&id, window, cx);
+        }
         // A field or the body editor that just closed leaves focus on an element that is no
         // longer drawn; give it back to the shell so keys and actions keep working.
-        if self.inline.is_none() && self.field_focus.is_focused(window) {
-            window.focus(&self.focus);
+        if self.inline.is_none() {
+            if self.field_focus.is_focused(window) {
+                window.focus(&self.focus);
+            }
+            if let Some(h) = self.inline_focus.take()
+                && h.is_focused(window)
+            {
+                window.focus(&self.focus);
+            }
         }
         if self.mono_w == 0.0 {
             let ts = window.text_system();
@@ -3254,7 +3117,7 @@ impl Render for Shell {
             },
             MergeKeepMine => |this, _w, cx| this.resolve_merge(true, cx),
             MergeLoadDisk => |this, _w, cx| this.resolve_merge(false, cx),
-            EditRouteMethod => |this, _w, cx| this.open_method_menu(None, cx),
+            EditRouteMethod => |this, w, cx| this.open_method_menu(w, cx),
             EditRouteMethodCustom => |this, w, cx| this.edit_field(FieldEdit::RouteMethod, w, cx),
             EditRoutePath => |this, w, cx| this.edit_field(FieldEdit::RoutePath, w, cx),
             EditResponseStatus => |this, w, cx| this.edit_field(FieldEdit::ResponseStatus, w, cx),
@@ -3412,6 +3275,9 @@ impl Render for Shell {
                 None
             ))
         })
+        .when(self.server_dialog.is_some(), |d| {
+            d.child(self.render_server_dialog(&t, cx))
+        })
         .when(self.quit_confirm, |d| {
             d.child(self.render_quit_confirm(&t, cx))
         })
@@ -3424,16 +3290,6 @@ impl Render for Shell {
         })
         .when(self.bar_visible() && self.bar.open.is_some(), |d| {
             d.child(self.render_bar_backdrop(cx))
-        })
-        .when(self.lc.method_menu.is_some(), |d| {
-            d.child(crate::dev_id_z!(
-                self.render_method_menu(&t, cx),
-                1,
-                "route-method-menu",
-                Menu,
-                "Route method menu",
-                None
-            ))
         })
         .when(self.menu.is_some(), |d| {
             d.child(crate::dev_id_z!(
@@ -3461,13 +3317,14 @@ fn body_h_with_bottom(
         .flex_col()
         .child(top)
         .when(shell.layout.bottom_open, |d| {
-            d.child(shell.resize_handle_h(t, cx)).child(crate::dev_id!(
-                shell.render_bottom_dock(t, cx),
-                "bottom-dock",
-                Dock,
-                "Bottom dock",
-                None
-            ))
+            d.child(shell.resize_handle_h(t, Resize::Bottom, cx))
+                .child(crate::dev_id!(
+                    shell.render_bottom_dock(t, cx),
+                    "bottom-dock",
+                    Dock,
+                    "Bottom dock",
+                    None
+                ))
         })
 }
 
@@ -3483,6 +3340,7 @@ impl Shell {
         div()
             .id(match r {
                 Resize::Left => "resize-left",
+                Resize::RespList => "resize-resp-list",
                 _ => "resize-right",
             })
             .relative()
@@ -3494,6 +3352,7 @@ impl Shell {
                 div()
                     .id(match r {
                         Resize::Left => "resize-left-grab",
+                        Resize::RespList => "resize-resp-list-grab",
                         _ => "resize-right-grab",
                     })
                     .absolute()
@@ -3504,14 +3363,29 @@ impl Shell {
                     .cursor_col_resize()
                     .on_mouse_down(
                         MouseButton::Left,
-                        cx.listener(move |this, _, _, cx| this.begin_resize(r, cx)),
+                        cx.listener(move |this, ev: &gpui::MouseDownEvent, _, cx| {
+                            this.begin_resize(
+                                r,
+                                (f32::from(ev.position.x), f32::from(ev.position.y)),
+                                cx,
+                            )
+                        }),
                     ),
             )
     }
 
-    pub(crate) fn resize_handle_h(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn resize_handle_h(
+        &self,
+        t: &Theme,
+        r: Resize,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         div()
-            .id("resize-bottom")
+            .id(if r == Resize::Preview {
+                "resize-preview"
+            } else {
+                "resize-bottom"
+            })
             .relative()
             .h(px(1.))
             .w_full()
@@ -3519,7 +3393,11 @@ impl Shell {
             .bg(t.border)
             .child(
                 div()
-                    .id("resize-bottom-grab")
+                    .id(if r == Resize::Preview {
+                        "resize-preview-grab"
+                    } else {
+                        "resize-bottom-grab"
+                    })
                     .absolute()
                     .left_0()
                     .right_0()
@@ -3528,7 +3406,13 @@ impl Shell {
                     .cursor_row_resize()
                     .on_mouse_down(
                         MouseButton::Left,
-                        cx.listener(|this, _, _, cx| this.begin_resize(Resize::Bottom, cx)),
+                        cx.listener(move |this, ev: &gpui::MouseDownEvent, _, cx| {
+                            this.begin_resize(
+                                r,
+                                (f32::from(ev.position.x), f32::from(ev.position.y)),
+                                cx,
+                            )
+                        }),
                     ),
             )
     }

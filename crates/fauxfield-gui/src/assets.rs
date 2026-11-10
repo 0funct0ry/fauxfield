@@ -50,6 +50,8 @@ const FILES: &[(&str, &[u8])] = embed![
     "icons/terminal.svg",
     "icons/triangle-alert.svg",
     "icons/x.svg",
+    "icons/eye.svg",
+    "icons/eye-off.svg",
     "icons/book-open.svg",
     "icons/menu.svg",
     "brand/fauxfield.svg",

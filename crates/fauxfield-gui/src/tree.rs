@@ -79,17 +79,6 @@ impl SidebarTab {
     }
 }
 
-impl RowKind {
-    /// Pickers drawn as comboboxes: the current choice is checked and the menu is as wide as
-    /// its trigger.
-    pub fn is_combo(&self) -> bool {
-        matches!(
-            self,
-            RowKind::RuleTarget | RowKind::RuleOp | RowKind::ResponseFault
-        )
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RowKind {
     Server {
@@ -132,13 +121,6 @@ pub enum RowKind {
     },
     /// "Add error preset" picker; the row id is the Route.
     ErrorPresets,
-    /// Rule target picker; the row id is `<response>#<rule index>`.
-    RuleTarget,
-    RuleOp,
-    /// Response mode picker; the row id is the Route.
-    ResponseMode,
-    /// Response fault picker; the row id is the Response.
-    ResponseFault,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -359,12 +341,6 @@ pub enum MenuAct {
     FaultPreset(usize),
     /// Server: switch the chaos fault injection on or off (runtime only).
     ToggleChaos,
-    /// Index into `fauxfield_model::rules::TARGETS` / `OPS` / `RESPONSE_MODES`.
-    SetRuleTarget(usize),
-    SetRuleOp(usize),
-    SetResponseMode(usize),
-    /// Index into `fauxfield_model::FAULTS` (0 = none).
-    SetResponseFault(usize),
     ResetDataset,
     ExportDataset,
     // Server menu (M3.1).
@@ -409,10 +385,6 @@ impl MenuAct {
             ErrorPreset(c) => format!("error-preset-{c}"),
             FaultPreset(i) => format!("fault-preset-{}", fauxfield_store::FAULT_PRESETS[i].id),
             ToggleChaos => "toggle-chaos".into(),
-            SetRuleTarget(i) => format!("rule-target-{i}"),
-            SetRuleOp(i) => format!("rule-op-{i}"),
-            SetResponseMode(i) => format!("response-mode-{i}"),
-            SetResponseFault(i) => format!("response-fault-{i}"),
             ResetDataset => "reset-dataset".into(),
             ExportDataset => "export-dataset".into(),
             Restart => "restart".into(),
@@ -582,26 +554,6 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
             v
         }
         RowKind::ErrorPresets => error_preset_items(),
-        RowKind::RuleTarget => fauxfield_model::rules::TARGETS
-            .iter()
-            .enumerate()
-            .map(|(i, t)| (*t, SetRuleTarget(i)))
-            .collect(),
-        RowKind::RuleOp => fauxfield_model::rules::OPS
-            .iter()
-            .enumerate()
-            .map(|(i, t)| (*t, SetRuleOp(i)))
-            .collect(),
-        RowKind::ResponseFault => fauxfield_model::FAULTS
-            .iter()
-            .enumerate()
-            .map(|(i, t)| (*t, SetResponseFault(i)))
-            .collect(),
-        RowKind::ResponseMode => fauxfield_model::rules::RESPONSE_MODES
-            .iter()
-            .enumerate()
-            .map(|(i, t)| (*t, SetResponseMode(i)))
-            .collect(),
     }
 }
 

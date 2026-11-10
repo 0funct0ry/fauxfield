@@ -6,8 +6,8 @@ use gpui::{
     StatefulInteractiveElement, Styled, div, px,
 };
 
+use crate::combo_box::{ComboEvent, ComboItem, ComboLook, ComboSite, ComboSize, ComboWidth};
 use crate::response_pane::InlineTarget;
-use crate::rules_ui::ComboSpec;
 use crate::shell::Shell;
 use crate::theme::Theme;
 use crate::view::{Response, Server};
@@ -269,26 +269,34 @@ impl Shell {
         resp: &Response,
         cx: &mut Context<Self>,
     ) -> (AnyElement, AnyElement) {
-        let rid = resp.id.clone();
         let has = !resp.fault.is_empty();
         let name = if has {
             resp.fault.clone()
         } else {
             "none".to_string()
         };
-        let kind = self.combo_trigger(
-            t,
-            ComboSpec {
-                id: "resp-fault".into(),
-                press: format!("resp-fault:{}", resp.id),
-                row_id: rid,
-                kind: crate::tree::RowKind::ResponseFault,
-                label: name,
-                width: Some(120.),
-                color: if has { t.modified } else { t.text },
-                tip: Some(fault_tip(&resp.fault).to_string()),
-            },
+        let rid = resp.id.clone();
+        let kind = self.combo_field(
             cx,
+            ComboSite {
+                key: format!("resp-fault-{}", resp.id),
+                items: fauxfield_model::FAULTS
+                    .iter()
+                    .map(|f| ComboItem::plain(*f))
+                    .collect(),
+                value: Some(name.clone().into()),
+                fallback: Some(name.into()),
+                color: has.then_some(t.modified),
+                tip: Some(fault_tip(&resp.fault).to_string()),
+                width: ComboWidth::Fixed(120.),
+                look: ComboLook::Field,
+                size: ComboSize::Medium,
+                on_event: std::rc::Rc::new(move |this, ev, cx| {
+                    if let ComboEvent::Change(f) = ev {
+                        this.set_response_fault(&rid, f, cx);
+                    }
+                }),
+            },
         );
         let rate = self.inline_field(
             t,
