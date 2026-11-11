@@ -88,6 +88,13 @@ pub enum PromptAction {
     ExportDataset {
         key: String,
     },
+    /// New (empty) Dataset in this Server (M10.01).
+    NewDataset {
+        server: String,
+    },
+    RenameDataset {
+        key: String,
+    },
     NewEnvironment,
     RenameEnvironment {
         name: String,
@@ -192,12 +199,16 @@ impl PromptAction {
     pub fn title(&self) -> &'static str {
         match self {
             PromptAction::NewServer => "New server name",
-            PromptAction::NewCrudName { .. } => "New CRUD resource name (e.g. products)",
+            PromptAction::NewCrudName { .. } => {
+                "New CRUD resource: dataset name, existing or new (e.g. products)"
+            }
             PromptAction::NewCrudPath { .. } => "Path (e.g. /products)",
             PromptAction::NewCrudFields { .. } => "Fields (name:kind, ...)",
             PromptAction::EditCell { .. } => "Value (JSON, or text)",
             PromptAction::AddRow { .. } => "New row (JSON object)",
             PromptAction::ExportDataset { .. } => "Export to file",
+            PromptAction::NewDataset { .. } => "New dataset name",
+            PromptAction::RenameDataset { .. } => "Dataset name",
             PromptAction::NewEnvironment => "New environment name",
             PromptAction::RenameEnvironment { .. } => "Environment name",
             PromptAction::SetVariable { key: None, .. } => "Variable (KEY=value)",
@@ -2131,6 +2142,21 @@ impl Shell {
     }
 
     pub(crate) fn rename_row(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(key) = id.strip_prefix("ds:") {
+            let name = self
+                .ws
+                .datasets
+                .iter()
+                .find(|d| d.key() == key)
+                .map(|d| d.name.clone())
+                .unwrap_or_default();
+            return self.begin_prompt(
+                PromptAction::RenameDataset { key: key.into() },
+                &name,
+                window,
+                cx,
+            );
+        }
         if let Some(name) = id.strip_prefix("env:") {
             return self.begin_prompt(
                 PromptAction::RenameEnvironment { name: name.into() },
@@ -2167,6 +2193,9 @@ impl Shell {
     }
 
     fn duplicate_row(&mut self, id: &str, cx: &mut Context<Self>) {
+        if let Some(key) = id.strip_prefix("ds:") {
+            return self.duplicate_dataset_now(key, cx);
+        }
         if let Some(name) = id.strip_prefix("env:") {
             let n = name.to_string();
             if let Some(new) = self.store_op(cx, |s| s.duplicate_environment(&n)) {
@@ -2374,6 +2403,9 @@ impl Shell {
     }
 
     fn delete_row(&mut self, id: &str, cx: &mut Context<Self>) {
+        if let Some(key) = id.strip_prefix("ds:") {
+            return self.request_delete_dataset(key, cx);
+        }
         if let Some(name) = id.strip_prefix("env:") {
             let n = name.to_string();
             if self.store_op(cx, |s| s.delete_environment(&n)).is_some() {
@@ -2578,6 +2610,26 @@ impl Shell {
                     format!("/{n}"),
                 ));
             }
+            PromptAction::NewCrudPath { server, name }
+                if self
+                    .ws
+                    .datasets
+                    .iter()
+                    .any(|d| d.server_id == server && d.name == name) =>
+            {
+                // An existing Dataset: only the Route is created (a pure reference).
+                let spec = fauxfield_store::DatasetSpec {
+                    name: name.clone(),
+                    crud_path: Some(v.clone()),
+                    ..Default::default()
+                };
+                if self
+                    .store_op(cx, |s| s.upsert_dataset(&server, &spec))
+                    .is_some()
+                {
+                    self.notify(format!("Added a CRUD Route at {v} for dataset {name}"), cx);
+                }
+            }
             PromptAction::NewCrudPath { server, name } => {
                 self.next_prompt = Some((
                     PromptAction::NewCrudFields {
@@ -2621,6 +2673,8 @@ impl Shell {
                 });
             }
             PromptAction::ExportDataset { key } => self.export_dataset(&key, &v, cx),
+            PromptAction::NewDataset { server } => self.create_dataset_now(&server, v.trim(), cx),
+            PromptAction::RenameDataset { key } => self.rename_dataset_now(&key, v.trim(), cx),
             PromptAction::NewEnvironment => {
                 let n = v.trim().to_string();
                 if self.store_op(cx, |s| s.create_environment(&n)).is_some() {
@@ -3155,6 +3209,7 @@ impl Render for Shell {
             EditSampleRequest => |this, _w, cx| this.open_sample_dialog(cx),
             ResetState => |this, _w, cx| this.reset_state_action(cx),
             NewCrudResource => |this, w, cx| this.begin_new_crud(w, cx),
+            NewDataset => |this, w, cx| this.begin_new_dataset(w, cx),
             NewStaticRoute => |this, w, cx| this.begin_new_static(w, cx),
             TrustDevCa => |this, _w, cx| match this.current_server_id() {
                 Some(server) => {

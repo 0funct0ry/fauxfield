@@ -135,4 +135,5 @@ use `capture: false` (or `--no-capture`) to keep going. On Linux install `grim` 
 - `ui.state`: `sidebar {tab, tabs[{id,label,count}]}`, `tree.visible_rows` (rows of the active tab).
 - `ui.command {command: set_sidebar_tab, tab: servers|environments|datasets}`; `ui.events` kind `sidebar` `{tab}`.
 - Dev ids: `sidebar-tabs`, `sidebar-tab-<tab>`, `sidebar-title`, `sidebar-new-server`, `sidebar-empty-<tab>`, `sidebar-empty-new-server`.
+- Datasets (M10.01): `sidebar-new-dataset`, `sidebar-empty-new-dataset`, `tag-unused-<row id>`, `ds-used-by-<route id>`, `server-new-dataset-<server id>`, `route-dataset-<route id>` (combo), modal `delete_dataset_confirm` (`delete-dataset-confirm-yes`, `delete-dataset-seed`, `delete-dataset-state`); `ui.state.datasets[]` has `unused` and `used_by`; scenario `m10-01-dataset-lifecycle`.
 - Rows of a hidden tab are not in `ui.tree`; click the tab first. Fixtures `sidebar-*`; scenario `m033-sidebar`.

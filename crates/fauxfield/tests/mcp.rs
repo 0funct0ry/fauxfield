@@ -780,6 +780,40 @@ async fn upsert_dataset_and_reset_state() {
     );
     let bad = call("upsert_dataset", json!({"server": "nope", "name": "x"})).await;
     assert!(bad.is_err() || bad.unwrap().is_error == Some(true));
+    // M10.01: Dataset without a Route, references, checked delete
+    let r = call(
+        "upsert_dataset",
+        json!({"server": "example-api", "name": "loose"}),
+    )
+    .await
+    .unwrap();
+    assert!(r.structured_content.unwrap()["route"].is_null());
+    let r = call(
+        "dataset_references",
+        json!({"server": "example-api", "name": "products"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        r.structured_content.unwrap()["references"]["routes"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let blocked = call(
+        "delete_dataset",
+        json!({"server": "example-api", "name": "products"}),
+    )
+    .await;
+    assert!(blocked.is_err() || blocked.unwrap().is_error == Some(true));
+    let r = call(
+        "delete_dataset",
+        json!({"server": "example-api", "name": "loose"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(r.structured_content.unwrap()["deleted"], "loose");
     let r = call("reset_state", json!({})).await.unwrap();
     assert_eq!(r.structured_content.unwrap()["reset"], true);
 }

@@ -1,0 +1,14 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "dataset": "orders",
+  "references": {
+    "free_text": [],
+    "routes": [],
+    "seed_files": [],
+    "state_file": null
+  },
+  "server": "example-api"
+}

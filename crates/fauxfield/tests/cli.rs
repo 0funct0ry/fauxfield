@@ -493,6 +493,25 @@ fn data_commands_are_stable() {
     snap_json(Some("data_reset"), &json(&["data", "reset"]));
     let (code, _, _) = run(&["data", "show", "example-api", "nope", "-w", p]);
     assert_eq!(code, 1);
+    // M10.01 lifecycle
+    snap_json(
+        Some("data_create"),
+        &json(&["data", "create", "example-api", "orders"]),
+    );
+    snap_json(
+        Some("data_refs"),
+        &json(&["data", "refs", "example-api", "orders"]),
+    );
+    snap_json(
+        Some("data_rename"),
+        &json(&["data", "rename", "example-api", "orders", "purchases"]),
+    );
+    snap_json(
+        Some("data_delete"),
+        &json(&["data", "delete", "example-api", "purchases"]),
+    );
+    let (code, _, _) = run(&["data", "delete", "example-api", "purchases", "-w", p]);
+    assert_eq!(code, 1, "already gone");
 }
 
 #[test]

@@ -46,6 +46,7 @@ actions!(
         Duplicate,
         ResetState,
         NewCrudResource,
+        NewDataset,
         NewStaticRoute,
         TrustDevCa,
         NewFolder,
@@ -219,6 +220,7 @@ pub static ACTIONS: &[ActionInfo] = &[
     ),
     row!("duplicate", "Edit: Duplicate Response or Route", Duplicate),
     row!("reset_state", "Dataset: Reset State", ResetState),
+    row!("new_dataset", "Dataset: New…", NewDataset),
     row!(
         "new_crud_resource",
         "Dataset: New CRUD Resource…",

@@ -1,4 +1,4 @@
-//! `data list|show|reset|export|import` (M8). Every command has a stable `--json`.
+//! `data list|show|reset|export|import` (M8), `create|delete|rename|refs` (M10.01). Every command has a stable `--json`.
 //! With a running host they act on live data; otherwise an in-process engine reads the
 //! workspace (seeds, `seed_template`, persisted state) without serving anything.
 
@@ -59,6 +59,53 @@ pub enum DataAction {
         #[command(flatten)]
         ws: WsArgs,
     },
+    /// Create an empty Dataset (no seed, no Route). Edits the server file.
+    Create {
+        server: String,
+        dataset: String,
+        /// Row key field (default `id`).
+        #[arg(long)]
+        key: Option<String>,
+        /// `uuid`, `increment` or `ulid`.
+        #[arg(long)]
+        id_strategy: Option<String>,
+        /// Persist rows to `.fauxfield/state`.
+        #[arg(long)]
+        persist: bool,
+        #[command(flatten)]
+        ws: WsArgs,
+    },
+    /// Delete a Dataset; blocked while Routes or templates use it unless --force.
+    Delete {
+        server: String,
+        dataset: String,
+        /// Delete even though the Dataset is still referenced.
+        #[arg(long)]
+        force: bool,
+        /// Also delete the seed file.
+        #[arg(long)]
+        remove_seed: bool,
+        /// Also delete the persisted state.
+        #[arg(long)]
+        remove_state: bool,
+        #[command(flatten)]
+        ws: WsArgs,
+    },
+    /// Rename a Dataset, rewriting every crud Route that references it.
+    Rename {
+        server: String,
+        dataset: String,
+        new_name: String,
+        #[command(flatten)]
+        ws: WsArgs,
+    },
+    /// List everything that uses a Dataset.
+    Refs {
+        server: String,
+        dataset: String,
+        #[command(flatten)]
+        ws: WsArgs,
+    },
 }
 
 fn fail(msg: &str) -> i32 {
@@ -95,8 +142,139 @@ fn rows_label(v: &Value) -> usize {
     v.as_array().map_or(1, Vec::len)
 }
 
+/// Run a workspace-file edit on one Server and flush. Returns the Server id.
+fn with_server<T>(
+    ws: &WsArgs,
+    server: &str,
+    f: impl FnOnce(&fauxfield_store::Store, &str) -> Result<T, fauxfield_store::StoreError>,
+) -> Result<T, i32> {
+    let store = open_store(ws)?;
+    let snap = store.snapshot();
+    let Some((_, s)) = snap.servers.iter().find(|(_, s)| {
+        s.id == server || s.name == server || fauxfield_store::slugify(&s.name) == server
+    }) else {
+        return Err(fail(&format!("no server `{server}`")));
+    };
+    let out = f(&store, &s.id).map_err(|e| fail(&e.to_string()))?;
+    store.flush().map_err(|e| fail(&e.to_string()))?;
+    Ok(out)
+}
+
 pub fn data(action: DataAction) -> i32 {
     match action {
+        DataAction::Create {
+            server,
+            dataset,
+            key,
+            id_strategy,
+            persist,
+            ws,
+        } => {
+            if let Err(c) = with_server(&ws, &server, |st, sid| {
+                st.create_dataset(
+                    sid,
+                    &dataset,
+                    key.as_deref(),
+                    id_strategy.as_deref(),
+                    persist.then_some(true),
+                )
+            }) {
+                return c;
+            }
+            if ws.json {
+                print_json(
+                    &json!({"created": dataset, "server": server, "rows": 0, "live": false}),
+                );
+            } else {
+                println!("Created empty dataset {dataset}");
+            }
+            EXIT_OK
+        }
+        DataAction::Delete {
+            server,
+            dataset,
+            force,
+            remove_seed,
+            remove_state,
+            ws,
+        } => {
+            let opts = fauxfield_store::DeleteOpts {
+                force,
+                remove_seed,
+                remove_state,
+            };
+            let refs = match with_server(&ws, &server, |st, sid| {
+                st.delete_dataset_checked(sid, &dataset, &opts)
+            }) {
+                Ok(r) => r,
+                Err(c) => return c,
+            };
+            if ws.json {
+                print_json(&json!({
+                    "deleted": dataset, "server": server, "live": false,
+                    "removed_seed": remove_seed, "removed_state": remove_state,
+                    "references": refs,
+                }));
+            } else {
+                println!("Deleted dataset {dataset}");
+            }
+            EXIT_OK
+        }
+        DataAction::Rename {
+            server,
+            dataset,
+            new_name,
+            ws,
+        } => {
+            let rep = match with_server(&ws, &server, |st, sid| {
+                st.rename_dataset(sid, &dataset, &new_name)
+            }) {
+                Ok(r) => r,
+                Err(c) => return c,
+            };
+            if ws.json {
+                print_json(&json!({
+                    "renamed": {"from": dataset, "to": new_name}, "server": server,
+                    "live": false, "report": rep,
+                }));
+            } else {
+                println!(
+                    "Renamed {dataset} to {new_name} ({} route(s) updated)",
+                    rep.rewritten_routes.len()
+                );
+                for w in &rep.free_text_warnings {
+                    eprintln!(
+                        "warning: {} uses `data.{dataset}`; update it by hand",
+                        w.location
+                    );
+                }
+            }
+            EXIT_OK
+        }
+        DataAction::Refs {
+            server,
+            dataset,
+            ws,
+        } => {
+            let refs =
+                match with_server(&ws, &server, |st, sid| st.dataset_references(sid, &dataset)) {
+                    Ok(r) => r,
+                    Err(c) => return c,
+                };
+            if ws.json {
+                print_json(&json!({"server": server, "dataset": dataset, "references": refs}));
+            } else if refs.is_unused() {
+                println!("{dataset} is not used.");
+            } else {
+                for r in &refs.routes {
+                    println!("route {} {} {}", r.id, r.method, r.path);
+                }
+                for t in &refs.free_text {
+                    println!("template {}", t.location);
+                }
+            }
+            EXIT_OK
+        }
         DataAction::List { server, ws } => {
             let (live, list) = match host_api(&ws) {
                 Some(c) => match rt().block_on(c.data_list(server.clone())) {

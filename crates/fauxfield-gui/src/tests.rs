@@ -1988,6 +1988,80 @@ fn crud_wizard_prompts_chain_and_create_the_resource(cx: &mut TestAppContext) {
     );
 }
 
+/// M10.01: empty Datasets, rename following a crud Route, Route delete keeps the Dataset,
+/// delete blocked behind a confirmation that lists references.
+#[gpui::test]
+fn dataset_lifecycle_without_routes(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    view.update(cx, |s, cx| s.create_dataset_now("srv_users", "orders", cx));
+    cx.run_until_parked();
+    let d = read(&view, cx, |s| {
+        s.ws.find_dataset("srv_users:orders").cloned()
+    });
+    let d = d.expect("created");
+    assert_eq!(d.rows, 0);
+    assert!(d.unused());
+    assert!(read(&view, cx, |s| s
+        .ws
+        .find_server("srv_users")
+        .unwrap()
+        .all_routes()
+        .all(|r| r.dataset.as_deref() != Some("orders"))));
+
+    // A crud Route referencing it follows a rename.
+    view.update(cx, |s, cx| {
+        s.create_crud_resource("srv_users", "orders", "/orders", "name:name", cx)
+    });
+    cx.run_until_parked();
+    view.update(cx, |s, cx| {
+        s.rename_dataset_now("srv_users:orders", "purchases", cx)
+    });
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s
+        .ws
+        .find_dataset("srv_users:purchases")
+        .is_some()));
+    assert!(read(&view, cx, |s| {
+        s.ws.find_server("srv_users")
+            .unwrap()
+            .all_routes()
+            .any(|r| r.dataset.as_deref() == Some("purchases"))
+    }));
+
+    // Delete is behind a confirmation listing the Route.
+    view.update(cx, |s, cx| {
+        s.request_delete_dataset("srv_users:purchases", cx)
+    });
+    assert_eq!(
+        read(&view, cx, |s| s.dialog_name()),
+        Some("delete_dataset_confirm")
+    );
+    assert_eq!(
+        read(&view, cx, |s| s
+            .lc
+            .dataset_delete
+            .as_ref()
+            .unwrap()
+            .refs
+            .len()),
+        1
+    );
+    view.update(cx, |s, cx| s.cancel_dialog(cx));
+    assert!(read(&view, cx, |s| s
+        .ws
+        .find_dataset("srv_users:purchases")
+        .is_some()));
+    view.update(cx, |s, cx| {
+        s.request_delete_dataset("srv_users:purchases", cx);
+        s.confirm_dialog(cx);
+    });
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s
+        .ws
+        .find_dataset("srv_users:purchases")
+        .is_none()));
+}
+
 /// M9: delay ranges, faults, the Server's Network and Rate limit fields, the network profile
 /// switcher and the chaos switch.
 #[gpui::test]

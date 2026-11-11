@@ -280,12 +280,52 @@ impl Shell {
                 .into_any_element()
         };
         let _ = (hover, k4, k5);
+        let used_by = div()
+            .flex_none()
+            .px(px(12.))
+            .py(px(6.))
+            .flex()
+            .flex_row()
+            .flex_wrap()
+            .items_center()
+            .gap(px(8.))
+            .border_b_1()
+            .border_color(t.border_variant)
+            .text_size(px(12.))
+            .child(div().text_color(muted).child("Used by"))
+            .when(d.used_by.is_empty(), |x| {
+                x.child(crate::dev_id!(
+                    div()
+                        .id(crate::ui::eid(format!("ds-unused-{}", d.key())))
+                        .text_color(muted)
+                        .child("nothing: no Route uses this Dataset"),
+                    format!("ds-used-by-none-{}", d.key()),
+                    Text,
+                    "Unused",
+                    None
+                ))
+            })
+            .children(d.used_by.iter().map(|(rid, label)| {
+                let rid2 = rid.clone();
+                crate::dev_id!(
+                    toolbar_button(t, crate::ui::eid(format!("ds-used-by-{rid}")))
+                        .child(format!("Route {label}"))
+                        .on_click(
+                            cx.listener(move |this, _, _, cx| { this.click_row(&rid2, 2, cx) })
+                        ),
+                    format!("ds-used-by-{rid}"),
+                    Button,
+                    label.clone(),
+                    Row(rid.clone())
+                )
+            }));
         div()
             .id(crate::ui::eid(format!("ds-tab-{}", d.key())))
             .size_full()
             .flex()
             .flex_col()
             .child(header)
+            .child(used_by)
             .children(banner)
             .child(body)
     }
@@ -486,6 +526,138 @@ impl Shell {
         match res {
             Ok(()) => self.notify(format!("Exported {} to {path}", d.name), cx),
             Err(m) => self.notify(m, cx),
+        }
+    }
+
+    /// New Dataset… prompt: an empty Dataset (no seed, no Route) in the current Server.
+    pub(crate) fn begin_new_dataset(&mut self, w: &mut gpui::Window, cx: &mut Context<Self>) {
+        let server = self
+            .current_server_id()
+            .or_else(|| self.ws.servers.first().map(|s| s.id.clone()));
+        match server {
+            Some(server) => self.begin_prompt(PromptAction::NewDataset { server }, "", w, cx),
+            None => self.notify("Create a server first.".into(), cx),
+        }
+    }
+
+    pub(crate) fn create_dataset_now(&mut self, server: &str, name: &str, cx: &mut Context<Self>) {
+        let (sid, n) = (server.to_string(), name.to_string());
+        if self
+            .store_op(cx, |s| s.create_dataset(&sid, &n, None, None, None))
+            .is_some()
+        {
+            self.sidebar_tab = crate::tree::SidebarTab::Datasets;
+            self.layout.sidebar_tab = self.sidebar_tab.id().into();
+            self.open_tab(
+                &format!("{server}:{name}"),
+                crate::tabs::TabKind::Dataset,
+                name,
+                true,
+            );
+            self.notify(format!("Created dataset {name}"), cx);
+        }
+    }
+
+    pub(crate) fn rename_dataset_now(&mut self, key: &str, new: &str, cx: &mut Context<Self>) {
+        let Some(d) = self.ws.datasets.iter().find(|d| d.key() == key).cloned() else {
+            return;
+        };
+        if d.name == new {
+            return;
+        }
+        let (sid, old, n) = (d.server_id.clone(), d.name.clone(), new.to_string());
+        if let Some(rep) = self.store_op(cx, |s| s.rename_dataset(&sid, &old, &n)) {
+            if let Some(i) = self.tabs.position(key) {
+                self.tabs.close(i);
+                self.open_tab(
+                    &format!("{}:{new}", d.server_id),
+                    crate::tabs::TabKind::Dataset,
+                    new,
+                    true,
+                );
+            }
+            let mut msg = format!("Renamed {old} to {new}");
+            if !rep.rewritten_routes.is_empty() {
+                msg += &format!(" ({} route(s) updated)", rep.rewritten_routes.len());
+            }
+            if !rep.free_text_warnings.is_empty() {
+                msg += &format!(
+                    "; {} template(s) still use `data.{old}`",
+                    rep.free_text_warnings.len()
+                );
+            }
+            self.notify(msg, cx);
+        }
+    }
+
+    pub(crate) fn duplicate_dataset_now(&mut self, key: &str, cx: &mut Context<Self>) {
+        let Some(d) = self.ws.datasets.iter().find(|d| d.key() == key).cloned() else {
+            return;
+        };
+        let (sid, name) = (d.server_id.clone(), d.name.clone());
+        if let Some(new) = self.store_op(cx, |s| s.duplicate_dataset(&sid, &name)) {
+            self.open_tab(
+                &format!("{}:{new}", d.server_id),
+                crate::tabs::TabKind::Dataset,
+                &new,
+                true,
+            );
+            self.notify(format!("Duplicated as {new}"), cx);
+        }
+    }
+
+    /// Delete a Dataset: straight away when unused, else through the confirmation modal.
+    pub(crate) fn request_delete_dataset(&mut self, key: &str, cx: &mut Context<Self>) {
+        let Some(d) = self.ws.datasets.iter().find(|d| d.key() == key).cloned() else {
+            return;
+        };
+        let (sid, name) = (d.server_id.clone(), d.name.clone());
+        let refs = self
+            .store
+            .as_ref()
+            .and_then(|s| s.dataset_references(&sid, &name).ok())
+            .unwrap_or_default();
+        let mut list: Vec<String> = refs
+            .routes
+            .iter()
+            .map(|r| format!("Route {} {}", r.method, r.path))
+            .collect();
+        list.extend(
+            refs.free_text
+                .iter()
+                .map(|t| format!("Template {}", t.location)),
+        );
+        self.lc.dataset_delete = Some(crate::lifecycle::DatasetDelete {
+            key: key.into(),
+            name,
+            server_id: sid,
+            refs: list,
+            remove_seed: false,
+            remove_state: false,
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn delete_dataset_now(
+        &mut self,
+        dd: &crate::lifecycle::DatasetDelete,
+        cx: &mut Context<Self>,
+    ) {
+        let opts = fauxfield_store::DeleteOpts {
+            force: true,
+            remove_seed: dd.remove_seed,
+            remove_state: dd.remove_state,
+        };
+        let (sid, name) = (dd.server_id.clone(), dd.name.clone());
+        if self
+            .store_op(cx, |s| s.delete_dataset_checked(&sid, &name, &opts))
+            .is_some()
+        {
+            if let Some(i) = self.tabs.position(&dd.key) {
+                self.tabs.close(i);
+            }
+            self.selected = None;
+            self.notify(format!("Deleted dataset {}", dd.name), cx);
         }
     }
 

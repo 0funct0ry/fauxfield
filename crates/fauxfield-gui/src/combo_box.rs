@@ -1,5 +1,5 @@
 //! The reusable ComboBox (`ComboBox`). Every drop-down choice in the app is this entity: rule
-//! target and operator, Response mode and fault, the Route verb. 
+//! target and operator, Response mode and fault, the Route verb.
 //!
 //! * an entity with its own state (items, value, open, highlight), an option builder and
 //!   events ([`ComboEvent::Change`], `Action`, `Clear`, `Open`, `Close`), so a screen never

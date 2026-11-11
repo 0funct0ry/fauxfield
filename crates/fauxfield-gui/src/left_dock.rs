@@ -201,8 +201,8 @@ impl Shell {
                             .rounded(px(3.))
                             .cursor_pointer()
                             .hover(move |s| s.bg(sel))
-                            .tooltip(crate::ui::tooltip("New CRUD resource…".to_string()))
-                            .on_click(cx.listener(|this, _, w, cx| this.begin_new_crud(w, cx)))
+                            .tooltip(crate::ui::tooltip("New Dataset…".to_string()))
+                            .on_click(cx.listener(|this, _, w, cx| this.begin_new_dataset(w, cx)))
                             .child(icon("plus", 14., t.icon_muted)),
                         crate::dev_mcp::tree::Meta {
                             tooltip: true,
@@ -210,8 +210,8 @@ impl Shell {
                         },
                         "sidebar-new-dataset",
                         Button,
-                        "New CRUD resource",
-                        Action("new_crud_resource")
+                        "New Dataset",
+                        Action("new_dataset")
                     ))
                 })
                 .when(tab == tree::SidebarTab::Servers, |d| {
@@ -313,12 +313,12 @@ impl Shell {
                             .text_color(t.text)
                             .cursor_pointer()
                             .hover(move |s| s.bg(hover))
-                            .on_click(cx.listener(|this, _, w, cx| this.begin_new_crud(w, cx)))
-                            .child("New CRUD resource…"),
+                            .on_click(cx.listener(|this, _, w, cx| this.begin_new_dataset(w, cx)))
+                            .child("New Dataset…"),
                         "sidebar-empty-new-dataset",
                         Button,
-                        "New CRUD resource…",
-                        Action("new_crud_resource")
+                        "New Dataset…",
+                        Action("new_dataset")
                     ))
                 })
                 .when(tab == tree::SidebarTab::Servers, |d| {
@@ -637,6 +637,22 @@ impl Shell {
                             format!("tree-shadow-icon-{}", r.id),
                             Text,
                             w.message.clone(),
+                            None
+                        )
+                        .into_any_element()
+                    ),
+                    RowKind::Dataset { unused: true, .. } => Some(
+                        crate::dev_id!(
+                            div()
+                                .id(crate::ui::eid(format!("unused-{}", r.id)))
+                                .flex_none()
+                                .text_size(px(11.))
+                                .text_color(t.text_muted)
+                                .tooltip(crate::ui::tooltip("No Route uses this Dataset".into()))
+                                .child("unused"),
+                            format!("tag-unused-{}", r.id),
+                            Text,
+                            "unused",
                             None
                         )
                         .into_any_element()

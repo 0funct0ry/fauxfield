@@ -1153,36 +1153,62 @@ impl Shell {
                             .child(icon("table", 13., t.icon_muted))
                             .child(d.label())
                             .child(div().text_color(t.text_muted).child(format!(
-                                "key {} · {}{}",
+                                "key {} · {}{}{}",
                                 d.key,
                                 d.id_strategy,
-                                if d.persist { " · persisted" } else { "" }
+                                if d.persist { " · persisted" } else { "" },
+                                if d.unused() { " · unused" } else { "" }
                             )))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.click_row(&crate::tree::dataset_row_id(&key), 2, cx)
                             }))
                     }),
             )
-            .child(div().flex().child(crate::dev_id!(
-                    div()
-                        .id(crate::ui::eid(format!("server-new-crud-{sid}")))
-                        .h(px(24.))
-                        .px(px(10.))
-                        .flex()
-                        .items_center()
-                        .rounded(px(4.))
-                        .border_1()
-                        .border_color(border)
-                        .text_size(px(12.))
-                        .cursor_pointer()
-                        .hover(move |s| s.bg(hover))
-                        .on_click(cx.listener(|this, _, w, cx| this.begin_new_crud(w, cx)))
-                        .child("New CRUD resource…"),
-                    format!("server-new-crud-{sid}"),
-                    Button,
-                    "New CRUD resource…",
-                    Action("new_crud_resource")
-                )))
+            .child(
+                div()
+                    .flex()
+                    .gap(px(8.))
+                    .child(crate::dev_id!(
+                        div()
+                            .id(crate::ui::eid(format!("server-new-dataset-{sid}")))
+                            .h(px(24.))
+                            .px(px(10.))
+                            .flex()
+                            .items_center()
+                            .rounded(px(4.))
+                            .border_1()
+                            .border_color(border)
+                            .text_size(px(12.))
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(hover))
+                            .on_click(cx.listener(|this, _, w, cx| this.begin_new_dataset(w, cx)))
+                            .child("New Dataset…"),
+                        format!("server-new-dataset-{sid}"),
+                        Button,
+                        "New Dataset…",
+                        Action("new_dataset")
+                    ))
+                    .child(crate::dev_id!(
+                        div()
+                            .id(crate::ui::eid(format!("server-new-crud-{sid}")))
+                            .h(px(24.))
+                            .px(px(10.))
+                            .flex()
+                            .items_center()
+                            .rounded(px(4.))
+                            .border_1()
+                            .border_color(border)
+                            .text_size(px(12.))
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(hover))
+                            .on_click(cx.listener(|this, _, w, cx| this.begin_new_crud(w, cx)))
+                            .child("New CRUD resource…"),
+                        format!("server-new-crud-{sid}"),
+                        Button,
+                        "New CRUD resource…",
+                        Action("new_crud_resource")
+                    )),
+            )
     }
 
     /// Route tab of a `kind = "crud"` Route: its Dataset and the six generated operations.
@@ -1253,11 +1279,23 @@ impl Shell {
                             .child(format!("{}{}{}", prefix, base, suffix))
                     }))
                     .child(section_heading(t, "Settings"))
-                    .child(format!(
-                        "Dataset: {} · schema validation: {}",
-                        r.dataset.clone().unwrap_or_else(|| "(none)".into()),
-                        r.validate.clone().unwrap_or_else(|| "off".into())
-                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .child("Dataset:")
+                            .child(self.route_dataset_combo(
+                                &s.id,
+                                &r.id,
+                                r.dataset.as_deref(),
+                                cx,
+                            ))
+                            .child(format!(
+                                "· schema validation: {}",
+                                r.validate.clone().unwrap_or_else(|| "off".into())
+                            )),
+                    )
                     .child(div().text_color(t.text_muted).child(
                         "List supports _page, _limit, _sort, _order, q and field filters (age_gte, age_lte, role_ne, name_like). \
                          An http route with a higher priority overrides one operation.",

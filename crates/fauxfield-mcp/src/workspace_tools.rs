@@ -98,12 +98,47 @@ struct UpsertDataset {
     /// Persist mutations under .fauxfield/state/.
     #[serde(default)]
     persist: Option<bool>,
-    /// Also add a `kind = "crud"` Route at this path (e.g. `/products`) when none serves the Dataset.
+    /// Optional and explicit: also add a `kind = "crud"` Route at this path (e.g. `/products`)
+    /// when none serves the Dataset. Omit it to create or update the Dataset alone (no Route).
     #[serde(default)]
     crud_path: Option<String>,
     /// JSON Schema file (workspace-relative) for POST/PUT/PATCH on the CRUD Route.
     #[serde(default)]
     validate: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct DatasetRefArgs {
+    /// Server ID, name or file slug.
+    server: String,
+    /// Dataset name.
+    name: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct DeleteDataset {
+    /// Server ID, name or file slug.
+    server: String,
+    /// Dataset name.
+    name: String,
+    /// Delete even while Routes or templates still reference the Dataset (they are left as is).
+    #[serde(default)]
+    force: bool,
+    /// Also delete the seed file.
+    #[serde(default)]
+    remove_seed: bool,
+    /// Also delete the persisted state under .fauxfield/state/.
+    #[serde(default)]
+    remove_state: bool,
+}
+
+fn resolve_server(s: &fauxfield_store::Store, q: &str) -> Result<String, String> {
+    s.snapshot()
+        .servers
+        .iter()
+        .find(|(_, x)| x.id == q || x.name == q || fauxfield_store::slugify(&x.name) == q)
+        .map(|(_, x)| x.id.clone())
+        .ok_or_else(|| format!("no server `{q}`"))
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -400,7 +435,7 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
     let p = provider.clone();
     r.register(ToolDef::new::<UpsertDataset>(
         "upsert_dataset",
-        "Create or replace a Dataset (seed file plus [[datasets]] entry) and optionally add a CRUD Route for it.",
+        "Create or replace a Dataset (seed file plus [[datasets]] entry). Without crud_path no Route is written (`route` is null); with it a CRUD Route is added when none serves the Dataset.",
         ToolClass::Write,
         move |m| {
             let Some(s) = p() else { return no_workspace() };
@@ -428,6 +463,42 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                 let route = s.upsert_dataset(&id, &spec).map_err(e)?;
                 s.flush().map_err(e)?;
                 Ok(json!({ "server": id, "dataset": a.name, "route": route }))
+            });
+            Box::pin(async move { out })
+        },
+    ));
+    let p = provider.clone();
+    r.register(ToolDef::new::<DatasetRefArgs>(
+        "dataset_references",
+        "Everything that uses a Dataset: CRUD Routes, free-text `data.<name>` uses, seed files and persisted state.",
+        ToolClass::Read,
+        move |m| {
+            let Some(s) = p() else { return no_workspace() };
+            let out = parse::<DatasetRefArgs>(m).and_then(|a| {
+                let id = resolve_server(&s, &a.server)?;
+                let refs = s.dataset_references(&id, &a.name).map_err(e)?;
+                Ok(json!({ "server": id, "dataset": a.name, "references": refs }))
+            });
+            Box::pin(async move { out })
+        },
+    ));
+    let p = provider.clone();
+    r.register(ToolDef::new::<DeleteDataset>(
+        "delete_dataset",
+        "Delete a Dataset. Blocked while Routes or templates reference it unless `force`; the seed file and persisted state are removed only with remove_seed / remove_state.",
+        ToolClass::Write,
+        move |m| {
+            let Some(s) = p() else { return no_workspace() };
+            let out = parse::<DeleteDataset>(m).and_then(|a| {
+                let id = resolve_server(&s, &a.server)?;
+                let opts = fauxfield_store::DeleteOpts {
+                    force: a.force,
+                    remove_seed: a.remove_seed,
+                    remove_state: a.remove_state,
+                };
+                let refs = s.delete_dataset_checked(&id, &a.name, &opts).map_err(e)?;
+                s.flush().map_err(e)?;
+                Ok(json!({ "deleted": a.name, "server": id, "references": refs }))
             });
             Box::pin(async move { out })
         },

@@ -1,0 +1,10 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "created": "orders",
+  "live": false,
+  "rows": 0,
+  "server": "example-api"
+}

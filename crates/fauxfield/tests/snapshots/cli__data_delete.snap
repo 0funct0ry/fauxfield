@@ -1,0 +1,17 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "deleted": "purchases",
+  "live": false,
+  "references": {
+    "free_text": [],
+    "routes": [],
+    "seed_files": [],
+    "state_file": null
+  },
+  "removed_seed": false,
+  "removed_state": false,
+  "server": "example-api"
+}

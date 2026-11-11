@@ -1,0 +1,16 @@
+# M10.01 scenario: a Dataset with no Route. Create one from the Datasets "+", see the unused
+# badge and "0 rows", then rename it.
+# Needs the example workspace as the launch workspace (scripts/smoke-ui.sh copies it).
+name: m10-01-dataset-lifecycle
+size: default
+steps:
+  - state: [reset]
+  - click_element: {id: sidebar-tab-datasets}
+  - wait_for_idle: {}
+  - assert_find: {text: New Dataset, ids: [sidebar-new-dataset]}
+  - click_element: {id: sidebar-new-dataset}
+  - wait_for_idle: {}
+  - type_text: orders
+  - key: enter
+  - wait_for_idle: {}
+  - assert_find: {text: unused, ids: [tag-unused-row-ds-orders]}

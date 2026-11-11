@@ -9,7 +9,9 @@ mod store;
 mod vars;
 mod watch;
 
-pub use datasets::{DatasetSpec, confined, state_path};
+pub use datasets::{
+    DatasetRefs, DatasetSpec, DeleteOpts, RenameReport, RouteRef, TextRef, confined, state_path,
+};
 pub use init::{discover, init_workspace, slugify};
 pub use recent::{clear_recent, load_recent, push_recent, remove_recent};
 pub use store::{

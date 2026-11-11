@@ -57,7 +57,7 @@ impl SidebarTab {
         match self {
             SidebarTab::Servers => "No servers yet.",
             SidebarTab::Environments => "No environments.",
-            SidebarTab::Datasets => "No datasets. Create a CRUD resource to add one.",
+            SidebarTab::Datasets => "No datasets. Create one with +.",
         }
     }
     /// Parses a persisted id; anything unknown falls back to Servers.
@@ -109,6 +109,8 @@ pub enum RowKind {
     },
     Dataset {
         rows: usize,
+        /// No crud Route uses it (M10.01 badge).
+        unused: bool,
     },
     /// One generated operation of a crud Route (child row of the Route node; opens the Route).
     CrudOp {
@@ -303,7 +305,10 @@ pub fn flatten(
                     &dataset_row_id(&d.key()),
                     0,
                     &d.label(),
-                    RowKind::Dataset { rows: d.rows },
+                    RowKind::Dataset {
+                        rows: d.rows,
+                        unused: d.unused(),
+                    },
                     false,
                 );
             }
@@ -531,8 +536,11 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
         RowKind::Dataset { .. } => vec![
             ("Open", Open),
             ("Open pinned", OpenPinned),
+            ("Duplicate", Duplicate),
+            ("Rename…", Rename),
             ("Reset to seed", ResetDataset),
             ("Export JSON…", ExportDataset),
+            ("Delete", Delete),
         ],
         RowKind::CrudOp { .. } => vec![("Open route", Open)],
         RowKind::Response { default, disabled } => {
@@ -691,8 +699,22 @@ mod tests {
         );
         assert!(labels(&RowKind::Environment { active: false }, false).contains(&"Set active"));
         assert_eq!(
-            labels(&RowKind::Dataset { rows: 1 }, false),
-            ["Open", "Open pinned", "Reset to seed", "Export JSON…"]
+            labels(
+                &RowKind::Dataset {
+                    rows: 1,
+                    unused: true
+                },
+                false
+            ),
+            [
+                "Open",
+                "Open pinned",
+                "Duplicate",
+                "Rename…",
+                "Reset to seed",
+                "Export JSON…",
+                "Delete"
+            ]
         );
     }
 }

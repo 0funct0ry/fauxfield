@@ -8,7 +8,7 @@ use std::time::SystemTime;
 
 use gpui::{
     Context, InteractiveElement, IntoElement, ParentElement, PathPromptOptions,
-    StatefulInteractiveElement, Styled, Window, div, px,
+    StatefulInteractiveElement, Styled, Window, div, prelude::*, px,
 };
 
 use crate::run::{NoticeAction, ToastAction};
@@ -38,12 +38,26 @@ pub struct RecentEntry {
     pub opened: String,
 }
 
+/// A Dataset delete waiting on the confirmation modal (M10.01).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DatasetDelete {
+    pub key: String,
+    pub name: String,
+    pub server_id: String,
+    /// Route labels and template locations that still reference the Dataset.
+    pub refs: Vec<String>,
+    pub remove_seed: bool,
+    pub remove_state: bool,
+}
+
 /// State added to [`Shell`] by M3.1.
 #[derive(Default)]
 pub struct Lifecycle {
     pub close_confirm: Option<Intent>,
     /// Server id awaiting a delete confirmation.
     pub delete_confirm: Option<String>,
+    /// Dataset delete awaiting confirmation (M10.01).
+    pub dataset_delete: Option<DatasetDelete>,
     /// Folder (and its item count) awaiting a "create in a non-empty folder" confirmation.
     pub create_confirm: Option<(PathBuf, usize)>,
     /// Inline message shown in the open prompt instead of a toast.
@@ -299,6 +313,7 @@ impl Shell {
         self.active_env = String::new();
         self.lc.close_confirm = None;
         self.lc.delete_confirm = None;
+        self.lc.dataset_delete = None;
         self.lc.create_confirm = None;
         self.lc.prompt_error = None;
         self.lc.undo_file = None;
@@ -312,6 +327,8 @@ impl Shell {
             self.perform(intent, cx);
         } else if let Some(id) = self.lc.delete_confirm.take() {
             self.delete_server_now(&id, cx);
+        } else if let Some(dd) = self.lc.dataset_delete.take() {
+            self.delete_dataset_now(&dd, cx);
         } else if let Some((path, _)) = self.lc.create_confirm.take() {
             self.guard(Intent::Switch { path, create: true }, cx);
         }
@@ -321,6 +338,7 @@ impl Shell {
     pub fn cancel_dialog(&mut self, cx: &mut Context<Self>) {
         self.lc.close_confirm = None;
         self.lc.delete_confirm = None;
+        self.lc.dataset_delete = None;
         self.lc.create_confirm = None;
         cx.notify();
     }
@@ -328,6 +346,7 @@ impl Shell {
     pub(crate) fn any_dialog_open(&self) -> bool {
         self.lc.close_confirm.is_some()
             || self.lc.delete_confirm.is_some()
+            || self.lc.dataset_delete.is_some()
             || self.lc.create_confirm.is_some()
     }
 
@@ -337,6 +356,8 @@ impl Shell {
             Some("close_confirm")
         } else if self.lc.delete_confirm.is_some() {
             Some("delete_confirm")
+        } else if self.lc.dataset_delete.is_some() {
+            Some("delete_dataset_confirm")
         } else if self.lc.create_confirm.is_some() {
             Some("create_confirm")
         } else if self.about_open {
@@ -396,6 +417,71 @@ impl Shell {
                 )
                 .into_any_element();
         }
+        if let Some(dd) = &self.lc.dataset_delete {
+            let mut body = if dd.refs.is_empty() {
+                vec!["Nothing uses this Dataset.".to_string()]
+            } else {
+                let mut b = vec![format!(
+                    "Still used by {} reference{}:",
+                    dd.refs.len(),
+                    if dd.refs.len() == 1 { "" } else { "s" }
+                )];
+                b.extend(dd.refs.iter().map(|r| format!("  {r}")));
+                b.push("Routes that use it will report E072 until repointed.".into());
+                b
+            };
+            body.push("Seed file and persisted state are kept unless ticked below.".into());
+            let toggle =
+                |id: &'static str, label: &'static str, on: bool, cx: &mut Context<Self>| {
+                    crate::dev_id!(
+                        toolbar_button(t, id)
+                            .h(px(24.))
+                            .px(px(8.))
+                            .when(on, |d| d.bg(t.element_selected))
+                            .child(format!("{} {label}", if on { "[x]" } else { "[ ]" }))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                if let Some(dd) = this.lc.dataset_delete.as_mut() {
+                                    if id == "delete-dataset-seed" {
+                                        dd.remove_seed = !dd.remove_seed;
+                                    } else {
+                                        dd.remove_state = !dd.remove_state;
+                                    }
+                                }
+                                cx.notify();
+                            })),
+                        id,
+                        Button,
+                        label,
+                        None
+                    )
+                    .into_any_element()
+                };
+            let extra = vec![
+                toggle(
+                    "delete-dataset-seed",
+                    "Also delete the seed file",
+                    dd.remove_seed,
+                    cx,
+                ),
+                toggle(
+                    "delete-dataset-state",
+                    "Also delete the persisted state",
+                    dd.remove_state,
+                    cx,
+                ),
+            ];
+            return self
+                .confirm_modal_with(
+                    t,
+                    "delete-dataset-confirm",
+                    format!("Delete dataset {}?", dd.name),
+                    body,
+                    extra,
+                    "Delete",
+                    cx,
+                )
+                .into_any_element();
+        }
         if let Some((path, n)) = &self.lc.create_confirm {
             return self
                 .confirm_modal(
@@ -423,6 +509,20 @@ impl Shell {
         key: &'static str,
         title: String,
         body: Vec<String>,
+        confirm: &'static str,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        self.confirm_modal_with(t, key, title, body, vec![], confirm, cx)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn confirm_modal_with(
+        &self,
+        t: &Theme,
+        key: &'static str,
+        title: String,
+        body: Vec<String>,
+        extra: Vec<gpui::AnyElement>,
         confirm: &'static str,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -464,6 +564,7 @@ impl Shell {
                                     div().text_color(t.text_muted).text_size(px(12.)).child(l)
                                 },))
                         )
+                        .children(extra)
                         .child(
                             div()
                                 .flex()
@@ -677,7 +778,9 @@ impl Shell {
             PromptAction::ServerPrefix { .. } => {
                 fauxfield_model::validate_prefix(value).map(|_| ())
             }
-            PromptAction::NewCrudName { .. } => {
+            PromptAction::NewDataset { .. }
+            | PromptAction::RenameDataset { .. }
+            | PromptAction::NewCrudName { .. } => {
                 let ok = !value.is_empty()
                     && value
                         .chars()
@@ -780,6 +883,44 @@ impl Shell {
                     ComboEvent::Change(m) => this.set_route_method(&rid, m, cx),
                     ComboEvent::Action(_) => this.defer_action("edit_route_method_custom", cx),
                     _ => {}
+                }),
+            },
+        )
+    }
+
+    /// The Dataset a `crud` Route serves, repointable among the Server's Datasets (M10.01).
+    pub(crate) fn route_dataset_combo(
+        &self,
+        server: &str,
+        route: &str,
+        current: Option<&str>,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        use crate::combo_box::*;
+        let (sid, rid) = (server.to_string(), route.to_string());
+        self.combo_field(
+            cx,
+            ComboSite {
+                key: format!("route-dataset-{route}"),
+                items: self
+                    .ws
+                    .datasets
+                    .iter()
+                    .filter(|d| d.server_id == server)
+                    .map(|d| ComboItem::plain(d.name.clone()))
+                    .collect(),
+                value: current.map(|c| c.to_string().into()),
+                fallback: Some(current.unwrap_or("(none)").to_string().into()),
+                color: None,
+                tip: None,
+                width: ComboWidth::Fixed(160.),
+                look: ComboLook::Field,
+                size: ComboSize::Small,
+                on_event: std::rc::Rc::new(move |this, ev, cx| {
+                    if let ComboEvent::Change(d) = ev {
+                        let (sid, rid, d) = (sid.clone(), rid.clone(), d.to_string());
+                        this.store_op(cx, |s| s.set_route_dataset(&sid, &rid, &d));
+                    }
                 }),
             },
         )

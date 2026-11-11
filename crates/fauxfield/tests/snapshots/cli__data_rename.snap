@@ -1,0 +1,18 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "live": false,
+  "renamed": {
+    "from": "orders",
+    "to": "purchases"
+  },
+  "report": {
+    "free_text_warnings": [],
+    "moved_seed": null,
+    "moved_state": false,
+    "rewritten_routes": []
+  },
+  "server": "example-api"
+}

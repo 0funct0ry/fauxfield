@@ -168,6 +168,8 @@ pub struct Dataset {
     pub seed: Option<String>,
     pub seed_template: Option<String>,
     pub error: Option<String>,
+    /// crud Routes serving this Dataset: `(route id, "GET /users" label)` (M10.01).
+    pub used_by: Vec<(String, String)>,
 }
 
 /// Tooltip of the dice icon (SPEC §8.3).
@@ -257,6 +259,11 @@ pub struct Problem {
 }
 
 impl Dataset {
+    /// No Route uses it (structured references only; sidebar badge).
+    pub fn unused(&self) -> bool {
+        self.used_by.is_empty()
+    }
+
     /// Stable key across servers: `<server id>:<name>` (tab id; the row id adds `ds:`).
     pub fn key(&self) -> String {
         format!("{}:{}", self.server_id, self.name)
@@ -382,6 +389,14 @@ impl Workspace {
                         seed: d.seed.clone(),
                         seed_template: d.seed_template.clone(),
                         error: None,
+                        used_by: s
+                            .routes
+                            .iter()
+                            .filter(|r| {
+                                r.kind == "crud" && r.dataset.as_deref() == Some(d.name.as_str())
+                            })
+                            .map(|r| (r.id.clone(), format!("{} {}", r.method, r.path)))
+                            .collect(),
                     });
                 }
                 Server {

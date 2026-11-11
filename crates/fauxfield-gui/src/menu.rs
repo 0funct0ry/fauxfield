@@ -448,6 +448,7 @@ pub fn build_menus(ctx: &MenuContext) -> Vec<MenuDef> {
             act("switch_network_profile", "Switch Network Profile…"),
             act("toggle_chaos", "Toggle Chaos"),
             MenuEntry::Separator,
+            act("new_dataset", "New Dataset…"),
             act("new_crud_resource", "New CRUD Resource…"),
             act("new_static_route", "New Static Files Route…"),
             act("trust_dev_ca", "Trust Dev CA…"),
@@ -572,6 +573,7 @@ pub fn enabled(id: &str, ctx: &MenuContext) -> bool {
         | "reveal_workspace"
         | "switch_environment"
         | "new_crud_resource"
+        | "new_dataset"
         | "new_static_route"
         | "trust_dev_ca"
         | "reset_state"
@@ -671,6 +673,7 @@ pub fn why_disabled(id: &str, ctx: &MenuContext) -> &'static str {
             | "switch_environment"
             | "switch_network_profile"
             | "new_crud_resource"
+            | "new_dataset"
             | "new_static_route"
             | "trust_dev_ca"
             | "reset_state"

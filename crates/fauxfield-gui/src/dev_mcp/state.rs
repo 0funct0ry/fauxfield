@@ -73,6 +73,10 @@ pub struct DatasetState {
     pub id_strategy: String,
     pub persist: bool,
     pub error: Option<String>,
+    /// No crud Route uses it (M10.01).
+    pub unused: bool,
+    /// Route ids of the crud Routes serving it.
+    pub used_by: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -780,6 +784,8 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
                 id_strategy: d.id_strategy.clone(),
                 persist: d.persist,
                 error: d.error.clone(),
+                unused: d.unused(),
+                used_by: d.used_by.iter().map(|(id, _)| id.clone()).collect(),
             })
             .collect(),
         dataset: shell
