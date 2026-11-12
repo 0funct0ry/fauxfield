@@ -1,12 +1,24 @@
-//! Dataset tab (M8): live table and JSON views over the running engine's rows, inline edit,
-//! add and delete row, reset, export. Rows are read a window at a time (`Engine::dataset_page`)
-//! so 10k-row Datasets stay smooth.
+//! Dataset tab (M8, M10.03): live table (the DataTable component) and JSON views over the
+//! running engine's rows, add and delete row, reset, export. Rows are read a page at a time
+//! (`Engine::dataset_page`) so 100k-row Datasets stay smooth. The table is read-only for now;
+//! M10.04 builds editing on its events.
+
+use std::cell::Cell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 use gpui::{
-    AnyElement, Context, InteractiveElement, IntoElement, ParentElement,
-    StatefulInteractiveElement, Styled, div, prelude::*, px, uniform_list,
+    AnyElement, App, ClipboardItem, Context, Entity, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, ScrollStrategy, StatefulInteractiveElement, Styled, Window, div, prelude::*, px,
+    uniform_list,
 };
 use serde_json::Value;
+
+use crate::data_table::{
+    Column, ColumnSort, DataTable, TableDelegate, TableEvent, TableOptions, TableState,
+    TableViewModel,
+};
+use crate::layout::TableLayout;
 
 use crate::assets::BUFFER_FONT;
 use crate::shell::{PromptAction, Shell};
@@ -15,8 +27,6 @@ use crate::ui::{icon, toolbar_button};
 use crate::view::Dataset;
 
 pub const DS_ROW_H: f32 = 24.0;
-const CELL_W: f32 = 168.0;
-const IDX_W: f32 = 52.0;
 
 /// Cell text: strings bare, everything else as compact JSON.
 pub fn cell_text(v: &Value) -> String {
@@ -66,11 +76,10 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let engine = self.host.as_ref().map(|h| h.engine().clone());
-        let (total, head) = engine
+        let total = engine
             .as_ref()
-            .and_then(|e| e.dataset_page(&d.server_id, &d.name, 0, 100).ok())
-            .unwrap_or((d.rows, vec![]));
-        let cols = columns(&head, &d.key);
+            .and_then(|e| e.dataset_page(&d.server_id, &d.name, 0, 1).ok())
+            .map_or(d.rows, |(n, _)| n);
         let json_mode = self.ds_json_mode;
         let key = d.key();
         let (k1, k2, k3, k4, k5) = (
@@ -167,17 +176,7 @@ impl Shell {
                 .text_color(t.deleted)
                 .child(format!("Seed problem: {e}"))
         });
-        let body: AnyElement = if total == 0 {
-            div()
-                .flex_1()
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_size(px(12.))
-                .text_color(muted)
-                .child("No rows. Add one, or edit the seed file and reset.")
-                .into_any_element()
-        } else if json_mode {
+        let body: AnyElement = if json_mode && total > 0 {
             let (server, name) = (d.server_id.clone(), d.name.clone());
             uniform_list(
                 "ds-json",
@@ -219,65 +218,27 @@ impl Shell {
             .min_h_0()
             .into_any_element()
         } else {
-            let cols2 = cols.clone();
-            let (server, name, ds_key) = (d.server_id.clone(), d.name.clone(), key.clone());
-            let table_w = IDX_W + cols.len() as f32 * CELL_W + 32.;
-            div()
-                .flex_1()
-                .min_h_0()
-                .flex()
-                .flex_col()
-                .child(
-                    div()
-                        .h(px(DS_ROW_H))
-                        .flex_none()
-                        .w(px(table_w))
-                        .flex()
-                        .items_center()
-                        .px(px(8.))
-                        .border_b_1()
-                        .border_color(t.border_variant)
-                        .text_size(px(11.))
-                        .text_color(muted)
-                        .child(div().w(px(IDX_W)).flex_none().child("#"))
-                        .children(
-                            cols.iter().map(|c| {
-                                div().w(px(CELL_W)).flex_none().truncate().child(c.clone())
-                            }),
-                        ),
-                )
-                .child(
-                    uniform_list(
-                        "ds-table",
-                        total,
-                        cx.processor(
-                            move |this: &mut Shell, range: std::ops::Range<usize>, _w, cx| {
-                                let t = crate::theme::theme(cx).clone();
-                                let rows = this
-                                    .host
-                                    .as_ref()
-                                    .and_then(|h| {
-                                        h.engine()
-                                            .dataset_page(&server, &name, range.start, range.len())
-                                            .ok()
-                                    })
-                                    .map(|(_, r)| r)
-                                    .unwrap_or_default();
-                                rows.into_iter()
-                                    .enumerate()
-                                    .map(|(n, r)| {
-                                        let i = range.start + n;
-                                        this.render_dataset_row(&t, &ds_key, i, &cols2, &r, cx)
-                                    })
-                                    .collect::<Vec<_>>()
-                            },
-                        ),
-                    )
-                    .track_scroll(self.ds_scroll.clone())
+            match self.dataset_table(d, cx) {
+                Some(table) => div()
                     .flex_1()
-                    .min_h_0(),
-                )
-                .into_any_element()
+                    .min_h_0()
+                    .p(px(8.))
+                    .child(
+                        DataTable::new(&table)
+                            .accessibility_label(format!("Dataset {}", d.name))
+                            .with_size(crate::data_table::Size::Small),
+                    )
+                    .into_any_element(),
+                None => div()
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_size(px(12.))
+                    .text_color(muted)
+                    .child("No host is running.")
+                    .into_any_element(),
+            }
         };
         let _ = (hover, k4, k5);
         let used_by = div()
@@ -365,77 +326,6 @@ impl Shell {
             .children(banner)
             .child(body)
     }
-
-    fn render_dataset_row(
-        &self,
-        t: &Theme,
-        key: &str,
-        i: usize,
-        cols: &[String],
-        row: &Value,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let hover = t.element_hover;
-        let muted = t.text_muted;
-        let del_key = key.to_string();
-        div()
-            .id(crate::ui::eid(format!("ds-row-{i}")))
-            .h(px(DS_ROW_H))
-            .px(px(8.))
-            .flex()
-            .flex_row()
-            .items_center()
-            .font_family(BUFFER_FONT)
-            .text_size(px(11.))
-            .hover(move |s| s.bg(hover))
-            .child(
-                div()
-                    .w(px(IDX_W))
-                    .flex_none()
-                    .text_color(muted)
-                    .child((i + 1).to_string()),
-            )
-            .children(cols.iter().map(|c| {
-                let v = row.get(c).cloned().unwrap_or(Value::Null);
-                let (k, col) = (key.to_string(), c.clone());
-                let initial = serde_json::to_string(&v).unwrap_or_default();
-                div()
-                    .id(crate::ui::eid(format!("ds-cell-{i}-{c}")))
-                    .w(px(CELL_W))
-                    .flex_none()
-                    .truncate()
-                    .cursor_pointer()
-                    .child(cell_text(&v))
-                    .on_click(cx.listener(move |this, _, w, cx| {
-                        this.begin_prompt(
-                            PromptAction::EditCell {
-                                key: k.clone(),
-                                index: i,
-                                col: col.clone(),
-                            },
-                            &initial,
-                            w,
-                            cx,
-                        )
-                    }))
-            }))
-            .child(
-                div()
-                    .id(crate::ui::eid(format!("ds-del-{i}")))
-                    .size(px(20.))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .cursor_pointer()
-                    .text_color(muted)
-                    .child("×")
-                    .on_click(
-                        cx.listener(move |this, _, _, cx| this.delete_dataset_row(&del_key, i, cx)),
-                    ),
-            )
-            .into_any_element()
-    }
 }
 
 // ---- actions on Datasets ------------------------------------------------------------------
@@ -454,6 +344,7 @@ impl Shell {
             self.notify("No host is running.".into(), cx);
             return;
         };
+        self.ds_gen += 1;
         match e.dataset_reset(&d.server_id, &d.name) {
             Ok(()) => self.notify(format!("Reset {} to its seed", d.name), cx),
             Err(err) => self.notify(err.to_string(), cx),
@@ -494,6 +385,7 @@ impl Shell {
         cx: &mut Context<Self>,
         f: impl FnOnce(&mut Value) -> Result<(), String>,
     ) {
+        self.ds_gen += 1;
         let Some(d) = self.ws.find_dataset(key).cloned() else {
             return;
         };
@@ -759,5 +651,590 @@ impl Shell {
                 d.error = i.error.clone();
             }
         }
+    }
+}
+
+// ---- the DataTable over a Dataset (M10.03) -------------------------------------------------
+
+const PAGE: usize = 256;
+const DEFAULT_COL_W: f32 = 160.0;
+/// Approximate advance of one monospace character at 11 px, for fit-to-content.
+const CHAR_W: f32 = 6.6;
+
+/// What the cells tell the shell: the last pressed cell and pointer position (for the row menu).
+#[derive(Default)]
+pub struct DsShared {
+    pub cell: Cell<Option<(usize, usize)>>,
+    pub pointer: Cell<(f32, f32)>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DsRowAction {
+    CopyCell,
+    CopyRowJson,
+    DeleteRow,
+}
+
+/// Rows of one Dataset for the DataTable: a page cache over `Engine::dataset_page`, and a
+/// sorted snapshot while a column is sorted.
+pub struct DatasetTable {
+    engine: Engine,
+    server_id: String,
+    name: String,
+    key_field: String,
+    columns: Vec<Column>,
+    order: Vec<String>,
+    widths: HashMap<String, f32>,
+    count: usize,
+    generation: u64,
+    pages: HashMap<usize, Vec<Value>>,
+    snapshot: Option<Vec<Value>>,
+    perm: Option<Vec<usize>>,
+    sort: Option<(String, ColumnSort)>,
+    pub shared: Rc<DsShared>,
+}
+
+use fauxfield_engine::Engine;
+
+fn cmp_values(a: &Value, b: &Value) -> std::cmp::Ordering {
+    use std::cmp::Ordering::*;
+    match (a, b) {
+        (Value::Null, Value::Null) => Equal,
+        (Value::Null, _) => Greater,
+        (_, Value::Null) => Less,
+        (Value::Number(x), Value::Number(y)) => {
+            x.as_f64().partial_cmp(&y.as_f64()).unwrap_or(Equal)
+        }
+        (Value::String(x), Value::String(y)) => x.cmp(y),
+        (Value::Bool(x), Value::Bool(y)) => x.cmp(y),
+        (x, y) => cell_text(x).cmp(&cell_text(y)),
+    }
+}
+
+/// Row order of `rows` sorted by `field` (stable; nulls last when ascending).
+pub fn sort_permutation(rows: &[Value], field: &str, descending: bool) -> Vec<usize> {
+    let mut perm: Vec<usize> = (0..rows.len()).collect();
+    let get = |i: usize| rows[i].get(field).unwrap_or(&Value::Null);
+    perm.sort_by(|&a, &b| {
+        let o = cmp_values(get(a), get(b));
+        if descending { o.reverse() } else { o }
+    });
+    perm
+}
+
+impl DatasetTable {
+    pub fn new(
+        engine: Engine,
+        d: &Dataset,
+        saved: Option<&TableLayout>,
+        generation: u64,
+    ) -> DatasetTable {
+        let mut t = DatasetTable {
+            engine,
+            server_id: d.server_id.clone(),
+            name: d.name.clone(),
+            key_field: d.key.clone(),
+            columns: vec![],
+            order: saved.map(|s| s.order.clone()).unwrap_or_default(),
+            widths: saved
+                .map(|s| s.widths.iter().map(|(k, v)| (k.clone(), *v)).collect())
+                .unwrap_or_default(),
+            count: 0,
+            generation,
+            pages: HashMap::new(),
+            snapshot: None,
+            perm: None,
+            sort: None,
+            shared: Rc::new(DsShared::default()),
+        };
+        t.reload();
+        t
+    }
+
+    pub fn stale(&self, rows: usize, generation: u64) -> bool {
+        self.generation != generation || self.count != rows
+    }
+
+    /// Drop caches and re-read the columns and the row count.
+    pub fn invalidate(&mut self, generation: u64) {
+        self.generation = generation;
+        self.pages.clear();
+        self.snapshot = None;
+        self.perm = None;
+        self.reload();
+        if let Some((key, s)) = self.sort.clone() {
+            self.apply_sort(&key, s);
+        }
+    }
+
+    fn reload(&mut self) {
+        let (total, head) = self
+            .engine
+            .dataset_page(&self.server_id, &self.name, 0, 100)
+            .unwrap_or((0, vec![]));
+        self.count = total;
+        let mut keys = columns(&head, &self.key_field);
+        // Saved order first; columns it does not know keep their natural order after them.
+        let pos = |k: &String| self.order.iter().position(|o| o == k).unwrap_or(usize::MAX);
+        keys.sort_by_key(pos);
+        self.columns = keys
+            .into_iter()
+            .map(|k| {
+                let w = self.widths.get(&k).copied().unwrap_or(DEFAULT_COL_W);
+                let mut c = Column::new(k.clone(), k.clone()).sortable().width(w);
+                if let Some((sk, s)) = &self.sort
+                    && *sk == k
+                {
+                    c.sort = *s;
+                }
+                c
+            })
+            .collect();
+    }
+
+    pub fn column_keys(&self) -> Vec<String> {
+        self.columns.iter().map(|c| c.key.clone()).collect()
+    }
+
+    pub fn set_widths(&mut self, widths: &[f32]) {
+        for (c, w) in self.columns.iter_mut().zip(widths) {
+            c.width = *w;
+            self.widths.insert(c.key.clone(), *w);
+        }
+    }
+
+    fn apply_sort(&mut self, key: &str, s: ColumnSort) {
+        if s == ColumnSort::Default || s == ColumnSort::None {
+            self.perm = None;
+            self.snapshot = None;
+            self.sort = None;
+            return;
+        }
+        let rows = match self.engine.dataset_rows(&self.server_id, &self.name) {
+            Ok(Value::Array(a)) => a,
+            Ok(other) => vec![other],
+            Err(_) => return,
+        };
+        self.perm = Some(sort_permutation(&rows, key, s == ColumnSort::Descending));
+        self.snapshot = Some(rows);
+        self.sort = Some((key.to_string(), s));
+    }
+
+    /// Index in the live rows of displayed row `i` (differs while sorted).
+    pub fn actual_index(&self, i: usize) -> usize {
+        self.perm
+            .as_ref()
+            .and_then(|p| p.get(i).copied())
+            .unwrap_or(i)
+    }
+
+    fn ensure(&mut self, i: usize) {
+        if self.snapshot.is_some() {
+            return;
+        }
+        let page = i / PAGE;
+        if !self.pages.contains_key(&page) {
+            let rows = self
+                .engine
+                .dataset_page(&self.server_id, &self.name, page * PAGE, PAGE)
+                .map(|(_, r)| r)
+                .unwrap_or_default();
+            self.pages.insert(page, rows);
+        }
+    }
+
+    pub fn row_value(&self, i: usize) -> Option<Value> {
+        let ix = self.actual_index(i);
+        if let Some(s) = &self.snapshot {
+            return s.get(ix).cloned();
+        }
+        self.pages
+            .get(&(ix / PAGE))
+            .and_then(|p| p.get(ix % PAGE))
+            .cloned()
+            .or_else(|| {
+                self.engine
+                    .dataset_page(&self.server_id, &self.name, ix, 1)
+                    .ok()
+                    .and_then(|(_, mut r)| r.pop())
+            })
+    }
+
+    pub fn page_count(&self) -> usize {
+        self.pages.len()
+    }
+}
+
+impl TableDelegate for DatasetTable {
+    fn columns_count(&self, _: &App) -> usize {
+        self.columns.len()
+    }
+
+    fn rows_count(&self, _: &App) -> usize {
+        self.count
+    }
+
+    fn column(&self, ix: usize, _: &App) -> Column {
+        self.columns[ix].clone()
+    }
+
+    fn render_td(
+        &mut self,
+        row: usize,
+        col: usize,
+        _: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> AnyElement {
+        self.ensure(self.actual_index(row));
+        let key = self.columns[col].key.clone();
+        let v = self
+            .row_value(row)
+            .and_then(|r| r.get(&key).cloned())
+            .unwrap_or(Value::Null);
+        let t = crate::theme::theme(cx).clone();
+        let shared = self.shared.clone();
+        let shared2 = self.shared.clone();
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .overflow_hidden()
+            .whitespace_nowrap()
+            .text_ellipsis()
+            .font_family(BUFFER_FONT)
+            .text_size(px(11.))
+            .text_color(if v.is_null() { t.text_muted } else { t.text })
+            .on_mouse_down(MouseButton::Left, move |ev, _, _| {
+                shared.cell.set(Some((row, col)));
+                shared
+                    .pointer
+                    .set((f32::from(ev.position.x), f32::from(ev.position.y)));
+            })
+            .on_mouse_down(MouseButton::Right, move |ev, _, _| {
+                shared2.cell.set(Some((row, col)));
+                shared2
+                    .pointer
+                    .set((f32::from(ev.position.x), f32::from(ev.position.y)));
+            })
+            .child(cell_text(&v))
+            .into_any_element()
+    }
+
+    fn perform_sort(
+        &mut self,
+        col: usize,
+        sort: ColumnSort,
+        _: &mut Window,
+        _: &mut Context<TableState<Self>>,
+    ) {
+        let key = self.columns[col].key.clone();
+        for (i, c) in self.columns.iter_mut().enumerate() {
+            c.sort = if i == col { sort } else { ColumnSort::Default };
+        }
+        self.apply_sort(&key, sort);
+        if sort == ColumnSort::Default {
+            self.sort = None;
+        }
+    }
+
+    fn fit_column(&self, col: usize, _: &App) -> Option<f32> {
+        let key = &self.columns.get(col)?.key;
+        let rows = self
+            .engine
+            .dataset_page(&self.server_id, &self.name, 0, 1000)
+            .map(|(_, r)| r)
+            .unwrap_or_default();
+        let widest = rows
+            .iter()
+            .map(|r| {
+                cell_text(r.get(key).unwrap_or(&Value::Null))
+                    .chars()
+                    .count()
+            })
+            .max()
+            .unwrap_or(0);
+        // The header text plus the sort icon (0.75 rem + 2 px padding each side).
+        let header = key.chars().count() as f32 * 6.5 + 16.0;
+        Some((widest as f32 * CHAR_W).max(header))
+    }
+
+    fn move_column(&mut self, from: usize, to: usize, _: &mut Context<TableState<Self>>) {
+        let c = self.columns.remove(from);
+        self.columns.insert(to, c);
+        self.order = self.column_keys();
+    }
+
+    fn cell_text(&self, row: usize, col: usize, _: &App) -> String {
+        let key = &self.columns[col].key;
+        self.row_value(row)
+            .and_then(|r| r.get(key).map(cell_text))
+            .unwrap_or_default()
+    }
+
+    fn cell_label(&self, row: usize, col: usize, cx: &App) -> Option<String> {
+        Some(TableDelegate::cell_text(self, row, col, cx))
+    }
+
+    fn render_empty(
+        &mut self,
+        _: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> Option<AnyElement> {
+        let t = crate::theme::theme(cx).clone();
+        Some(
+            div()
+                .size_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(px(12.))
+                .text_color(t.text_muted)
+                .child("No rows. Add one, or edit the seed file and reset.")
+                .into_any_element(),
+        )
+    }
+}
+
+impl Shell {
+    /// The DataTable of a Dataset, created on first use and refreshed when rows changed.
+    pub(crate) fn dataset_table(
+        &self,
+        d: &Dataset,
+        cx: &mut Context<Self>,
+    ) -> Option<Entity<TableState<DatasetTable>>> {
+        let key = d.key();
+        let generation = self.ds_gen;
+        let existing = self.ds_tables.borrow().get(&key).cloned();
+        let ent = match existing {
+            Some(e) => e,
+            None => {
+                let engine = self.engine()?;
+                let layout = self.layout.dataset_tables.get(&key).cloned();
+                let delegate = DatasetTable::new(engine, d, layout.as_ref(), generation);
+                let opts = TableOptions {
+                    col_selectable: false,
+                    ..TableOptions::default()
+                };
+                let id = format!("ds-{key}");
+                let ent = cx.new(|cx| TableState::new(id, delegate, opts, cx));
+                let k = key.clone();
+                let sub = cx.subscribe(&ent, move |this: &mut Shell, ent, ev: &TableEvent, cx| {
+                    this.on_ds_table_event(&k, &ent, ev, cx)
+                });
+                self.ds_table_subs.borrow_mut().push(sub);
+                self.ds_tables.borrow_mut().insert(key, ent.clone());
+                ent
+            }
+        };
+        let rows = d.rows;
+        ent.update(cx, |s, cx| {
+            if s.delegate().stale(rows, generation) {
+                s.delegate_mut().invalidate(generation);
+                s.refresh(cx);
+            }
+        });
+        Some(ent)
+    }
+
+    fn on_ds_table_event(
+        &mut self,
+        key: &str,
+        ent: &Entity<TableState<DatasetTable>>,
+        ev: &TableEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match ev {
+            TableEvent::ColumnWidthsChanged(w) => {
+                let keys = ent.read(cx).delegate().column_keys();
+                let w = w.clone();
+                ent.update(cx, |s, _| s.delegate_mut().set_widths(&w));
+                let l = self
+                    .layout
+                    .dataset_tables
+                    .entry(key.to_string())
+                    .or_default();
+                l.order = keys.clone();
+                l.widths = keys.into_iter().zip(w).collect();
+                self.save_layout();
+            }
+            TableEvent::MoveColumn(..) => {
+                let keys = ent.read(cx).delegate().column_keys();
+                self.layout
+                    .dataset_tables
+                    .entry(key.to_string())
+                    .or_default()
+                    .order = keys;
+                self.save_layout();
+            }
+            TableEvent::SelectRow(_) => {
+                self.ds_row_targets.borrow_mut().insert(key.to_string());
+                cx.notify();
+            }
+            TableEvent::ClearSelection => {
+                self.ds_row_targets.borrow_mut().remove(key);
+                cx.notify();
+            }
+            TableEvent::DoubleClickedRow(r) => {
+                let actual = ent.read(cx).delegate().actual_index(*r);
+                self.ds_json_mode = true;
+                self.ds_scroll.scroll_to_item(actual, ScrollStrategy::Top);
+                cx.notify();
+            }
+            TableEvent::RightClickedRow(Some(_)) => {
+                self.ds_row_targets.borrow_mut().insert(key.to_string());
+                let (x, y) = ent.read(cx).delegate().shared.pointer.get();
+                self.set_menu(crate::shell::RowMenu {
+                    row_id: key.to_string(),
+                    kind: crate::tree::RowKind::DatasetRow,
+                    x,
+                    y,
+                });
+                cx.notify();
+            }
+            _ => {}
+        }
+    }
+
+    /// True when the open Dataset tab has a selected or right-clicked row.
+    pub(crate) fn dataset_row_target_exists(&self) -> bool {
+        self.tabs
+            .active()
+            .filter(|t| t.kind == crate::tabs::TabKind::Dataset)
+            .is_some_and(|t| self.ds_row_targets.borrow().contains(&t.id))
+    }
+
+    pub(crate) fn active_dataset_row_action(&mut self, a: DsRowAction, cx: &mut Context<Self>) {
+        let Some(key) = self
+            .tabs
+            .active()
+            .filter(|t| t.kind == crate::tabs::TabKind::Dataset)
+            .map(|t| t.id.clone())
+        else {
+            return;
+        };
+        self.dataset_row_action(&key, a, cx);
+    }
+
+    /// Copy cell, copy row as JSON, or delete the table's right-clicked (else selected) row.
+    pub(crate) fn dataset_row_action(&mut self, key: &str, a: DsRowAction, cx: &mut Context<Self>) {
+        let Some(ent) = self.ds_tables.borrow().get(key).cloned() else {
+            return;
+        };
+        let (row, actual, value, col_key) = {
+            let st = ent.read(cx);
+            let Some(row) = st.right_clicked_row().or(st.selected_row()) else {
+                return;
+            };
+            let d = st.delegate();
+            let col = d
+                .shared
+                .cell
+                .get()
+                .filter(|(r, _)| *r == row)
+                .map_or(0, |(_, c)| c);
+            let col_key = st.model.columns.get(col).map(|c| c.key.clone());
+            (row, d.actual_index(row), d.row_value(row), col_key)
+        };
+        let _ = row;
+        match a {
+            DsRowAction::CopyCell => {
+                let text = value
+                    .zip(col_key)
+                    .and_then(|(v, k)| v.get(&k).map(cell_text))
+                    .unwrap_or_default();
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
+                self.notify("Copied cell".into(), cx);
+            }
+            DsRowAction::CopyRowJson => {
+                let text = value
+                    .map(|v| serde_json::to_string_pretty(&v).unwrap_or_default())
+                    .unwrap_or_default();
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
+                self.notify("Copied row as JSON".into(), cx);
+            }
+            DsRowAction::DeleteRow => {
+                ent.update(cx, |s, cx| {
+                    s.clear_selection(cx);
+                    s.set_right_clicked_row(None, cx);
+                });
+                self.ds_row_targets.borrow_mut().remove(key);
+                self.delete_dataset_row(key, actual, cx);
+            }
+        }
+    }
+
+    /// `ui.state` view of the open Dataset's table.
+    pub fn dataset_table_view(&self, key: &str, cx: &App) -> Option<TableViewModel> {
+        let ent = self.ds_tables.borrow().get(key).cloned()?;
+        Some(ent.read(cx).view_model(cx))
+    }
+}
+
+// ---- dev-mcp drivers: pointer events cannot be injected, so these do what the pointer would ----
+
+#[cfg(feature = "dev-mcp")]
+impl Shell {
+    fn dev_table(
+        &self,
+        table: &str,
+    ) -> Result<Entity<TableState<DatasetTable>>, fauxfield_mcp::UiError> {
+        table
+            .strip_prefix("ds-")
+            .and_then(|k| self.ds_tables.borrow().get(k).cloned())
+            .ok_or_else(|| fauxfield_mcp::UiError::Failed(format!("no table {table:?}")))
+    }
+
+    pub(crate) fn dev_table_op(
+        &mut self,
+        table: &str,
+        op: crate::dev_mcp::tree::DtOp,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<(), fauxfield_mcp::UiError> {
+        use crate::data_table::ClickMods;
+        use crate::dev_mcp::tree::DtOp;
+        let ent = self.dev_table(table)?;
+        ent.update(cx, |s, cx| match op {
+            DtOp::Header(c) => s.header_click(c, ClickMods::plain(), window, cx),
+            DtOp::Row(r) => s.row_click(r, ClickMods::plain(), window, cx),
+            DtOp::RowDouble(r) => s.row_click(r, ClickMods::double(), window, cx),
+        });
+        Ok(())
+    }
+
+    pub(crate) fn dev_table_command(
+        &mut self,
+        table: &str,
+        op: &str,
+        col: &str,
+        width: Option<f32>,
+        index: Option<usize>,
+        cx: &mut Context<Self>,
+    ) -> Result<serde_json::Value, fauxfield_mcp::UiError> {
+        let fail = |m: String| Err(fauxfield_mcp::UiError::Failed(m));
+        let ent = self.dev_table(table)?;
+        let Some(ix) = ent.read(cx).model.columns.iter().position(|c| c.key == col) else {
+            return fail(format!("no column {col:?}"));
+        };
+        match op {
+            "resize" => {
+                let Some(w) = width else {
+                    return fail("resize needs `width`".into());
+                };
+                ent.update(cx, |s, cx| s.resize_col(ix, w, cx));
+            }
+            "fit" => ent.update(cx, |s, cx| s.fit_col(ix, cx)),
+            "move_column" => {
+                let Some(gap) = index else {
+                    return fail("move_column needs `index`".into());
+                };
+                let moved = ent.update(cx, |s, cx| s.move_col(ix, gap, cx));
+                if !moved {
+                    return fail("that move is a no-op or crosses a fixed region".into());
+                }
+            }
+            other => return fail(format!("unknown table op {other:?}")),
+        }
+        Ok(serde_json::json!({ "ok": true }))
     }
 }

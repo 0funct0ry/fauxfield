@@ -153,6 +153,7 @@ impl Shell {
         c.right_dock = self.layout.right_open;
         c.traffic_rows = self.traffic.len();
         c.traffic_row_selected = self.traffic_selected.is_some();
+        c.dataset_row_target = self.dataset_row_target_exists();
         c.recents = self
             .recents
             .iter()

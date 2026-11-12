@@ -1,0 +1,79 @@
+# M10.03 scenario: the DataTable in the Dataset tab. Sorts, resizes, reorders, selects by
+# mouse (click_element) and keyboard, scrolls a 100k-row Dataset and screenshots One Dark and
+# One Light. Pointer drags cannot be injected, so resize and reorder use `ui.command table`.
+# The resize handle is a drag target only; its double-click (fit) is `ui.command table fit`.
+# Needs fixtures/datatable-workspace as the launch workspace; scripts/smoke-ui.sh reads the
+# header below and starts a second app on it.
+# workspace: datatable-workspace
+name: m10-03-datatable
+size: default
+steps:
+  - state: [reset]
+  - click_element: {id: sidebar-tab-datasets}
+  - wait_for_idle: {}
+  - find: {text: small}
+  - click_element: {id: "row-ds:srv_tables:small"}
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/table/columns, equals: [id, name, city, score]}
+  - assert: {pointer: /dataset/table/row_count, equals: 8}
+  - assert: {pointer: /dataset/table/empty, equals: false}
+  - assert: {pointer: /dataset/table/selection_kind, equals: none}
+  # Sort: first click descending, second ascending, third back to the stored order.
+  - click_element: {id: "dt-ds-srv_tables:small-th-name"}
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/table/sort, equals: [name, descending]}
+  - assert_find: {text: Hotel, ids: ["dt-ds-srv_tables:small-cell-0-name"]}
+  - click_element: {id: "dt-ds-srv_tables:small-th-name"}
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/table/sort, equals: [name, ascending]}
+  - assert_find: {text: Alpha, ids: ["dt-ds-srv_tables:small-cell-0-name"]}
+  - click_element: {id: "dt-ds-srv_tables:small-th-name"}
+  - wait_for_idle: {}
+  - assert_find: {text: Delta, ids: ["dt-ds-srv_tables:small-cell-0-name"]}
+  # Resize (clamped to 20..1200) and fit-to-content (double click on the handle).
+  - command: {command: table, id: "ds-srv_tables:small", op: resize, name: city, width: 240}
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/table/widths/2, equals: 240}
+  - command: {command: table, id: "ds-srv_tables:small", op: resize, name: city, width: 5}
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/table/widths/2, equals: 20}
+  - command: {command: table, id: "ds-srv_tables:small", op: fit, name: city}
+  - wait_for_idle: {}
+  # Reorder: move `city` before `name`.
+  - command: {command: table, id: "ds-srv_tables:small", op: move_column, name: city, index: 1}
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/table/columns, equals: [id, city, name, score]}
+  # Mouse selection, then the keyboard model.
+  - click_element: {id: "dt-ds-srv_tables:small-row-0"}
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/table/selection, equals: [0]}
+  - key: down
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/table/selection, equals: [1]}
+  - key: end
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/table/selection, equals: [7]}
+  - key: down
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/table/selection, equals: [0]}
+  - key: escape
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/table/selection_kind, equals: none}
+  - click_element: {id: "dt-ds-srv_tables:small-row-3"}
+  - set_theme: One Dark
+  - wait_for_idle: {}
+  - screenshot: {name: m10-03-table-one-dark}
+  - set_theme: One Light
+  - wait_for_idle: {}
+  - screenshot: {name: m10-03-table-one-light}
+  - audit: {themes: [one-dark, one-light], sizes: [default, min]}
+  # 100k rows: virtualised, so only a window is rendered.
+  - find: {text: big}
+  - click_element: {id: "row-ds:srv_tables:big"}
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/table/row_count, equals: 100000}
+  - click_element: {id: "dt-ds-srv_tables:big-row-0"}
+  - key: end
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/table/selection, equals: [99999]}
+  - screenshot: {name: m10-03-table-100k}

@@ -407,7 +407,9 @@ impl Shell {
             .into_any_element(),
             RowKind::Dataset { .. } => icon("table", 13., t.icon_muted).into_any_element(),
             RowKind::CrudOp { method } => method_badge(t, method).into_any_element(),
-            RowKind::Response { .. } | RowKind::ErrorPresets => div().into_any_element(),
+            RowKind::Response { .. } | RowKind::ErrorPresets | RowKind::DatasetRow => {
+                div().into_any_element()
+            }
         };
         let chevron: gpui::AnyElement = if r.expandable {
             crate::dev_id!(

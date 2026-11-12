@@ -86,6 +86,8 @@ pub struct DatasetViewState {
     pub view: &'static str,
     pub rows: usize,
     pub columns: Vec<String>,
+    /// The DataTable view model (M10.03): order, widths, sort, selection, visible range.
+    pub table: Option<crate::data_table::TableViewModel>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -804,6 +806,7 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
                     view: if shell.ds_json_mode { "json" } else { "table" },
                     rows: d.rows,
                     columns: crate::dataset_ui::columns(&head, &d.key),
+                    table: shell.dataset_table_view(&d.key(), cx),
                 }
             }),
     }

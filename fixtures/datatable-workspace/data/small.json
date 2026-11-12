@@ -1,0 +1,10 @@
+[
+  { "id": 1, "name": "Delta", "city": "Oslo", "score": 40 },
+  { "id": 2, "name": "Alpha", "city": "Lima", "score": 95 },
+  { "id": 3, "name": "Charlie", "city": "Kyiv", "score": 12 },
+  { "id": 4, "name": "Bravo", "city": "Rome", "score": 77 },
+  { "id": 5, "name": "Echo", "city": "Cairo", "score": 58 },
+  { "id": 6, "name": "Foxtrot", "city": "Quito", "score": 3 },
+  { "id": 7, "name": "Golf", "city": "Tokyo", "score": 66 },
+  { "id": 8, "name": "Hotel", "city": "Doha", "score": 81 }
+]

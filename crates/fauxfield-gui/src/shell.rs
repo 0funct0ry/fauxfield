@@ -14,6 +14,7 @@ use gpui::{
 use crate::actions;
 use crate::assets::UI_FONT;
 use crate::chord::{CHORD_TIMEOUT, ChordState, Outcome};
+use crate::dataset_ui::DsRowAction;
 use crate::keymap::Keymap;
 use crate::layout::{BottomTab, Layout};
 use crate::search::{self, CommandEntry, Hit, Kind, Target};
@@ -331,6 +332,17 @@ pub struct Shell {
     pub(crate) traffic_scroll: UniformListScrollHandle,
     pub(crate) ds_scroll: UniformListScrollHandle,
     pub(crate) ds_json_mode: bool,
+    /// One DataTable per open Dataset (key `server:name`), created lazily at render.
+    pub(crate) ds_tables: std::cell::RefCell<
+        HashMap<
+            String,
+            gpui::Entity<crate::data_table::TableState<crate::dataset_ui::DatasetTable>>,
+        >,
+    >,
+    pub(crate) ds_row_targets: std::cell::RefCell<std::collections::HashSet<String>>,
+    pub(crate) ds_table_subs: std::cell::RefCell<Vec<gpui::Subscription>>,
+    /// Bumped when Dataset rows change so tables drop their page caches.
+    pub(crate) ds_gen: u64,
     /// Prompt to open right after the current one is applied (wizard steps).
     pub(crate) next_prompt: Option<(PromptAction, String)>,
     pub(crate) traffic_selected: Option<usize>,
@@ -579,6 +591,10 @@ impl Shell {
             traffic_scroll: UniformListScrollHandle::new(),
             ds_scroll: UniformListScrollHandle::new(),
             ds_json_mode: false,
+            ds_tables: Default::default(),
+            ds_table_subs: Default::default(),
+            ds_row_targets: Default::default(),
+            ds_gen: 0,
             next_prompt: None,
             traffic_selected: None,
             route_sub: HashMap::new(),
@@ -1139,7 +1155,7 @@ impl Shell {
     }
 
     /// Opens `m` with the first entry highlighted.
-    fn set_menu(&mut self, m: RowMenu) {
+    pub(crate) fn set_menu(&mut self, m: RowMenu) {
         self.menu_sel = 0;
         self.menu = Some(m);
     }
@@ -1391,6 +1407,13 @@ impl Shell {
                 if let Some(k) = m.row_id.strip_prefix("ds:") {
                     self.reset_dataset(k, cx);
                 }
+            }
+            MenuAct::CopyCell => self.dataset_row_action(&m.row_id, DsRowAction::CopyCell, cx),
+            MenuAct::CopyRowJson => {
+                self.dataset_row_action(&m.row_id, DsRowAction::CopyRowJson, cx)
+            }
+            MenuAct::DeleteDatasetRow => {
+                self.dataset_row_action(&m.row_id, DsRowAction::DeleteRow, cx)
             }
             MenuAct::ExportDataset => {
                 if let Some(k) = m.row_id.strip_prefix("ds:") {
@@ -3208,6 +3231,9 @@ impl Render for Shell {
             },
             EditSampleRequest => |this, _w, cx| this.open_sample_dialog(cx),
             ResetState => |this, _w, cx| this.reset_state_action(cx),
+            CopyDatasetCell => |this, _w, cx| this.active_dataset_row_action(DsRowAction::CopyCell, cx),
+            CopyDatasetRow => |this, _w, cx| this.active_dataset_row_action(DsRowAction::CopyRowJson, cx),
+            DeleteDatasetRow => |this, _w, cx| this.active_dataset_row_action(DsRowAction::DeleteRow, cx),
             NewCrudResource => |this, w, cx| this.begin_new_crud(w, cx),
             NewDataset => |this, w, cx| this.begin_new_dataset(w, cx),
             NewStaticRoute => |this, w, cx| this.begin_new_static(w, cx),

@@ -2136,6 +2136,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64",
+ "criterion",
  "directories",
  "fauxfield-control",
  "fauxfield-engine",

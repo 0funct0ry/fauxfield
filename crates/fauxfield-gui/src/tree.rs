@@ -123,6 +123,8 @@ pub enum RowKind {
     },
     /// "Add error preset" picker; the row id is the Route.
     ErrorPresets,
+    /// A row of the Dataset table (M10.03 context menu; the row id is the Dataset key).
+    DatasetRow,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -348,6 +350,10 @@ pub enum MenuAct {
     ToggleChaos,
     ResetDataset,
     ExportDataset,
+    /// Dataset table row menu (M10.03).
+    CopyCell,
+    CopyRowJson,
+    DeleteDatasetRow,
     // Server menu (M3.1).
     Restart,
     ToggleEnabled,
@@ -392,6 +398,9 @@ impl MenuAct {
             ToggleChaos => "toggle-chaos".into(),
             ResetDataset => "reset-dataset".into(),
             ExportDataset => "export-dataset".into(),
+            CopyCell => "copy-cell".into(),
+            CopyRowJson => "copy-row-json".into(),
+            DeleteDatasetRow => "delete-row".into(),
             Restart => "restart".into(),
             ToggleEnabled => "toggle-enabled".into(),
             ChangePort => "change-port".into(),
@@ -541,6 +550,11 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
             ("Reset to seed", ResetDataset),
             ("Export JSON…", ExportDataset),
             ("Delete", Delete),
+        ],
+        RowKind::DatasetRow => vec![
+            ("Copy cell", CopyCell),
+            ("Copy row as JSON", CopyRowJson),
+            ("Delete row", DeleteDatasetRow),
         ],
         RowKind::CrudOp { .. } => vec![("Open route", Open)],
         RowKind::Response { default, disabled } => {

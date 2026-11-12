@@ -83,6 +83,8 @@ pub struct MenuContext {
     pub right_dock: bool,
     pub traffic_rows: usize,
     pub traffic_row_selected: bool,
+    /// A Dataset tab is open with a row selected or right-clicked (M10.03).
+    pub dataset_row_target: bool,
     pub recents: Vec<Recent>,
     pub fullscreen: bool,
     pub maximized: bool,
@@ -117,6 +119,7 @@ impl MenuContext {
             right_dock: false,
             traffic_rows: 0,
             traffic_row_selected: false,
+            dataset_row_target: false,
             recents: Vec::new(),
             fullscreen: false,
             maximized: false,
@@ -171,6 +174,18 @@ pub struct MenuDef {
 
 /// Actions that are deliberately not in the menu, each with the reason.
 pub const NOT_IN_MENU: &[(&str, &str)] = &[
+    (
+        "copy_dataset_cell",
+        "row menu and palette of the Dataset table",
+    ),
+    (
+        "copy_dataset_row",
+        "row menu and palette of the Dataset table",
+    ),
+    (
+        "delete_dataset_row",
+        "row menu and palette of the Dataset table",
+    ),
     ("cancel_quit", "button of the quit confirmation modal"),
     ("quit_anyway", "button of the quit confirmation modal"),
     ("merge_keep_mine", "button of the merge banner"),
@@ -596,6 +611,7 @@ pub fn enabled(id: &str, ctx: &MenuContext) -> bool {
         "edit_server_port" => ctx.current_server.is_some(),
         "clear_traffic" => ctx.traffic_rows > 0,
         "copy_as_curl" => ctx.traffic_row_selected,
+        "copy_dataset_cell" | "copy_dataset_row" | "delete_dataset_row" => ctx.dataset_row_target,
         "send_test"
         | "edit_sample_request"
         | "edit_route_method"

@@ -1,0 +1,48 @@
+# M10.03 fixture: a small static Dataset with predictable rows and a 100k-row generated one
+# for the DataTable scenario, benches and manual scrolling.
+schema = 1
+id = "srv_tables"
+name = "Tables"
+enabled = true
+host = "127.0.0.1"
+port = 4021
+fake_seed = 7
+
+[[datasets]]
+name = "small"
+seed = "data/small.json"
+id_strategy = "increment"
+
+[[datasets]]
+name = "big"
+[datasets.generator]
+rows = 100000
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "fake"
+fake = "name.first"
+
+[[datasets.generator.fields]]
+name = "email"
+kind = "fake"
+fake = "internet.email"
+
+[[datasets.generator.fields]]
+name = "score"
+kind = "int"
+min = 0
+max = 1000
+
+[[datasets.generator.fields]]
+name = "role"
+kind = "one_of"
+values = ["admin", "user", "guest"]
+
+[[datasets.generator.fields]]
+name = "active"
+kind = "bool"

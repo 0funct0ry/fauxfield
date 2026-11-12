@@ -94,6 +94,9 @@ pub enum CommandName {
     OpenMenu,
     /// Select a sidebar tab: `tab` = `servers`, `environments` or `datasets`.
     SetSidebarTab,
+    /// DataTable operations a pointer drag would do: `op` = `resize` (id table, name column
+    /// key, `width`), `fit` (id, name), `move_column` (id table, name column key, `index` = target position).
+    Table,
 }
 
 #[derive(Clone, Copy, Deserialize, JsonSchema)]
@@ -141,6 +144,12 @@ pub struct CommandInput {
     /// set_sidebar_tab: `servers`, `environments` or `datasets`.
     #[serde(default)]
     pub tab: Option<String>,
+    /// table: `resize` or `move_column`.
+    #[serde(default)]
+    pub op: Option<String>,
+    /// table: new width in points.
+    #[serde(default)]
+    pub width: Option<f32>,
 }
 
 #[derive(Clone, Copy, Deserialize, JsonSchema)]
@@ -426,6 +435,12 @@ pub fn command(
             let path = need(input.path, "path", "remove_recent")?;
             shell.remove_recent(std::path::Path::new(&path), cx);
             Ok(json!({ "ok": true }))
+        }
+        CommandName::Table => {
+            let table = need(input.id, "id", "table")?;
+            let op = need(input.op, "op", "table")?;
+            let col = need(input.name, "name", "table")?;
+            shell.dev_table_command(&table, &op, &col, input.width, input.index, cx)
         }
         CommandName::Search => {
             let query = need(input.query, "query", "search")?;

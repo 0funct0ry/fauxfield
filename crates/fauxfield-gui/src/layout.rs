@@ -2,6 +2,7 @@
 //! data dir (M1 only; per-workspace `.fauxfield/ui.json` arrives in M2). Loading never fails: a
 //! missing, corrupt, or future-version file yields defaults.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -58,6 +59,16 @@ pub struct Layout {
     pub active_tab: Option<String>,
     /// Format valid JSON bodies when the body editor saves (off by default).
     pub format_on_save: bool,
+    /// Column order and widths of each Dataset table, keyed by `server:name` (M10.03).
+    pub dataset_tables: BTreeMap<String, TableLayout>,
+}
+
+/// Persisted column state of one DataTable.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TableLayout {
+    pub order: Vec<String>,
+    pub widths: BTreeMap<String, f32>,
 }
 
 impl Default for Layout {
@@ -78,6 +89,7 @@ impl Default for Layout {
             tabs: Vec::new(),
             active_tab: None,
             format_on_save: false,
+            dataset_tables: BTreeMap::new(),
         }
     }
 }
@@ -100,6 +112,15 @@ impl Layout {
         self.sidebar_tab = crate::tree::SidebarTab::from_id(&self.sidebar_tab)
             .id()
             .into();
+        for t in self.dataset_tables.values_mut() {
+            t.widths.retain(|_, w| w.is_finite());
+            for w in t.widths.values_mut() {
+                *w = w.clamp(
+                    crate::data_table::DEFAULT_MIN_WIDTH,
+                    crate::data_table::DEFAULT_MAX_WIDTH,
+                );
+            }
+        }
         self
     }
 
@@ -198,6 +219,29 @@ mod tests {
         assert_eq!(l.preview_height, PREVIEW.2);
         l.set_right_width(f32::NAN);
         assert_eq!(l.right_width, RIGHT.1);
+    }
+
+    #[test]
+    fn dataset_table_layout_round_trips_and_clamps() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("l.json");
+        let mut l = Layout::default();
+        l.dataset_tables.insert(
+            "srv:users".into(),
+            TableLayout {
+                order: vec!["name".into(), "id".into()],
+                widths: [("id".to_string(), 80.0), ("name".to_string(), 99999.0)].into(),
+            },
+        );
+        l.save(&p).unwrap();
+        let back = Layout::load(&p);
+        let t = &back.dataset_tables["srv:users"];
+        assert_eq!(t.order, ["name", "id"]);
+        assert_eq!(t.widths["id"], 80.0);
+        assert_eq!(t.widths["name"], crate::data_table::DEFAULT_MAX_WIDTH);
+        // Files without the field still load.
+        std::fs::write(&p, r#"{"version":1}"#).unwrap();
+        assert!(Layout::load(&p).dataset_tables.is_empty());
     }
 
     #[test]

@@ -104,3 +104,14 @@ fauxfield data generate example-api users --bake                    # write data
 ```
 
 Over MCP: `preview_generator` returns sample values for a definition without touching a Dataset.
+
+## The Dataset table
+
+The Dataset tab shows rows in a virtualised table that stays smooth with 100,000 rows.
+
+- Click a column header to sort: first descending, then ascending, then back to the stored order. Only one column is sorted at a time. Sorting is a view; it never rewrites the Dataset.
+- Drag the edge of a header to resize a column (double-click the edge to fit it to its content). Drag a header to move the column. Widths and order are remembered per Dataset.
+- Click a row to select it. With the table focused, Up and Down move the selection (wrapping), Home and End jump to the first and last row, Page Up and Page Down move a page, and Esc clears the selection.
+- Right-click a row for *Copy cell*, *Copy row as JSON* and *Delete row*. Double-click a row to open it in the JSON view.
+
+The table is read-only in this version; use *Add row*, the JSON view or the seed file to change data.

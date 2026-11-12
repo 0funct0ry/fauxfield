@@ -28,8 +28,26 @@ status=0
 for f in fixtures/scenarios/*.yaml; do
   name="$(basename "$f" .yaml)"
   [[ "$name" == "broken-assertion" ]] && continue
+  # Scenarios that need another fixture say so in a `# workspace: <fixture>` header line.
+  grep -q '^# workspace: ' "$f" && continue
   echo "== $name"
   "$bin" mcp scenario "$f" --socket "$sock" --out "$out" ${capture[@]+"${capture[@]}"} || status=1
+done
+
+# Scenarios with their own fixture workspace (one app per fixture).
+for f in $(grep -l '^# workspace: ' fixtures/scenarios/*.yaml 2>/dev/null); do
+  name="$(basename "$f" .yaml)"
+  fixture="$(sed -n 's/^# workspace: //p' "$f" | head -1)"
+  echo "== $name ($fixture)"
+  sock2="$(mktemp -u "${TMPDIR:-/tmp}/ffsmoke.XXXXXX")"
+  cp -R "fixtures/$fixture" "$ws/$fixture"
+  "$bin" "$ws/$fixture" --mcp-socket "$sock2" >"$out/app-$fixture.log" 2>&1 &
+  app2=$!
+  for _ in $(seq 1 100); do [[ -S "$sock2" ]] && break; sleep 0.2; done
+  sleep 1
+  "$bin" mcp scenario "$f" --socket "$sock2" --out "$out" ${capture[@]+"${capture[@]}"} || status=1
+  kill "$app2" 2>/dev/null || true
+  rm -f "$sock2"
 done
 
 echo "== broken-assertion (must fail with exit 1)"

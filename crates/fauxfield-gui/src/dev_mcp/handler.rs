@@ -121,6 +121,12 @@ fn reset_view(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) {
     shell.layout.bottom_open = true;
     shell.layout.bottom_tab = crate::layout::BottomTab::Traffic;
     shell.traffic_selected = None;
+    // Dataset tables start from the stored order and default widths (M10.03).
+    shell.layout.dataset_tables.clear();
+    shell.ds_tables.borrow_mut().clear();
+    shell.ds_table_subs.borrow_mut().clear();
+    shell.ds_row_targets.borrow_mut().clear();
+    shell.ds_json_mode = false;
     shell.mask_volatile = false;
     shell.quit_confirm = false;
     shell.notice_action = None;

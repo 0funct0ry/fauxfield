@@ -36,10 +36,20 @@ pub enum Role {
     Panel,
 }
 
+/// What a click on a DataTable part does (pointer events cannot be injected).
+#[derive(Clone, Debug)]
+pub enum DtOp {
+    Header(usize),
+    Row(usize),
+    RowDouble(usize),
+}
+
 /// What `ui.click_element` does for a node. Each variant calls an existing `Shell` method.
 #[derive(Clone, Debug)]
 pub enum Click {
     None,
+    /// A DataTable part: the table id (`ds-<server>:<dataset>`) and the operation.
+    DataTable(String, DtOp),
     Action(&'static str),
     Row(String),
     ToggleRow(String),
@@ -561,6 +571,7 @@ pub fn click_element(
                 return fail(e);
             }
         }
+        Click::DataTable(table, op) => shell.dev_table_op(&table, op, window, cx)?,
         Click::Recent(path) => shell.open_recent(std::path::Path::new(&path), cx),
         Click::RemoveRecent(path) => shell.remove_recent(std::path::Path::new(&path), cx),
         Click::Response(route, i) => {

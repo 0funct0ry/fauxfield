@@ -632,3 +632,49 @@ action = "ed_select_down"
 keys = "ctrl-shift-n"
 context = "CodeEditor"
 platform = "macos"
+
+# DataTable (M10.03): keyboard model of the data grid, key context "DataTable".
+[[binding]]
+action = "dt_up"
+keys = "up"
+context = "DataTable"
+
+[[binding]]
+action = "dt_down"
+keys = "down"
+context = "DataTable"
+
+[[binding]]
+action = "dt_left"
+keys = "left"
+context = "DataTable"
+
+[[binding]]
+action = "dt_right"
+keys = "right"
+context = "DataTable"
+
+[[binding]]
+action = "dt_home"
+keys = "home"
+context = "DataTable"
+
+[[binding]]
+action = "dt_end"
+keys = "end"
+context = "DataTable"
+
+[[binding]]
+action = "dt_page_up"
+keys = "pageup"
+context = "DataTable"
+
+[[binding]]
+action = "dt_page_down"
+keys = "pagedown"
+context = "DataTable"
+
+[[binding]]
+action = "dt_escape"
+keys = "escape"
+context = "DataTable"

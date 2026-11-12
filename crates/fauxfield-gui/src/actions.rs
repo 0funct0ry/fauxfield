@@ -45,6 +45,9 @@ actions!(
         EditSampleRequest,
         Duplicate,
         ResetState,
+        CopyDatasetCell,
+        CopyDatasetRow,
+        DeleteDatasetRow,
         NewCrudResource,
         NewDataset,
         NewStaticRoute,
@@ -220,6 +223,17 @@ pub static ACTIONS: &[ActionInfo] = &[
     ),
     row!("duplicate", "Edit: Duplicate Response or Route", Duplicate),
     row!("reset_state", "Dataset: Reset State", ResetState),
+    row!("copy_dataset_cell", "Dataset: Copy Cell", CopyDatasetCell),
+    row!(
+        "copy_dataset_row",
+        "Dataset: Copy Row as JSON",
+        CopyDatasetRow
+    ),
+    row!(
+        "delete_dataset_row",
+        "Dataset: Delete Row",
+        DeleteDatasetRow
+    ),
     row!("new_dataset", "Dataset: New…", NewDataset),
     row!(
         "new_crud_resource",
@@ -409,7 +423,9 @@ pub fn install(cx: &mut App, keymap: &Keymap) -> Vec<String> {
     let mut problems = Vec::new();
     let mut bindings = Vec::new();
     for b in &keymap.bindings {
-        if let Some(bind) = crate::code_editor::actions::binder(&b.action) {
+        if let Some(bind) = crate::code_editor::actions::binder(&b.action)
+            .or_else(|| crate::data_table::actions::binder(&b.action))
+        {
             if let Some(canon) = canonical(&b.keys) {
                 if !b.is_chord() && !prefixes.contains(&canon) {
                     bindings.push(bind(&b.keys, b.context.as_deref()));
@@ -461,7 +477,8 @@ mod tests {
         for b in &Keymap::bundled().bindings {
             assert!(
                 find(&b.action).is_some()
-                    || crate::code_editor::actions::binder(&b.action).is_some(),
+                    || crate::code_editor::actions::binder(&b.action).is_some()
+                    || crate::data_table::actions::binder(&b.action).is_some(),
                 "{}",
                 b.action
             );
