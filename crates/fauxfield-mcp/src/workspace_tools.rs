@@ -116,6 +116,18 @@ struct DatasetRefArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct PreviewGenerator {
+    /// One generator definition, e.g. `{"kind": "int", "min": 1, "max": 9}` (see the generators reference).
+    generator: fauxfield_model::GeneratorSpec,
+    /// Number of sample values (default 5, max 1000).
+    #[serde(default)]
+    count: Option<u32>,
+    /// Seed for deterministic output (default: random).
+    #[serde(default)]
+    seed: Option<u64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct DeleteDataset {
     /// Server ID, name or file slug.
     server: String,
@@ -478,6 +490,39 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                 let id = resolve_server(&s, &a.server)?;
                 let refs = s.dataset_references(&id, &a.name).map_err(e)?;
                 Ok(json!({ "server": id, "dataset": a.name, "references": refs }))
+            });
+            Box::pin(async move { out })
+        },
+    ));
+    let p = provider.clone();
+    r.register(ToolDef::new::<PreviewGenerator>(
+        "preview_generator",
+        "Sample values for a Dataset seed generator definition (int, uuid, regex, one_of, fake, ...). Touches no Dataset; `ref` generators are not available here.",
+        ToolClass::Read,
+        move |m| {
+            let Some(s) = p() else { return no_workspace() };
+            let out = parse::<PreviewGenerator>(m).and_then(|a| {
+                let mut problems = Vec::new();
+                fauxfield_model::generator::check_spec(
+                    &a.generator,
+                    "generator",
+                    &[],
+                    &mut Vec::new(),
+                    &mut problems,
+                );
+                if let Some((p, msg)) = problems.first() {
+                    return Err(format!("{p}: {msg}"));
+                }
+                let n = a.count.unwrap_or(5).min(1000);
+                let values = fauxfield_engine::generate::preview_spec(
+                    &a.generator,
+                    a.seed,
+                    n,
+                    &Default::default(),
+                    &s.root(),
+                )
+                .map_err(|e| e.to_string())?;
+                Ok(json!({ "kind": a.generator.kind, "seed": a.seed, "values": values }))
             });
             Box::pin(async move { out })
         },

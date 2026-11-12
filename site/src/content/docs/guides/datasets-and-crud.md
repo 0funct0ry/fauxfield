@@ -69,3 +69,38 @@ and `delete_dataset`.
 
 With a running host these act on live data; otherwise `import` rewrites the seed file and `reset`
 clears persisted state.
+
+## Seed generators
+
+Instead of a `seed` file or a `seed_template`, a Dataset can declare a generator: a row count and a
+field list. At most one seed source is allowed per Dataset (diagnostic E075).
+
+```toml
+[[datasets]]
+name = "users"
+[datasets.generator]
+rows = 50
+[[datasets.generator.fields]]
+name = "id"
+kind = "uuid"
+[[datasets.generator.fields]]
+name = "email"
+kind = "fake"
+fake = "internet.email"
+[[datasets.generator.fields]]
+name = "team"
+kind = "ref"
+dataset = "teams"      # key of a row of another Dataset in the same Server
+```
+
+Set `fake_seed` on the Server to get identical rows on every start. A `ref` makes the referenced
+Dataset load first; a cycle is diagnostic E077, and a bad option is E076 with the field path.
+Editing a generator block or a seed file reloads only that Dataset. The Dataset tab previews the first
+rows. See the [generator reference](/reference/seed-generators/).
+
+```bash
+fauxfield data generate example-api users --rows 10 --seed 42       # print
+fauxfield data generate example-api users --bake                    # write data/users.json
+```
+
+Over MCP: `preview_generator` returns sample values for a definition without touching a Dataset.

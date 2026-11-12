@@ -95,6 +95,8 @@ pub(crate) struct State {
     /// Keyed by workspace-relative path.
     pub docs: BTreeMap<String, Doc>,
     pub subscribers: Vec<mpsc::Sender<Event>>,
+    /// Fingerprint of `data/` and `files/` (seed files) so edits to them raise `Changed`.
+    pub seed_fp: u64,
 }
 
 /// Shared handle to a workspace; cheap to clone.
@@ -119,11 +121,13 @@ impl Store {
             let text = std::fs::read_to_string(root.join(&rel))?;
             docs.insert(rel, Doc::parse(text));
         }
+        let seed_fp = crate::watch::seed_fingerprint(&root);
         Ok(Store {
             inner: Arc::new(Mutex::new(State {
                 root,
                 docs,
                 subscribers: vec![],
+                seed_fp,
             })),
         })
     }

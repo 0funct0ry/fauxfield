@@ -36,6 +36,8 @@ pub struct DatasetInfo {
 /// One live Dataset.
 pub(crate) struct DatasetRt {
     pub def: Dataset,
+    /// Definition and seed-file signature at load time (see `sig`).
+    sig: String,
     pub rows: Value,
     counter: u64,
     pub error: Option<String>,
@@ -48,10 +50,19 @@ pub(crate) struct DataStore {
     snap: Option<Arc<Value>>,
 }
 
-fn sig(d: &Dataset) -> String {
+/// Definition signature; includes a hash of the seed file so editing it reloads the Dataset.
+fn sig(root: &Path, d: &Dataset) -> String {
+    use sha2::{Digest, Sha256};
+    let file = d
+        .seed
+        .as_ref()
+        .or(d.seed_template.as_ref())
+        .and_then(|f| crate::engine::read_confined(root, f).ok())
+        .map(|b| format!("{:x}", Sha256::digest(&b)))
+        .unwrap_or_default();
     format!(
-        "{:?}|{:?}|{:?}|{:?}|{}",
-        d.seed, d.seed_template, d.key, d.id_strategy, d.persist
+        "{:?}|{:?}|{:?}|{:?}|{}|{:?}|{file}",
+        d.seed, d.seed_template, d.key, d.id_strategy, d.persist, d.generator
     )
 }
 
@@ -61,8 +72,19 @@ fn state_file(root: &Path, server_id: &str, name: &str) -> std::path::PathBuf {
         .join(format!("{name}.json"))
 }
 
-fn load_seed(root: &Path, server: &Server, d: &Dataset) -> (Value, Option<String>) {
+fn load_seed(
+    root: &Path,
+    server: &Server,
+    d: &Dataset,
+    refs: &crate::generate::Refs,
+) -> (Value, Option<String>) {
     let empty = || Value::Array(vec![]);
+    if let Some(g) = &d.generator {
+        return match crate::generate::generate(&d.name, g, server.fake_seed, None, refs, root) {
+            Ok(v) => (v, None),
+            Err(e) => (empty(), Some(format!("generator: {e}"))),
+        };
+    }
     let text = if let Some(f) = &d.seed {
         match crate::engine::read_confined(root, f) {
             Ok(b) => String::from_utf8_lossy(&b).into_owned(),
@@ -114,8 +136,15 @@ fn max_numeric_id(rows: &Value, key: &str) -> u64 {
 }
 
 impl DatasetRt {
-    fn fresh(root: &Path, server_id: &str, server: &Server, d: &Dataset) -> DatasetRt {
-        let (seed, error) = load_seed(root, server, d);
+    fn fresh(
+        root: &Path,
+        server_id: &str,
+        server: &Server,
+        d: &Dataset,
+        refs: &crate::generate::Refs,
+    ) -> DatasetRt {
+        let sig = sig(root, d);
+        let (seed, error) = load_seed(root, server, d, refs);
         let mut rows = seed;
         if d.persist
             && let Ok(t) = std::fs::read_to_string(state_file(root, server_id, &d.name))
@@ -126,6 +155,7 @@ impl DatasetRt {
         let counter = max_numeric_id(&rows, d.key_name());
         DatasetRt {
             def: d.clone(),
+            sig,
             rows,
             counter,
             error,
@@ -178,24 +208,66 @@ impl DataStore {
     /// their live rows; new or changed ones are loaded from their seed.
     pub fn sync(&mut self, root: &Path, server_id: &str, server: &Server) {
         let mut old = std::mem::take(&mut self.sets);
-        for d in &server.datasets {
-            let kept = old
-                .iter()
-                .position(|o| o.def.name == d.name && sig(&o.def) == sig(d))
-                .map(|i| old.remove(i));
-            self.sets
-                .push(kept.unwrap_or_else(|| DatasetRt::fresh(root, server_id, server, d)));
+        let n = server.datasets.len();
+        // `ref` generators load after the Datasets they read (a cycle is a model diagnostic).
+        let order = fauxfield_model::generator::load_order(&server.datasets)
+            .unwrap_or_else(|_| (0..n).collect());
+        let mut built: Vec<Option<DatasetRt>> = (0..n).map(|_| None).collect();
+        let mut refs = crate::generate::Refs::new();
+        let mut regenerated: Vec<String> = Vec::new();
+        for i in order {
+            let d = &server.datasets[i];
+            let upstream_changed = d.generator.as_ref().is_some_and(|g| {
+                fauxfield_model::generator::ref_targets(g)
+                    .iter()
+                    .any(|t| regenerated.contains(t))
+            });
+            let kept = if upstream_changed {
+                None
+            } else {
+                old.iter()
+                    .position(|o| o.def.name == d.name && o.sig == sig(root, d))
+                    .map(|j| old.remove(j))
+            };
+            let rt = kept.unwrap_or_else(|| {
+                regenerated.push(d.name.clone());
+                DatasetRt::fresh(root, server_id, server, d, &refs)
+            });
+            if d.generator.is_some()
+                || server.datasets.iter().any(|x| {
+                    x.generator.as_ref().is_some_and(|g| {
+                        fauxfield_model::generator::ref_targets(g).contains(&d.name)
+                    })
+                })
+            {
+                refs.insert(
+                    d.name.clone(),
+                    rt.rows.as_array().cloned().unwrap_or_default(),
+                );
+            }
+            built[i] = Some(rt);
         }
+        self.sets = built.into_iter().flatten().collect();
         self.snap = None;
     }
 
     pub fn reset(&mut self, root: &Path, server_id: &str, server: &Server, only: Option<&str>) {
+        let refs: crate::generate::Refs = self
+            .sets
+            .iter()
+            .map(|s| {
+                (
+                    s.def.name.clone(),
+                    s.rows.as_array().cloned().unwrap_or_default(),
+                )
+            })
+            .collect();
         for s in &mut self.sets {
             if only.is_some_and(|n| n != s.def.name) {
                 continue;
             }
             let _ = std::fs::remove_file(state_file(root, server_id, &s.def.name));
-            let mut fresh = DatasetRt::fresh(root, server_id, server, &s.def.clone());
+            let mut fresh = DatasetRt::fresh(root, server_id, server, &s.def.clone(), &refs);
             // `fresh` re-reads persisted state; it was just deleted, so this is the seed.
             std::mem::swap(s, &mut fresh);
         }

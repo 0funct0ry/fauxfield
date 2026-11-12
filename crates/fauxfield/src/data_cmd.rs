@@ -99,6 +99,23 @@ pub enum DataAction {
         #[command(flatten)]
         ws: WsArgs,
     },
+    /// Generate a Dataset's rows from its `generator` seed; print them, or `--bake` them to
+    /// `data/<dataset>.json` (the generator is replaced by that static seed).
+    Generate {
+        server: String,
+        dataset: String,
+        /// Row count (default: the generator's `rows`).
+        #[arg(long)]
+        rows: Option<u32>,
+        /// Seed (default: the Server `fake_seed`; unset means random).
+        #[arg(long)]
+        seed: Option<u64>,
+        /// Write the rows to `data/<dataset>.json` and use them as the static seed.
+        #[arg(long)]
+        bake: bool,
+        #[command(flatten)]
+        ws: WsArgs,
+    },
     /// List everything that uses a Dataset.
     Refs {
         server: String,
@@ -251,6 +268,14 @@ pub fn data(action: DataAction) -> i32 {
             }
             EXIT_OK
         }
+        DataAction::Generate {
+            server,
+            dataset,
+            rows,
+            seed,
+            bake,
+            ws,
+        } => generate(&server, &dataset, rows, seed, bake, &ws),
         DataAction::Refs {
             server,
             dataset,
@@ -475,4 +500,83 @@ fn info_json(d: &DatasetInfo) -> Value {
         "id_strategy": d.id_strategy, "persist": d.persist, "seed": d.seed,
         "seed_template": d.seed_template, "error": d.error,
     })
+}
+
+/// `data generate`: rows from the Dataset's generator, honouring `ref` load order.
+fn generate(
+    server: &str,
+    dataset: &str,
+    rows: Option<u32>,
+    seed: Option<u64>,
+    bake: bool,
+    ws: &WsArgs,
+) -> i32 {
+    let store = match open_store(ws) {
+        Ok(s) => s,
+        Err(c) => return c,
+    };
+    let root = store.root();
+    let snap = store.snapshot();
+    let Some((_, s)) = snap.servers.iter().find(|(_, s)| {
+        s.id == server || s.name == server || fauxfield_store::slugify(&s.name) == server
+    }) else {
+        return fail(&format!("no server `{server}`"));
+    };
+    let Some(target) = s.datasets.iter().find(|d| d.name == dataset) else {
+        return fail(&format!("no dataset `{dataset}`"));
+    };
+    if target.generator.is_none() {
+        return fail(&format!("dataset `{dataset}` has no generator"));
+    }
+    let seed = seed.or(s.fake_seed);
+    let Ok(order) = fauxfield_model::generator::load_order(&s.datasets) else {
+        return fail("generator `ref` cycle between datasets");
+    };
+    let mut refs = fauxfield_engine::generate::Refs::new();
+    let mut result = Value::Null;
+    for i in order {
+        let d = &s.datasets[i];
+        let Some(g) = &d.generator else { continue };
+        let n = (d.name == dataset).then_some(rows).flatten();
+        match fauxfield_engine::generate::generate(&d.name, g, seed, n, &refs, &root) {
+            Ok(v) => {
+                refs.insert(d.name.clone(), v.as_array().cloned().unwrap_or_default());
+                if d.name == dataset {
+                    result = v;
+                }
+            }
+            Err(e) => return fail(&format!("{}: {e}", d.name)),
+        }
+    }
+    let count = rows_label(&result);
+    let mut baked = None;
+    if bake {
+        let text = serde_json::to_string_pretty(&result).unwrap_or_default();
+        let spec = fauxfield_store::DatasetSpec {
+            name: dataset.into(),
+            seed_json: Some(text),
+            ..Default::default()
+        };
+        if let Err(e) = store
+            .upsert_dataset(&s.id, &spec)
+            .and_then(|_| store.flush())
+        {
+            return fail(&e.to_string());
+        }
+        baked = Some(format!("data/{dataset}.json"));
+    }
+    if ws.json {
+        print_json(&json!({
+            "dataset": dataset, "server": server, "rows": count, "seed": seed,
+            "baked": baked, "data": if bake { Value::Null } else { result },
+        }));
+    } else if let Some(f) = baked {
+        println!("Baked {count} rows to {f}");
+    } else {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&result).unwrap_or_default()
+        );
+    }
+    EXIT_OK
 }

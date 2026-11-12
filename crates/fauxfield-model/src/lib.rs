@@ -2,6 +2,7 @@
 //! Must not depend on GPUI.
 
 mod diagnostic;
+pub mod generator;
 mod id;
 pub mod pattern;
 pub mod rules;
@@ -10,6 +11,7 @@ mod validate;
 pub mod vars;
 
 pub use diagnostic::{Diagnostic, Severity};
+pub use generator::{GENERATORS, GeneratorField, GeneratorSeed, GeneratorSpec};
 pub use id::new_id;
 pub use types::{
     Cors, Dataset, Delay, Environment, FAULTS, Folder, ID_STRATEGIES, Manifest, Network,

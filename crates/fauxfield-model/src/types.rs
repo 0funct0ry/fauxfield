@@ -118,6 +118,9 @@ pub struct Dataset {
     /// Tera template rendering to JSON (workspace-relative).
     #[serde(default)]
     pub seed_template: Option<String>,
+    /// Declarative generator seed (M10.02); a third seed source.
+    #[serde(default)]
+    pub generator: Option<crate::GeneratorSeed>,
     /// Field holding each item's identifier (default `id`).
     #[serde(default)]
     pub key: Option<String>,

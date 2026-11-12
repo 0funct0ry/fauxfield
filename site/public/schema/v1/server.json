@@ -1,5 +1,125 @@
 {
   "$defs": {
+    "Cors": {
+      "description": "Server `[cors]` table.",
+      "properties": {
+        "credentials": {
+          "default": false,
+          "type": "boolean"
+        },
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "headers": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "max_age": {
+          "default": null,
+          "description": "Preflight cache seconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "methods": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "origins": {
+          "default": [],
+          "description": "Allowed origins; `*` allows any.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "Dataset": {
+      "description": "A named JSON collection backing stateful `crud` routes (SPEC §6.1).",
+      "properties": {
+        "generator": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GeneratorSeed"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Declarative generator seed (M10.02); a third seed source."
+        },
+        "id_strategy": {
+          "default": null,
+          "description": "`uuid` (default), `increment` or `ulid`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key": {
+          "default": null,
+          "description": "Field holding each item's identifier (default `id`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "persist": {
+          "default": false,
+          "description": "true: mutations are written to `.fauxfield/state/` and reloaded on start.",
+          "type": "boolean"
+        },
+        "seed": {
+          "default": null,
+          "description": "Static JSON seed file (workspace-relative).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "seed_template": {
+          "default": null,
+          "description": "Tera template rendering to JSON (workspace-relative).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "Delay": {
+      "anyOf": [
+        {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "description": "A fixed delay in ms, or a `\"min..max\"` range."
+    },
     "Folder": {
       "properties": {
         "collapsed": {
@@ -32,6 +152,394 @@
       ],
       "type": "object"
     },
+    "GeneratorField": {
+      "description": "One generator and its options; `kind` selects which options apply.",
+      "properties": {
+        "charset": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dataset": {
+          "description": "`ref`: the other Dataset.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expr": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fake": {
+          "description": "`fake` kind, e.g. `internet.email`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "field": {
+          "description": "`ref`: the key field to pick (default `id`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/GeneratorField"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "inner": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GeneratorSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "item": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GeneratorSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "default": "",
+          "type": "string"
+        },
+        "length": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max": true,
+        "min": true,
+        "name": {
+          "type": "string"
+        },
+        "null_probability": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pattern": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "precision": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "probability": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "start": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "step": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "value": true,
+        "values": {
+          "items": true,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "weights": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "words": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "GeneratorSeed": {
+      "properties": {
+        "fields": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/GeneratorField"
+          },
+          "type": "array"
+        },
+        "rows": {
+          "default": 0,
+          "description": "Number of rows (array Datasets).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "GeneratorSpec": {
+      "description": "One generator and its options; `kind` selects which options apply.",
+      "properties": {
+        "charset": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dataset": {
+          "description": "`ref`: the other Dataset.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expr": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fake": {
+          "description": "`fake` kind, e.g. `internet.email`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "field": {
+          "description": "`ref`: the key field to pick (default `id`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/GeneratorField"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "inner": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GeneratorSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "item": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GeneratorSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "default": "",
+          "type": "string"
+        },
+        "length": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max": true,
+        "min": true,
+        "null_probability": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pattern": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "precision": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "probability": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "start": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "step": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "value": true,
+        "values": {
+          "items": true,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "weights": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "words": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Network": {
+      "description": "Server `[network]` table: simulated latency and bandwidth.",
+      "properties": {
+        "bandwidth_kbps": {
+          "default": 0,
+          "description": "0 = unlimited.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "jitter_ms": {
+          "default": 0,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "latency_ms": {
+          "default": 0,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "RateLimit": {
+      "description": "Server `[rate_limit]` table.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "key": {
+          "default": "ip",
+          "description": "`ip`, `header:<name>` or `query:<name>`.",
+          "type": "string"
+        },
+        "requests": {
+          "default": 100,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "window": {
+          "default": "1m",
+          "description": "`30s`, `1m`, `2h`.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "Response": {
       "properties": {
         "body": {
@@ -60,13 +568,16 @@
           "type": "boolean"
         },
         "delay_ms": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Delay"
+            },
+            {
+              "type": "null"
+            }
+          ],
           "default": null,
-          "format": "uint64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
+          "description": "Milliseconds, or a range such as `\"200..800\"` (SPEC §5.5)."
         },
         "description": {
           "default": null,
@@ -80,6 +591,23 @@
           "default": false,
           "description": "true: skipped by response selection (SPEC §5.3).",
           "type": "boolean"
+        },
+        "fault": {
+          "default": null,
+          "description": "`none`, `timeout`, `reset`, `close`, `empty`, `malformed` or `slow_body`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fault_rate": {
+          "default": null,
+          "description": "0.0-1.0 probability that `fault` applies (default 1.0).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "headers": {
           "additionalProperties": {
@@ -137,6 +665,22 @@
     },
     "Route": {
       "properties": {
+        "dataset": {
+          "default": null,
+          "description": "`crud` routes: the Dataset this Route serves.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dir": {
+          "default": null,
+          "description": "`static` routes: directory served (workspace-relative).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "docs": {
           "default": null,
           "type": [
@@ -161,6 +705,14 @@
         },
         "id": {
           "type": "string"
+        },
+        "index": {
+          "default": null,
+          "description": "`static` routes: file served for a directory request (default none).",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "kind": {
           "default": "http",
@@ -209,6 +761,28 @@
             "$ref": "#/$defs/Response"
           },
           "type": "array"
+        },
+        "template_extensions": {
+          "default": [],
+          "description": "`static` routes: extensions rendered through Tera, e.g. `[\".tera\"]`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "validate": {
+          "default": null,
+          "description": "`crud` routes: JSON Schema file (workspace-relative) checked on POST/PUT/PATCH.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "variables": {
+          "additionalProperties": true,
+          "default": {},
+          "description": "Route-scope variables (SPEC §8.1).",
+          "type": "object"
         }
       },
       "required": [
@@ -246,10 +820,74 @@
         "op"
       ],
       "type": "object"
+    },
+    "Tls": {
+      "description": "Server `[tls]` table.",
+      "properties": {
+        "also_http_port": {
+          "default": null,
+          "description": "Also serve plain HTTP on this port (same routes).",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cert": {
+          "default": null,
+          "description": "`files` mode: PEM certificate chain (workspace-relative).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "key": {
+          "default": null,
+          "description": "`files` mode: PEM private key (workspace-relative).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mode": {
+          "default": null,
+          "description": "`dev-ca` (default) or `files`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
+    "cors": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Cors"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "CORS settings (SPEC §5.7)."
+    },
+    "datasets": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Dataset"
+      },
+      "type": "array"
+    },
     "docs": {
       "default": null,
       "type": [
@@ -288,6 +926,18 @@
     "name": {
       "type": "string"
     },
+    "network": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Network"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Server-wide latency simulation (SPEC §5.6)."
+    },
     "port": {
       "format": "uint16",
       "maximum": 65535,
@@ -300,6 +950,18 @@
         "string",
         "null"
       ]
+    },
+    "rate_limit": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RateLimit"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Request rate limit (SPEC §5.6)."
     },
     "routes": {
       "default": [],
@@ -321,6 +983,18 @@
         "boolean",
         "null"
       ]
+    },
+    "tls": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Tls"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "HTTPS settings (SPEC §5.8)."
     },
     "unmatched_hint": {
       "default": null,

@@ -137,10 +137,12 @@ impl Store {
             if let Some(r) = &seed_rel {
                 t["seed"] = value(r.as_str());
                 t.remove("seed_template");
+                t.remove("generator");
             }
             if let Some(r) = &tpl_rel {
                 t["seed_template"] = value(r.as_str());
                 t.remove("seed");
+                t.remove("generator");
             }
             if let Some(k) = &spec.key {
                 t["key"] = value(k.as_str());

@@ -18,7 +18,7 @@ use rand::SeedableRng;
 use rand::rngs::ChaCha8Rng;
 use sha2::{Digest, Sha256};
 
-pub use fake::{FAKE_KINDS, resolve_kind};
+pub use fake::{FAKE_KINDS, generate as fake_generate, resolve_kind};
 pub use funcs::{FILTERS, FUNCTIONS};
 
 pub const CPU_BUDGET: Duration = Duration::from_millis(50);

@@ -778,6 +778,22 @@ async fn upsert_dataset_and_reset_state() {
         t.contains("[[datasets]]") && t.contains("kind = \"crud\""),
         "{t}"
     );
+    // M10.02: generator preview needs no Dataset and is deterministic with a seed
+    let preview = |seed: u64| {
+        call(
+            "preview_generator",
+            json!({"generator": {"kind": "int", "min": 1, "max": 9}, "count": 4, "seed": seed}),
+        )
+    };
+    let a = preview(5).await.unwrap().structured_content.unwrap();
+    assert_eq!(a["values"].as_array().unwrap().len(), 4);
+    assert_eq!(a, preview(5).await.unwrap().structured_content.unwrap());
+    let bad = call(
+        "preview_generator",
+        json!({"generator": {"kind": "regex", "pattern": "("}}),
+    )
+    .await;
+    assert!(bad.is_err() || bad.unwrap().is_error == Some(true));
     let bad = call("upsert_dataset", json!({"server": "nope", "name": "x"})).await;
     assert!(bad.is_err() || bad.unwrap().is_error == Some(true));
     // M10.01: Dataset without a Route, references, checked delete

@@ -122,6 +122,11 @@ impl Store {
             st.docs.remove(&g);
             changed = true;
         }
+        let fp = seed_fingerprint(&root);
+        if fp != st.seed_fp {
+            st.seed_fp = fp;
+            changed = true;
+        }
         if changed {
             notify_all(&mut st, Event::Changed);
         }
@@ -129,4 +134,36 @@ impl Store {
             notify_all(&mut st, Event::MergeConflict { file });
         }
     }
+}
+
+/// Hash of (path, length, mtime) of every file under `data/` and `files/`: seed files are not
+/// store documents, but editing one must reload its Dataset (M10.02).
+pub(crate) fn seed_fingerprint(root: &Path) -> u64 {
+    use std::hash::{Hash, Hasher};
+    fn walk(dir: &Path, h: &mut std::collections::hash_map::DefaultHasher, depth: u8) {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
+        let mut ents: Vec<_> = rd.flatten().collect();
+        ents.sort_by_key(|e| e.file_name());
+        for e in ents {
+            let p = e.path();
+            if let Ok(m) = e.metadata() {
+                if m.is_dir() {
+                    if depth < 6 {
+                        walk(&p, h, depth + 1);
+                    }
+                } else {
+                    p.hash(h);
+                    m.len().hash(h);
+                    m.modified().ok().hash(h);
+                }
+            }
+        }
+    }
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for d in ["data", "files"] {
+        walk(&root.join(d), &mut h, 0);
+    }
+    h.finish()
 }

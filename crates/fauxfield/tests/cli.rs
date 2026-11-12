@@ -602,3 +602,69 @@ fn certs_and_doctor_are_stable() {
     v["ca"] = redact(v["ca"].clone());
     snap_json(Some("doctor"), &v);
 }
+
+#[test]
+fn data_generate_is_deterministic_and_bakes() {
+    let dir = workspace();
+    let p = dir.path().to_str().unwrap();
+    let f = dir.path().join("servers/example-api.toml");
+    let mut t = std::fs::read_to_string(&f).unwrap();
+    t.push_str(
+        r#"
+[[datasets]]
+name = "users"
+[datasets.generator]
+rows = 4
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+[[datasets.generator.fields]]
+name = "email"
+kind = "fake"
+fake = "internet.email"
+[[datasets.generator.fields]]
+name = "role"
+kind = "one_of"
+values = ["admin", "user"]
+"#,
+    );
+    std::fs::write(&f, t).unwrap();
+    let gen_rows = |extra: &[&str]| {
+        let mut a = vec![
+            "data",
+            "generate",
+            "example-api",
+            "users",
+            "-w",
+            p,
+            "--json",
+        ];
+        a.extend(extra);
+        let (code, out, err) = run(&a);
+        assert_eq!(code, 0, "{err}");
+        out
+    };
+    let a = gen_rows(&["--seed", "42"]);
+    assert_eq!(a, gen_rows(&["--seed", "42"]), "same seed, byte-identical");
+    assert_ne!(a, gen_rows(&["--seed", "43"]));
+    let v: serde_json::Value = serde_json::from_str(&a).unwrap();
+    assert_eq!(v["rows"], 4);
+    assert_eq!(
+        gen_rows(&["--seed", "42", "--rows", "2"])
+            .matches("\"email\"")
+            .count(),
+        2
+    );
+    // Bake: static seed replaces the generator.
+    let b: serde_json::Value =
+        serde_json::from_str(&gen_rows(&["--seed", "42", "--bake"])).unwrap();
+    assert_eq!(b["baked"], "data/users.json");
+    let baked: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join("data/users.json")).unwrap())
+            .unwrap();
+    assert_eq!(baked, v["data"]);
+    let server = std::fs::read_to_string(&f).unwrap();
+    assert!(!server.contains("generator"), "{server}");
+    let (code, _, _) = run(&["data", "generate", "example-api", "users", "-w", p]);
+    assert_eq!(code, 1, "no generator any more");
+}

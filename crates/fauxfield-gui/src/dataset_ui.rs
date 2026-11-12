@@ -319,6 +319,41 @@ impl Shell {
                     Row(rid.clone())
                 )
             }));
+        let generator = (!d.generator_fields.is_empty()).then(|| {
+            div()
+                .flex_none()
+                .px(px(12.))
+                .py(px(6.))
+                .flex()
+                .flex_col()
+                .gap(px(2.))
+                .border_b_1()
+                .border_color(t.border_variant)
+                .text_size(px(12.))
+                .child(crate::dev_id!(
+                    div()
+                        .id(crate::ui::eid(format!("ds-gen-{}", d.key())))
+                        .text_color(muted)
+                        .child(format!("Generator seed: {}", d.generator_fields.join(", "))),
+                    format!("ds-generator-{}", d.key()),
+                    Text,
+                    "Generator seed",
+                    None
+                ))
+                .children(d.generator_preview.iter().enumerate().map(|(i, r)| {
+                    crate::dev_id!(
+                        div()
+                            .id(crate::ui::eid(format!("ds-gen-row-{}-{i}", d.key())))
+                            .truncate()
+                            .text_size(px(11.))
+                            .child(r.clone()),
+                        format!("ds-generator-row-{}-{i}", d.key()),
+                        Text,
+                        r.clone(),
+                        None
+                    )
+                }))
+        });
         div()
             .id(crate::ui::eid(format!("ds-tab-{}", d.key())))
             .size_full()
@@ -326,6 +361,7 @@ impl Shell {
             .flex_col()
             .child(header)
             .child(used_by)
+            .children(generator)
             .children(banner)
             .child(body)
     }

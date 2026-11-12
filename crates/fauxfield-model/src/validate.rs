@@ -430,13 +430,33 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                     format!("id_strategy must be uuid, increment or ulid, got `{st}`"),
                 ));
             }
-            if d.seed.is_some() && d.seed_template.is_some() {
+            let sources = [
+                d.seed.is_some(),
+                d.seed_template.is_some(),
+                d.generator.is_some(),
+            ];
+            if sources.iter().filter(|b| **b).count() > 1 {
                 out.push(Diagnostic::error(
                     file,
                     format!("{dp}.seed"),
                     "E075",
-                    "set either `seed` or `seed_template`, not both",
+                    "set at most one of `seed`, `seed_template` and `generator`",
                 ));
+            }
+            if let Some(g) = &d.generator {
+                let names: Vec<&str> = s.datasets.iter().map(|x| x.name.as_str()).collect();
+                let mut refs = Vec::new();
+                let mut problems = Vec::new();
+                crate::generator::check_fields(
+                    &g.fields,
+                    &format!("{dp}.generator.fields"),
+                    &names,
+                    &mut refs,
+                    &mut problems,
+                );
+                for (p, m) in problems {
+                    out.push(Diagnostic::error(file, p, "E076", m));
+                }
             }
             for (k, v) in [("seed", &d.seed), ("seed_template", &d.seed_template)] {
                 if let Some(v) = v
@@ -450,6 +470,14 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                     ));
                 }
             }
+        }
+        if let Some(cycle) = crate::generator::ref_cycle(&s.datasets) {
+            out.push(Diagnostic::error(
+                file,
+                "datasets",
+                "E077",
+                format!("generator `ref` cycle: {}", cycle.join(" -> ")),
+            ));
         }
         if let Some(t) = &s.tls {
             if !crate::TLS_MODES.contains(&t.mode_name()) {
