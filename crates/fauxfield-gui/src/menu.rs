@@ -174,6 +174,20 @@ pub struct MenuDef {
 
 /// Actions that are deliberately not in the menu, each with the reason.
 pub const NOT_IN_MENU: &[(&str, &str)] = &[
+    ("new_dataset_from_table", "Dataset tab toolbar and palette"),
+    ("add_dataset_row", "Dataset tab toolbar and palette"),
+    ("add_dataset_column", "Dataset tab toolbar and palette"),
+    ("rename_dataset_column", "Dataset tab toolbar and palette"),
+    ("remove_dataset_column", "Dataset tab toolbar and palette"),
+    ("generate_dataset_rows", "Dataset tab toolbar and palette"),
+    ("paste_dataset_rows", "Dataset tab toolbar and palette"),
+    ("edit_dataset_cell", "Dataset tab toolbar and palette"),
+    ("save_dataset_seed", "Dataset tab toolbar and palette"),
+    (
+        "reload_dataset_from_seed",
+        "Dataset tab toolbar and palette",
+    ),
+    ("save_rows_to_seed", "Dataset tab toolbar and palette"),
     (
         "copy_dataset_cell",
         "row menu and palette of the Dataset table",

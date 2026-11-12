@@ -48,6 +48,17 @@ actions!(
         CopyDatasetCell,
         CopyDatasetRow,
         DeleteDatasetRow,
+        NewDatasetFromTable,
+        AddDatasetRow,
+        AddDatasetColumn,
+        RenameDatasetColumn,
+        RemoveDatasetColumn,
+        GenerateDatasetRows,
+        PasteDatasetRows,
+        EditDatasetCell,
+        SaveDatasetSeed,
+        ReloadDatasetFromSeed,
+        SaveRowsToSeed,
         NewCrudResource,
         NewDataset,
         NewStaticRoute,
@@ -235,6 +246,49 @@ pub static ACTIONS: &[ActionInfo] = &[
         DeleteDatasetRow
     ),
     row!("new_dataset", "Dataset: New…", NewDataset),
+    row!(
+        "new_dataset_from_table",
+        "Dataset: New From Table…",
+        NewDatasetFromTable
+    ),
+    row!("add_dataset_row", "Dataset: Add Row", AddDatasetRow),
+    row!(
+        "add_dataset_column",
+        "Dataset: Add Column…",
+        AddDatasetColumn
+    ),
+    row!(
+        "rename_dataset_column",
+        "Dataset: Rename Column…",
+        RenameDatasetColumn
+    ),
+    row!(
+        "remove_dataset_column",
+        "Dataset: Remove Column…",
+        RemoveDatasetColumn
+    ),
+    row!(
+        "generate_dataset_rows",
+        "Dataset: Generate Rows…",
+        GenerateDatasetRows
+    ),
+    row!(
+        "paste_dataset_rows",
+        "Dataset: Paste Rows",
+        PasteDatasetRows
+    ),
+    row!("edit_dataset_cell", "Dataset: Edit Cell", EditDatasetCell),
+    row!("save_dataset_seed", "Dataset: Save Seed", SaveDatasetSeed),
+    row!(
+        "reload_dataset_from_seed",
+        "Dataset: Reload From Seed",
+        ReloadDatasetFromSeed
+    ),
+    row!(
+        "save_rows_to_seed",
+        "Dataset: Save Rows to Seed",
+        SaveRowsToSeed
+    ),
     row!(
         "new_crud_resource",
         "Dataset: New CRUD Resource…",

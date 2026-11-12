@@ -414,3 +414,39 @@ fn sample(h: &Hir, rng: &mut ChaCha8Rng, out: &mut String) {
         }
     }
 }
+
+/// Generate one Dataset's rows from `datasets` (a Server's Datasets, possibly with a draft
+/// generator on `target`), honouring `ref` load order. Datasets with a static seed feed `ref`
+/// from their seed file. Shared by `data generate`, the GUI "Generate rows…" and MCP.
+pub fn generate_dataset(
+    datasets: &[fauxfield_model::Dataset],
+    target: &str,
+    rows: Option<u32>,
+    fake_seed: Option<u64>,
+    root: &Path,
+) -> Result<Value, String> {
+    let order = fauxfield_model::generator::load_order(datasets)
+        .map_err(|_| "generator `ref` cycle between datasets".to_string())?;
+    let mut refs = Refs::new();
+    let mut result = Value::Null;
+    for i in order {
+        let d = &datasets[i];
+        let Some(g) = &d.generator else {
+            if let Some(f) = &d.seed
+                && let Ok(b) = crate::engine::read_confined(root, f)
+                && let Ok(Value::Array(a)) = serde_json::from_slice::<Value>(&b)
+            {
+                refs.insert(d.name.clone(), a);
+            }
+            continue;
+        };
+        let n = (d.name == target).then_some(rows).flatten();
+        let v = generate(&d.name, g, fake_seed, n, &refs, root)
+            .map_err(|e| format!("{}: {e}", d.name))?;
+        refs.insert(d.name.clone(), v.as_array().cloned().unwrap_or_default());
+        if d.name == target {
+            result = v;
+        }
+    }
+    Ok(result)
+}

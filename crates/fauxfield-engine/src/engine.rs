@@ -715,6 +715,79 @@ impl Engine {
         Ok(())
     }
 
+    fn dataset_event(&self, id: String, name: &str, rt: &ServerRt) {
+        let n = rt.data.lock().unwrap().get(name).map_or(0, |s| s.len());
+        let _ = self.inner.events.send(EngineEvent::Dataset {
+            server_id: id,
+            name: name.into(),
+            rows: n,
+        });
+    }
+
+    /// Set one cell of a live row (M10.04).
+    pub fn dataset_update_cell(
+        &self,
+        server: &str,
+        name: &str,
+        index: usize,
+        column: &str,
+        val: serde_json::Value,
+    ) -> Result<(), EngineError> {
+        let (id, rt) = self.find(server)?;
+        rt.data
+            .lock()
+            .unwrap()
+            .update_cell(&self.inner.cfg.root, &id, name, index, column, val)
+            .map_err(|e| self.data_err(name, e))?;
+        self.dataset_event(id, name, &rt);
+        Ok(())
+    }
+
+    /// Insert live rows at `at` (append when `None`); returns the first new row's index.
+    pub fn dataset_insert(
+        &self,
+        server: &str,
+        name: &str,
+        at: Option<usize>,
+        rows: Vec<serde_json::Value>,
+    ) -> Result<usize, EngineError> {
+        let (id, rt) = self.find(server)?;
+        let at = rt
+            .data
+            .lock()
+            .unwrap()
+            .insert_rows(&self.inner.cfg.root, &id, name, at, rows)
+            .map_err(|e| self.data_err(name, e))?;
+        self.dataset_event(id, name, &rt);
+        Ok(at)
+    }
+
+    /// Delete live rows by index; returns how many were removed.
+    pub fn dataset_delete(
+        &self,
+        server: &str,
+        name: &str,
+        indices: &[usize],
+    ) -> Result<usize, EngineError> {
+        let (id, rt) = self.find(server)?;
+        let n = rt
+            .data
+            .lock()
+            .unwrap()
+            .delete_rows(&self.inner.cfg.root, &id, name, indices)
+            .map_err(|e| self.data_err(name, e))?;
+        self.dataset_event(id, name, &rt);
+        Ok(n)
+    }
+
+    fn data_err(&self, name: &str, e: String) -> EngineError {
+        if e == "unknown dataset" {
+            EngineError::UnknownDataset(name.into())
+        } else {
+            EngineError::Request(e)
+        }
+    }
+
     /// Compile a Route table with the Server `prefix` templated against the current variables
     /// (SPEC §4.4: templated once at start; recompiled when the variable context changes).
     fn compile(&self, s: &Server) -> RouteTable {

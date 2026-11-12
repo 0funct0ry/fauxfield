@@ -1951,6 +1951,94 @@ fn dataset_tab_opens_edits_live_rows_and_resets(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn dataset_is_built_from_the_table_without_a_route(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    view.update(cx, |s, cx| {
+        s.create_dataset_from_table(
+            "srv_users",
+            "products",
+            "id:int, name:string, price:float",
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    let key = "srv_users:products";
+    let d = read(&view, cx, |s| s.ws.find_dataset(key).cloned()).expect("created");
+    assert_eq!(d.columns.len(), 3);
+    assert_eq!(d.source, "static");
+    assert!(d.unused(), "no Route is created");
+
+    for _ in 0..5 {
+        view.update(cx, |s, cx| s.add_dataset_row(key, cx));
+        cx.run_until_parked();
+    }
+    let rows = |cx: &mut gpui::VisualTestContext| {
+        read(&view, cx, |s| s.engine().unwrap())
+            .dataset_rows("srv_users", "products")
+            .unwrap()
+    };
+    assert_eq!(rows(cx).as_array().unwrap().len(), 5);
+    let seed = |cx: &mut gpui::VisualTestContext| {
+        read(&view, cx, |s| {
+            s.store
+                .as_ref()
+                .unwrap()
+                .read_dataset_seed("srv_users", "products")
+                .unwrap()
+                .unwrap()
+        })
+    };
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&seed(cx))
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        5
+    );
+
+    // Bake 200 generated rows after the 5 manual ones, ids continuing the sequence.
+    view.update(cx, |s, cx| s.generate_rows_now(key, "200 bake", cx));
+    cx.run_until_parked();
+    let all = rows(cx);
+    assert_eq!(all.as_array().unwrap().len(), 205);
+    assert_eq!(all[5]["id"], 6);
+    assert!(read(&view, cx, |s| s.ws.find_dataset(key).unwrap().source
+        == "static"));
+
+    // A column added to a static seed fills the existing rows.
+    view.update(cx, |s, cx| {
+        s.add_column_now(key, "email:string=fake:internet.email", cx)
+    });
+    cx.run_until_parked();
+    assert!(
+        rows(cx)[0]["email"]
+            .as_str()
+            .is_some_and(|e| e.contains('@'))
+    );
+    view.update(cx, |s, cx| s.rename_column_now(key, "email", "mail", cx));
+    cx.run_until_parked();
+    assert!(rows(cx)[0].get("mail").is_some() && rows(cx)[0].get("email").is_none());
+    view.update(cx, |s, cx| s.remove_column_now(key, "mail", cx));
+    cx.run_until_parked();
+    assert!(rows(cx)[0].get("mail").is_none());
+
+    // Keep as generator writes the block and clears the seed.
+    view.update(cx, |s, cx| s.generate_rows_now(key, "7 keep", cx));
+    cx.run_until_parked();
+    assert_eq!(
+        read(&view, cx, |s| s
+            .ws
+            .find_dataset(key)
+            .unwrap()
+            .source
+            .clone()),
+        "generator"
+    );
+    assert_eq!(rows(cx).as_array().unwrap().len(), 7);
+}
+
+#[gpui::test]
 fn crud_wizard_prompts_chain_and_create_the_resource(cx: &mut TestAppContext) {
     use crate::shell::PromptAction as P;
     let (view, cx) = setup(cx, None);

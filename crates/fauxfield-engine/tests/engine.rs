@@ -850,3 +850,41 @@ fn dataset_events_fire_on_mutation() {
     }
     assert_eq!(seen, Some(("people".into(), 4)));
 }
+
+#[test]
+fn dataset_row_apis_edit_insert_delete() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let e = crud_engine(&rt, &dir, "", "", "");
+    let before = e
+        .dataset_rows("srv_d", "people")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .len();
+    e.dataset_update_cell("srv_d", "people", 0, "name", serde_json::json!("Zed"))
+        .unwrap();
+    let at = e
+        .dataset_insert("srv_d", "people", None, vec![serde_json::json!({"id": 99})])
+        .unwrap();
+    assert_eq!(at, before);
+    let rows = e.dataset_rows("srv_d", "people").unwrap();
+    assert_eq!(rows[0]["name"], "Zed");
+    assert_eq!(rows.as_array().unwrap().len(), before + 1);
+    assert_eq!(
+        e.dataset_delete("srv_d", "people", &[0, 0, 500]).unwrap(),
+        1
+    );
+    assert_eq!(
+        e.dataset_rows("srv_d", "people")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        before
+    );
+    assert!(
+        e.dataset_update_cell("srv_d", "people", 9999, "x", serde_json::json!(1))
+            .is_err()
+    );
+}

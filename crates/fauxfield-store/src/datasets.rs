@@ -403,6 +403,19 @@ impl Store {
         id_strategy: Option<&str>,
         persist: Option<bool>,
     ) -> Result<(), StoreError> {
+        self.create_dataset_with_columns(server_id, name, key, id_strategy, persist, &[])
+    }
+
+    /// Create an empty Dataset with a declared column list ("From table", M10.04).
+    pub fn create_dataset_with_columns(
+        &self,
+        server_id: &str,
+        name: &str,
+        key: Option<&str>,
+        id_strategy: Option<&str>,
+        persist: Option<bool>,
+        columns: &[fauxfield_model::DatasetColumn],
+    ) -> Result<(), StoreError> {
         let name = safe_name(name)?;
         if self
             .dataset_server(server_id)?
@@ -423,8 +436,11 @@ impl Store {
                 persist,
                 ..Default::default()
             },
-        )
-        .map(|_| ())
+        )?;
+        if !columns.is_empty() {
+            self.set_dataset_columns(server_id, name, columns)?;
+        }
+        Ok(())
     }
 
     /// Copy a Dataset (table and default-named seed file) as `<name>-copy`, `-copy-2`, ...
@@ -612,6 +628,223 @@ pub fn state_path(root: &Path, server_id: &str, dataset: &str) -> PathBuf {
     root.join(".fauxfield/state")
         .join(server_id)
         .join(format!("{dataset}.json"))
+}
+
+/// M10.04: columns, generator block and static-seed row editing.
+impl Store {
+    /// Replace a Dataset's declared column list (empty clears it).
+    pub fn set_dataset_columns(
+        &self,
+        server_id: &str,
+        name: &str,
+        columns: &[fauxfield_model::DatasetColumn],
+    ) -> Result<(), StoreError> {
+        let mut seen = std::collections::HashSet::new();
+        for c in columns {
+            if c.name.trim().is_empty() || !seen.insert(c.name.as_str()) {
+                return Err(StoreError::Invalid(format!(
+                    "Column name '{}' is empty or duplicated.",
+                    c.name
+                )));
+            }
+            if !c.ty.is_empty() && !fauxfield_model::COLUMN_TYPES.contains(&c.ty.as_str()) {
+                return Err(StoreError::Invalid(format!(
+                    "Column type must be one of {}, got '{}'.",
+                    fauxfield_model::COLUMN_TYPES.join(", "),
+                    c.ty
+                )));
+            }
+        }
+        let file = self
+            .server_file(server_id)
+            .ok_or_else(|| StoreError::NotFound(server_id.into()))?;
+        self.edit(&file, |d| {
+            let t = array_mut(d, "datasets")
+                .iter_mut()
+                .find(|t| t.get("name").and_then(Item::as_str) == Some(name))
+                .ok_or_else(|| StoreError::NotFound(name.into()))?;
+            if columns.is_empty() {
+                t.remove("columns");
+            } else {
+                let mut arr = toml_edit::ArrayOfTables::new();
+                for c in columns {
+                    let mut ct = Table::new();
+                    ct["name"] = value(c.name.as_str());
+                    ct["type"] = value(if c.ty.is_empty() { "string" } else { &c.ty });
+                    arr.push(ct);
+                }
+                t["columns"] = Item::ArrayOfTables(arr);
+            }
+            Ok(())
+        })
+    }
+
+    /// Write (`Some`) or remove (`None`) the `[datasets.generator]` block. Setting it clears
+    /// `seed` and `seed_template` (a Dataset has one seed source); the seed file is left alone.
+    pub fn set_dataset_generator(
+        &self,
+        server_id: &str,
+        name: &str,
+        generator: Option<&fauxfield_model::GeneratorSeed>,
+    ) -> Result<(), StoreError> {
+        let table = match generator {
+            Some(g) => {
+                let text = toml::to_string(g)
+                    .map_err(|e| StoreError::Invalid(format!("Bad generator: {e}")))?;
+                let doc: toml_edit::DocumentMut = text
+                    .parse()
+                    .map_err(|e| StoreError::Invalid(format!("Bad generator: {e}")))?;
+                Some(doc.as_table().clone())
+            }
+            None => None,
+        };
+        let file = self
+            .server_file(server_id)
+            .ok_or_else(|| StoreError::NotFound(server_id.into()))?;
+        self.edit(&file, |d| {
+            let t = array_mut(d, "datasets")
+                .iter_mut()
+                .find(|t| t.get("name").and_then(Item::as_str) == Some(name))
+                .ok_or_else(|| StoreError::NotFound(name.into()))?;
+            match table {
+                Some(g) => {
+                    t.remove("seed");
+                    t.remove("seed_template");
+                    t["generator"] = Item::Table(g);
+                }
+                None => {
+                    t.remove("generator");
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// Write `rows` as the static seed `data/<name>.json` and make it the active source.
+    pub fn write_dataset_seed(
+        &self,
+        server_id: &str,
+        name: &str,
+        json: &str,
+    ) -> Result<(), StoreError> {
+        self.upsert_dataset(
+            server_id,
+            &DatasetSpec {
+                name: name.into(),
+                seed_json: Some(json.into()),
+                ..Default::default()
+            },
+        )
+        .map(|_| ())
+    }
+
+    /// Read the static seed rows of a Dataset (empty array when it has no static seed yet).
+    pub fn read_dataset_seed(
+        &self,
+        server_id: &str,
+        name: &str,
+    ) -> Result<Option<String>, StoreError> {
+        let server = self.dataset_server(server_id)?;
+        let d = server
+            .datasets
+            .iter()
+            .find(|d| d.name == name)
+            .ok_or_else(|| StoreError::NotFound(name.into()))?;
+        match &d.seed {
+            Some(rel) => Ok(self.read_workspace_file(rel)),
+            None => Ok(None),
+        }
+    }
+
+    /// Rename a column everywhere: the column list, and the keys of a static seed's rows.
+    pub fn rename_dataset_column(
+        &self,
+        server_id: &str,
+        name: &str,
+        from: &str,
+        to: &str,
+    ) -> Result<(), StoreError> {
+        let server = self.dataset_server(server_id)?;
+        let d = server
+            .datasets
+            .iter()
+            .find(|d| d.name == name)
+            .ok_or_else(|| StoreError::NotFound(name.into()))?;
+        let mut cols = d.columns.clone();
+        if cols.iter().any(|c| c.name == to) {
+            return Err(StoreError::Invalid(format!(
+                "Column '{to}' already exists."
+            )));
+        }
+        if let Some(c) = cols.iter_mut().find(|c| c.name == from) {
+            c.name = to.into();
+        }
+        self.set_dataset_columns(server_id, name, &cols)?;
+        if let Some(mut g) = d.generator.clone() {
+            for f in g.fields.iter_mut().filter(|f| f.name == from) {
+                f.name = to.into();
+            }
+            self.set_dataset_generator(server_id, name, Some(&g))?;
+        }
+        self.map_seed_rows(server_id, name, |row| {
+            if let Some(o) = row.as_object_mut()
+                && let Some(v) = o.remove(from)
+            {
+                o.insert(to.into(), v);
+            }
+        })
+    }
+
+    /// Remove a column from the column list and from a static seed's rows.
+    pub fn remove_dataset_column(
+        &self,
+        server_id: &str,
+        name: &str,
+        column: &str,
+    ) -> Result<(), StoreError> {
+        let server = self.dataset_server(server_id)?;
+        let d = server
+            .datasets
+            .iter()
+            .find(|d| d.name == name)
+            .ok_or_else(|| StoreError::NotFound(name.into()))?;
+        let cols: Vec<_> = d
+            .columns
+            .iter()
+            .filter(|c| c.name != column)
+            .cloned()
+            .collect();
+        self.set_dataset_columns(server_id, name, &cols)?;
+        if let Some(mut g) = d.generator.clone() {
+            g.fields.retain(|f| f.name != column);
+            self.set_dataset_generator(server_id, name, Some(&g))?;
+        }
+        self.map_seed_rows(server_id, name, |row| {
+            if let Some(o) = row.as_object_mut() {
+                o.remove(column);
+            }
+        })
+    }
+
+    /// Apply `f` to every row of a static seed and write it back (no-op without one).
+    pub fn map_seed_rows(
+        &self,
+        server_id: &str,
+        name: &str,
+        mut f: impl FnMut(&mut serde_json::Value),
+    ) -> Result<(), StoreError> {
+        let Some(text) = self.read_dataset_seed(server_id, name)? else {
+            return Ok(());
+        };
+        let mut v: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|e| StoreError::Invalid(format!("Seed is not valid JSON: {e}")))?;
+        match &mut v {
+            serde_json::Value::Array(a) => a.iter_mut().for_each(&mut f),
+            other => f(other),
+        }
+        let out = serde_json::to_string_pretty(&v).unwrap_or_default();
+        self.write_dataset_seed(server_id, name, &out)
+    }
 }
 
 #[cfg(test)]

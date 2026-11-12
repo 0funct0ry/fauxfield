@@ -526,6 +526,11 @@ impl Shell {
                 }
             }
             "rules-add" => self.add_rule(&id, cx),
+            "ds-view" => {
+                self.ds_json_mode = id == "json";
+                self.ds_seed_mode = id == "seed";
+                cx.notify();
+            }
             "rules-logic" => {
                 let or = self
                     .find_response(&id)

@@ -566,3 +566,72 @@ fn network_tables_and_fault_presets_round_trip_without_losing_comments() {
     );
     assert!(s.create_fault_preset("rte_1", "nope").is_err());
 }
+
+#[test]
+fn dataset_columns_generator_and_seed_round_trip() {
+    use fauxfield_model::{DatasetColumn, GeneratorField, GeneratorSeed, GeneratorSpec};
+    let (_d, s) = ws();
+    let srv = s.create_server("Shop", 3010).unwrap();
+    let col = |n: &str, t: &str| DatasetColumn {
+        name: n.into(),
+        ty: t.into(),
+    };
+    s.create_dataset_with_columns(
+        &srv,
+        "products",
+        None,
+        None,
+        None,
+        &[col("id", "int"), col("name", "string")],
+    )
+    .unwrap();
+    let get = |s: &Store| {
+        s.snapshot()
+            .servers
+            .iter()
+            .find(|(_, x)| x.id == srv)
+            .unwrap()
+            .1
+            .datasets[0]
+            .clone()
+    };
+    assert_eq!(get(&s).columns.len(), 2);
+    assert!(
+        s.set_dataset_columns(&srv, "products", &[col("a", "nope")])
+            .is_err()
+    );
+
+    s.write_dataset_seed(&srv, "products", r#"[{"id":1,"name":"x"}]"#)
+        .unwrap();
+    s.rename_dataset_column(&srv, "products", "name", "title")
+        .unwrap();
+    let d = get(&s);
+    assert_eq!(d.columns[1].name, "title");
+    assert!(
+        s.read_dataset_seed(&srv, "products")
+            .unwrap()
+            .unwrap()
+            .contains("title")
+    );
+    s.remove_dataset_column(&srv, "products", "title").unwrap();
+    assert!(
+        !s.read_dataset_seed(&srv, "products")
+            .unwrap()
+            .unwrap()
+            .contains("title")
+    );
+
+    let g = GeneratorSeed {
+        rows: 5,
+        fields: vec![GeneratorField {
+            name: "id".into(),
+            spec: GeneratorSpec::of("uuid"),
+        }],
+    };
+    s.set_dataset_generator(&srv, "products", Some(&g)).unwrap();
+    let d = get(&s);
+    assert_eq!(d.generator.as_ref(), Some(&g));
+    assert!(d.seed.is_none());
+    s.set_dataset_generator(&srv, "products", None).unwrap();
+    assert!(get(&s).generator.is_none());
+}

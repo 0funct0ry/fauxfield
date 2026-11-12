@@ -49,6 +49,13 @@
     "Dataset": {
       "description": "A named JSON collection backing stateful `crud` routes (SPEC §6.1).",
       "properties": {
+        "columns": {
+          "description": "Optional column list (M10.04): drives the Data Table's cell editors and validation.",
+          "items": {
+            "$ref": "#/$defs/DatasetColumn"
+          },
+          "type": "array"
+        },
         "generator": {
           "anyOf": [
             {
@@ -100,6 +107,23 @@
             "string",
             "null"
           ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "DatasetColumn": {
+      "description": "One declared column of a Dataset (M10.04).",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "default": "",
+          "description": "One of [`COLUMN_TYPES`] (default `string`).",
+          "type": "string"
         }
       },
       "required": [

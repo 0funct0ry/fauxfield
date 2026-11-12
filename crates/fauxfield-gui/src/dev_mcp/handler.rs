@@ -127,6 +127,8 @@ fn reset_view(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) {
     shell.ds_table_subs.borrow_mut().clear();
     shell.ds_row_targets.borrow_mut().clear();
     shell.ds_json_mode = false;
+    shell.ds_seed_mode = false;
+    shell.seed_eds.borrow_mut().clear();
     shell.mask_volatile = false;
     shell.quit_confirm = false;
     shell.notice_action = None;

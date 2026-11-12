@@ -168,6 +168,10 @@ pub struct Dataset {
     pub seed: Option<String>,
     pub seed_template: Option<String>,
     pub error: Option<String>,
+    /// Declared columns `(name, type)` (M10.04).
+    pub columns: Vec<(String, String)>,
+    /// Active seed source: `static`, `template`, `generator` or `none` (M10.04).
+    pub source: String,
     /// Generator seed summary lines `name: kind` (M10.02), empty when the seed is not a generator.
     pub generator_fields: Vec<String>,
     /// First sample rows of the generator as JSON lines, or the generation error.
@@ -429,6 +433,21 @@ impl Workspace {
                         seed: d.seed.clone(),
                         seed_template: d.seed_template.clone(),
                         error: None,
+                        columns: d
+                            .columns
+                            .iter()
+                            .map(|c| {
+                                (
+                                    c.name.clone(),
+                                    if c.ty.is_empty() {
+                                        "string".into()
+                                    } else {
+                                        c.ty.clone()
+                                    },
+                                )
+                            })
+                            .collect(),
+                        source: fauxfield_engine::source_kind(d).into(),
                         generator_fields: d.generator.as_ref().map_or(vec![], |g| {
                             g.fields
                                 .iter()

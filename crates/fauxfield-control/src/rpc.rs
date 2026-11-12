@@ -79,6 +79,33 @@ async fn dispatch(
             )
             .await
             .map(|_| json!({})),
+        "data.update_cell" => api
+            .data_update_cell(
+                param(params, "server")?,
+                param(params, "dataset")?,
+                param(params, "index")?,
+                param(params, "column")?,
+                param(params, "value")?,
+            )
+            .await
+            .map(|_| json!({})),
+        "data.insert" => api
+            .data_insert(
+                param(params, "server")?,
+                param(params, "dataset")?,
+                param(params, "at")?,
+                param(params, "rows")?,
+            )
+            .await
+            .map(|i| json!({"index": i})),
+        "data.delete" => api
+            .data_delete(
+                param(params, "server")?,
+                param(params, "dataset")?,
+                param(params, "indices")?,
+            )
+            .await
+            .map(|n| json!({"deleted": n})),
         "state.reset" => api
             .reset_state(param(params, "server")?, param(params, "dataset")?)
             .await
@@ -357,6 +384,50 @@ impl ControlApi for RemoteControl {
         )
         .await
         .map(|_| ())
+    }
+    async fn data_update_cell(
+        &self,
+        server: String,
+        dataset: String,
+        index: usize,
+        column: String,
+        value: Value,
+    ) -> Result<(), ControlError> {
+        self.call(
+            "data.update_cell",
+            json!({"server": server, "dataset": dataset, "index": index, "column": column, "value": value}),
+        )
+        .await
+        .map(|_| ())
+    }
+    async fn data_insert(
+        &self,
+        server: String,
+        dataset: String,
+        at: Option<usize>,
+        rows: Vec<Value>,
+    ) -> Result<usize, ControlError> {
+        let v = self
+            .call(
+                "data.insert",
+                json!({"server": server, "dataset": dataset, "at": at, "rows": rows}),
+            )
+            .await?;
+        Ok(v["index"].as_u64().unwrap_or(0) as usize)
+    }
+    async fn data_delete(
+        &self,
+        server: String,
+        dataset: String,
+        indices: Vec<usize>,
+    ) -> Result<usize, ControlError> {
+        let v = self
+            .call(
+                "data.delete",
+                json!({"server": server, "dataset": dataset, "indices": indices}),
+            )
+            .await?;
+        Ok(v["deleted"].as_u64().unwrap_or(0) as usize)
     }
     async fn reset_state(
         &self,

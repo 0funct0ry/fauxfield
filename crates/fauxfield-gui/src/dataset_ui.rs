@@ -9,8 +9,7 @@ use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, ClipboardItem, Context, Entity, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, ScrollStrategy, StatefulInteractiveElement, Styled, Window, div, prelude::*, px,
-    uniform_list,
+    ParentElement, StatefulInteractiveElement, Styled, Window, div, prelude::*, px, uniform_list,
 };
 use serde_json::Value;
 
@@ -19,6 +18,7 @@ use crate::data_table::{
     TableViewModel,
 };
 use crate::layout::TableLayout;
+use crate::text_input::{InputEvent, InputSize, TextInput};
 
 use crate::assets::BUFFER_FONT;
 use crate::shell::{PromptAction, Shell};
@@ -80,7 +80,8 @@ impl Shell {
             .as_ref()
             .and_then(|e| e.dataset_page(&d.server_id, &d.name, 0, 1).ok())
             .map_or(d.rows, |(n, _)| n);
-        let json_mode = self.ds_json_mode;
+        let seed_mode = self.ds_seed_mode;
+        let json_mode = self.ds_json_mode && !seed_mode;
         let key = d.key();
         let (k1, k2, k3, k4, k5) = (
             key.clone(),
@@ -116,39 +117,69 @@ impl Shell {
             )))
             .child(div().flex_1())
             .child(crate::dev_id!(
-                seg(t, "ds-view-table", "Table", !json_mode).on_click(cx.listener(
+                seg(t, "ds-view-table", "Table", !json_mode && !seed_mode).on_click(cx.listener(
                     |this, _, _, cx| {
                         this.ds_json_mode = false;
+                        this.ds_seed_mode = false;
                         cx.notify();
                     }
                 )),
                 "ds-view-table",
                 Button,
                 "Table",
-                None
+                Press("ds-view:table".into())
             ))
             .child(crate::dev_id!(
                 seg(t, "ds-view-json", "JSON", json_mode).on_click(cx.listener(
                     |this, _, _, cx| {
                         this.ds_json_mode = true;
+                        this.ds_seed_mode = false;
                         cx.notify();
                     }
                 )),
                 "ds-view-json",
                 Button,
                 "JSON",
-                None
+                Press("ds-view:json".into())
+            ))
+            .child(crate::dev_id!(
+                seg(t, "ds-view-seed", "Seed", seed_mode).on_click(cx.listener(
+                    |this, _, _, cx| {
+                        this.ds_seed_mode = true;
+                        cx.notify();
+                    }
+                )),
+                "ds-view-seed",
+                Button,
+                "Seed",
+                Press("ds-view:seed".into())
             ))
             .child(crate::dev_id!(
                 toolbar_button(t, "ds-add-row")
                     .child("Add row")
-                    .on_click(cx.listener(move |this, _, w, cx| {
-                        this.begin_prompt(PromptAction::AddRow { key: k1.clone() }, "{}", w, cx)
-                    })),
+                    .on_click(cx.listener(move |this, _, _, cx| this.add_dataset_row(&k1, cx))),
                 "ds-add-row",
                 Button,
                 "Add row",
-                None
+                Action("add_dataset_row")
+            ))
+            .child(crate::dev_id!(
+                toolbar_button(t, "ds-add-column")
+                    .child("Add column…")
+                    .on_click(cx.listener(|this, _, w, cx| this.begin_add_column(w, cx))),
+                "ds-add-column",
+                Button,
+                "Add column",
+                Action("add_dataset_column")
+            ))
+            .child(crate::dev_id!(
+                toolbar_button(t, "ds-generate")
+                    .child("Generate rows…")
+                    .on_click(cx.listener(|this, _, w, cx| this.begin_generate_rows(w, cx))),
+                "ds-generate",
+                Button,
+                "Generate rows",
+                Action("generate_dataset_rows")
             ))
             .child(crate::dev_id!(
                 toolbar_button(t, "ds-export")
@@ -176,7 +207,9 @@ impl Shell {
                 .text_color(t.deleted)
                 .child(format!("Seed problem: {e}"))
         });
-        let body: AnyElement = if json_mode && total > 0 {
+        let body: AnyElement = if seed_mode {
+            self.seed_editor_body(t, d, cx)
+        } else if json_mode && total > 0 {
             let (server, name) = (d.server_id.clone(), d.name.clone());
             uniform_list(
                 "ds-json",
@@ -280,6 +313,55 @@ impl Shell {
                     Row(rid.clone())
                 )
             }));
+        let source_label = match d.source.as_str() {
+            "static" => format!("static seed {}", d.seed.clone().unwrap_or_default()),
+            "generator" => "generator (rows regenerate at each start)".to_string(),
+            "template" => format!(
+                "seed template {}",
+                d.seed_template.clone().unwrap_or_default()
+            ),
+            _ => "none (live rows only)".to_string(),
+        };
+        let columns_label = if d.columns.is_empty() {
+            "none declared".to_string()
+        } else {
+            d.columns
+                .iter()
+                .map(|(n, ty)| format!("{n}:{ty}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let definition = div()
+            .flex_none()
+            .px(px(12.))
+            .py(px(6.))
+            .flex()
+            .flex_col()
+            .gap(px(2.))
+            .border_b_1()
+            .border_color(t.border_variant)
+            .text_size(px(12.))
+            .child(crate::dev_id!(
+                div()
+                    .id(crate::ui::eid(format!("ds-source-{}", d.key())))
+                    .text_color(muted)
+                    .child(format!("Source: {source_label}")),
+                format!("ds-source-{}", d.key()),
+                Text,
+                format!("Source: {source_label}"),
+                None
+            ))
+            .child(crate::dev_id!(
+                div()
+                    .id(crate::ui::eid(format!("ds-columns-{}", d.key())))
+                    .text_color(muted)
+                    .truncate()
+                    .child(format!("Columns: {columns_label}")),
+                format!("ds-columns-{}", d.key()),
+                Text,
+                format!("Columns: {columns_label}"),
+                None
+            ));
         let generator = (!d.generator_fields.is_empty()).then(|| {
             div()
                 .flex_none()
@@ -322,6 +404,7 @@ impl Shell {
             .flex_col()
             .child(header)
             .child(used_by)
+            .child(definition)
             .children(generator)
             .children(banner)
             .child(body)
@@ -409,13 +492,7 @@ impl Shell {
     }
 
     pub(crate) fn delete_dataset_row(&mut self, key: &str, i: usize, cx: &mut Context<Self>) {
-        self.edit_dataset(key, cx, move |rows| match rows {
-            Value::Array(a) if i < a.len() => {
-                a.remove(i);
-                Ok(())
-            }
-            _ => Err("That row no longer exists.".into()),
-        });
+        self.delete_dataset_rows(key, &[i], cx);
     }
 
     pub(crate) fn begin_export(&mut self, key: &str, w: &mut gpui::Window, cx: &mut Context<Self>) {
@@ -661,6 +738,43 @@ const DEFAULT_COL_W: f32 = 160.0;
 /// Approximate advance of one monospace character at 11 px, for fit-to-content.
 const CHAR_W: f32 = 6.6;
 
+/// Parse typed cell text for a column type (`None`: undeclared, so JSON when it parses, else text).
+/// Empty text is `null` for every type except `string` (M10.04).
+pub fn parse_cell(ty: Option<&str>, text: &str) -> Result<Value, String> {
+    let t = text.trim();
+    match ty {
+        Some("string") => Ok(Value::String(text.to_string())),
+        _ if t.is_empty() => Ok(Value::Null),
+        Some("int") => t
+            .parse::<i64>()
+            .map(Value::from)
+            .map_err(|_| "Not a whole number.".into()),
+        Some("float") => t
+            .parse::<f64>()
+            .ok()
+            .and_then(serde_json::Number::from_f64)
+            .map(Value::Number)
+            .ok_or_else(|| "Not a number.".into()),
+        Some("bool") => match t {
+            "true" => Ok(Value::Bool(true)),
+            "false" => Ok(Value::Bool(false)),
+            _ => Err("Use true or false.".into()),
+        },
+        Some("datetime") => Ok(Value::String(t.to_string())),
+        Some("json") => serde_json::from_str(t).map_err(|e| format!("Not JSON: {e}")),
+        _ => Ok(serde_json::from_str(t).unwrap_or_else(|_| Value::String(text.to_string()))),
+    }
+}
+
+/// The cell being edited in a DatasetTable (a `TextInput` rendered inside the cell).
+pub struct CellEdit {
+    pub row: usize,
+    pub col: usize,
+    pub input: Entity<TextInput>,
+    focus_pending: bool,
+    _sub: gpui::Subscription,
+}
+
 /// What the cells tell the shell: the last pressed cell and pointer position (for the row menu).
 #[derive(Default)]
 pub struct DsShared {
@@ -691,6 +805,9 @@ pub struct DatasetTable {
     snapshot: Option<Vec<Value>>,
     perm: Option<Vec<usize>>,
     sort: Option<(String, ColumnSort)>,
+    /// Declared columns `(name, type)`; they come first and exist even with no rows.
+    declared: Vec<(String, String)>,
+    pub editing: Option<CellEdit>,
     pub shared: Rc<DsShared>,
 }
 
@@ -745,6 +862,8 @@ impl DatasetTable {
             snapshot: None,
             perm: None,
             sort: None,
+            declared: d.columns.clone(),
+            editing: None,
             shared: Rc::new(DsShared::default()),
         };
         t.reload();
@@ -774,6 +893,10 @@ impl DatasetTable {
             .unwrap_or((0, vec![]));
         self.count = total;
         let mut keys = columns(&head, &self.key_field);
+        for (i, (n, _)) in self.declared.iter().enumerate() {
+            keys.retain(|k| k != n);
+            keys.insert(i.min(keys.len()), n.clone());
+        }
         // Saved order first; columns it does not know keep their natural order after them.
         let pos = |k: &String| self.order.iter().position(|o| o == k).unwrap_or(usize::MAX);
         keys.sort_by_key(pos);
@@ -790,6 +913,103 @@ impl DatasetTable {
                 c
             })
             .collect();
+    }
+
+    /// True when the declared columns differ from `cols` (the caller then `invalidate`s).
+    pub fn set_declared(&mut self, cols: &[(String, String)]) -> bool {
+        if self.declared == cols {
+            return false;
+        }
+        self.declared = cols.to_vec();
+        true
+    }
+
+    fn col_type(&self, key: &str) -> Option<&str> {
+        self.declared
+            .iter()
+            .find(|(n, _)| n == key)
+            .map(|(_, t)| t.as_str())
+    }
+
+    /// Start editing a cell with a `TextInput` (Enter or Tab or blur commits, Esc cancels).
+    pub fn begin_edit(&mut self, row: usize, col: usize, cx: &mut Context<TableState<Self>>) {
+        if col >= self.columns.len() || row >= self.count {
+            return;
+        }
+        let text = TableDelegate::cell_text(self, row, col, cx);
+        let text = if self
+            .row_value(row)
+            .is_some_and(|r| r.get(&self.columns[col].key).is_none_or(Value::is_null))
+        {
+            String::new()
+        } else {
+            text
+        };
+        let input = cx.new(|cx| {
+            TextInput::new(cx)
+                .flush()
+                .size(InputSize::Small)
+                .text_selected(&text)
+        });
+        let sub = cx.subscribe(
+            &input,
+            |state: &mut TableState<DatasetTable>, _, ev: &InputEvent, cx| match ev {
+                InputEvent::PressEnter { .. } | InputEvent::Tab { .. } => {
+                    Self::finish_edit(state, true, false, cx)
+                }
+                InputEvent::Blur => Self::finish_edit(state, true, true, cx),
+                InputEvent::Escape => Self::finish_edit(state, false, false, cx),
+                _ => {}
+            },
+        );
+        self.editing = Some(CellEdit {
+            row,
+            col,
+            input,
+            focus_pending: true,
+            _sub: sub,
+        });
+        cx.notify();
+    }
+
+    /// Commit (or cancel) the open edit. An invalid value keeps the editor open unless `lenient`
+    /// (blur), which discards it.
+    fn finish_edit(
+        state: &mut TableState<DatasetTable>,
+        commit: bool,
+        lenient: bool,
+        cx: &mut Context<TableState<DatasetTable>>,
+    ) {
+        let d = state.delegate_mut();
+        let Some((row, col, input)) = d.editing.as_ref().map(|e| (e.row, e.col, e.input.clone()))
+        else {
+            return;
+        };
+        if commit {
+            let text = input.read(cx).value().to_string();
+            let key = d.columns[col].key.clone();
+            match parse_cell(d.col_type(&key), &text) {
+                Err(_) if !lenient => {
+                    input.update(cx, |i, cx| i.set_invalid(true, cx));
+                    return;
+                }
+                Err(_) => {}
+                Ok(val) => {
+                    let old = d.row_value(row).and_then(|r| r.get(&key).cloned());
+                    if old.as_ref() != Some(&val) && !(old.is_none() && val.is_null()) {
+                        let ix = d.actual_index(row);
+                        let _ = d
+                            .engine
+                            .dataset_update_cell(&d.server_id, &d.name, ix, &key, val);
+                    }
+                }
+            }
+        }
+        d.editing = None;
+        let g = d.generation;
+        d.invalidate(g);
+        state.refresh(cx);
+        cx.notify();
     }
 
     pub fn column_keys(&self) -> Vec<String> {
@@ -882,9 +1102,26 @@ impl TableDelegate for DatasetTable {
         &mut self,
         row: usize,
         col: usize,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) -> AnyElement {
+        if let Some(ed) = self.editing.as_mut()
+            && ed.row == row
+            && ed.col == col
+        {
+            if ed.focus_pending {
+                ed.focus_pending = false;
+                ed.input.read(cx).focus(window);
+            }
+            return crate::dev_id!(
+                div().size_full().child(ed.input.clone()),
+                format!("ds-edit-{row}-{col}"),
+                Input,
+                "Edit cell",
+                None
+            )
+            .into_any_element();
+        }
         self.ensure(self.actual_index(row));
         let key = self.columns[col].key.clone();
         let v = self
@@ -1027,8 +1264,10 @@ impl Shell {
             }
         };
         let rows = d.rows;
+        let declared = d.columns.clone();
         ent.update(cx, |s, cx| {
-            if s.delegate().stale(rows, generation) {
+            let changed = s.delegate_mut().set_declared(&declared);
+            if changed || s.delegate().stale(rows, generation) {
                 s.delegate_mut().invalidate(generation);
                 s.refresh(cx);
             }
@@ -1075,10 +1314,15 @@ impl Shell {
                 cx.notify();
             }
             TableEvent::DoubleClickedRow(r) => {
-                let actual = ent.read(cx).delegate().actual_index(*r);
-                self.ds_json_mode = true;
-                self.ds_scroll.scroll_to_item(actual, ScrollStrategy::Top);
-                cx.notify();
+                let col = ent
+                    .read(cx)
+                    .delegate()
+                    .shared
+                    .cell
+                    .get()
+                    .map_or(0, |(_, c)| c);
+                let r = *r;
+                ent.update(cx, |s, cx| s.delegate_mut().begin_edit(r, col, cx));
             }
             TableEvent::RightClickedRow(Some(_)) => {
                 self.ds_row_targets.borrow_mut().insert(key.to_string());

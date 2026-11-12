@@ -1,0 +1,43 @@
+# M10.04 scenario: build a Dataset from the table, with no Route anywhere.
+# Needs the example workspace as the launch workspace (scripts/smoke-ui.sh copies it).
+name: m10-04-dataset-editing
+size: default
+steps:
+  - state: [reset]
+  - click_element: {id: sidebar-tab-datasets}
+  - wait_for_idle: {}
+  - key: secondary-shift-p
+  - type_text: "Dataset: New From"
+  - key: enter
+  - wait_for_idle: {}
+  - type_text: products
+  - key: enter
+  - wait_for_idle: {}
+  - key: secondary-a
+  - type_text: "id:int, name:string, price:float"
+  - key: enter
+  - wait_for_idle: {}
+  - assert_find: {text: "Columns: id:int, name:string, price:float", ids: [ds-columns-srv_users:products]}
+  - assert_find: {text: "Source: static seed", ids: [ds-source-srv_users:products]}
+  - click_element: {id: ds-add-row}
+  - click_element: {id: ds-add-row}
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/rows, equals: 2}
+  - click_element: {id: ds-generate}
+  - wait_for_idle: {}
+  - key: secondary-a
+  - type_text: "200 bake"
+  - key: enter
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/rows, equals: 202}
+  - click_element: {id: ds-view-seed}
+  - wait_for_idle: {}
+  - assert_find: {text: "Seed state", ids: [ds-seed-state-srv_users:products]}
+  - click_element: {id: ds-view-table}
+  - set_theme: One Dark
+  - wait_for_idle: {}
+  - screenshot: {name: m10-04-table-one-dark}
+  - set_theme: One Light
+  - wait_for_idle: {}
+  - screenshot: {name: m10-04-table-one-light}
+  - audit: {themes: [one-dark, one-light], sizes: [default, min]}

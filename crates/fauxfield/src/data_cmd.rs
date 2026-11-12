@@ -72,6 +72,9 @@ pub enum DataAction {
         /// Persist rows to `.fauxfield/state`.
         #[arg(long)]
         persist: bool,
+        /// Declare a column `name:type` (repeatable; types string, int, float, bool, datetime, json).
+        #[arg(long = "column", value_name = "NAME:TYPE")]
+        columns: Vec<String>,
         #[command(flatten)]
         ws: WsArgs,
     },
@@ -185,23 +188,37 @@ pub fn data(action: DataAction) -> i32 {
             key,
             id_strategy,
             persist,
+            columns,
             ws,
         } => {
+            let cols: Vec<fauxfield_model::DatasetColumn> = columns
+                .iter()
+                .map(|c| {
+                    let (n, t) = c.split_once(':').unwrap_or((c.as_str(), "string"));
+                    fauxfield_model::DatasetColumn {
+                        name: n.trim().into(),
+                        ty: t.trim().into(),
+                    }
+                })
+                .collect();
             if let Err(c) = with_server(&ws, &server, |st, sid| {
-                st.create_dataset(
+                st.create_dataset_with_columns(
                     sid,
                     &dataset,
                     key.as_deref(),
                     id_strategy.as_deref(),
                     persist.then_some(true),
+                    &cols,
                 )
             }) {
                 return c;
             }
             if ws.json {
-                print_json(
-                    &json!({"created": dataset, "server": server, "rows": 0, "live": false}),
-                );
+                let mut v = json!({"created": dataset, "server": server, "rows": 0, "live": false});
+                if !cols.is_empty() {
+                    v["columns"] = json!(cols);
+                }
+                print_json(&v);
             } else {
                 println!("Created empty dataset {dataset}");
             }
@@ -529,25 +546,12 @@ fn generate(
         return fail(&format!("dataset `{dataset}` has no generator"));
     }
     let seed = seed.or(s.fake_seed);
-    let Ok(order) = fauxfield_model::generator::load_order(&s.datasets) else {
-        return fail("generator `ref` cycle between datasets");
-    };
-    let mut refs = fauxfield_engine::generate::Refs::new();
-    let mut result = Value::Null;
-    for i in order {
-        let d = &s.datasets[i];
-        let Some(g) = &d.generator else { continue };
-        let n = (d.name == dataset).then_some(rows).flatten();
-        match fauxfield_engine::generate::generate(&d.name, g, seed, n, &refs, &root) {
-            Ok(v) => {
-                refs.insert(d.name.clone(), v.as_array().cloned().unwrap_or_default());
-                if d.name == dataset {
-                    result = v;
-                }
-            }
-            Err(e) => return fail(&format!("{}: {e}", d.name)),
-        }
-    }
+    let result =
+        match fauxfield_engine::generate::generate_dataset(&s.datasets, dataset, rows, seed, &root)
+        {
+            Ok(v) => v,
+            Err(e) => return fail(&e),
+        };
     let count = rows_label(&result);
     let mut baked = None;
     if bake {

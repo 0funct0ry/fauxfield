@@ -82,10 +82,18 @@ pub struct DatasetState {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct DatasetViewState {
     pub key: String,
-    /// `table` or `json`.
+    /// `table`, `json` or `seed`.
     pub view: &'static str,
     pub rows: usize,
     pub columns: Vec<String>,
+    /// Declared columns `(name, type)` (M10.04).
+    pub declared_columns: Vec<(String, String)>,
+    /// Active seed source: `static`, `generator`, `template` or `none` (M10.04).
+    pub source: String,
+    /// The seed editor has unsaved edits (M10.04).
+    pub dirty_seed: bool,
+    /// The cell being edited, `(row, column)`.
+    pub editing: Option<(usize, usize)>,
     /// The DataTable view model (M10.03): order, widths, sort, selection, visible range.
     pub table: Option<crate::data_table::TableViewModel>,
 }
@@ -803,9 +811,25 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
                     .unwrap_or_default();
                 DatasetViewState {
                     key: d.key(),
-                    view: if shell.ds_json_mode { "json" } else { "table" },
+                    view: if shell.ds_seed_mode {
+                        "seed"
+                    } else if shell.ds_json_mode {
+                        "json"
+                    } else {
+                        "table"
+                    },
                     rows: d.rows,
                     columns: crate::dataset_ui::columns(&head, &d.key),
+                    declared_columns: d.columns.clone(),
+                    source: d.source.clone(),
+                    dirty_seed: shell.seed_dirty(&d.key(), cx),
+                    editing: shell.ds_tables.borrow().get(&d.key()).and_then(|e| {
+                        e.read(cx)
+                            .delegate()
+                            .editing
+                            .as_ref()
+                            .map(|x| (x.row, x.col))
+                    }),
                     table: shell.dataset_table_view(&d.key(), cx),
                 }
             }),

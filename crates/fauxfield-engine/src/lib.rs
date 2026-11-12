@@ -18,7 +18,7 @@ mod time;
 pub mod tls;
 pub mod vars;
 
-pub use data::{DatasetInfo, PLAIN_FIELD_KINDS, crud_seed_template};
+pub use data::{DatasetInfo, PLAIN_FIELD_KINDS, crud_seed_template, source_kind};
 pub use engine::{
     Engine, EngineConfig, EngineError, EngineEvent, ServerInfo, ServerStatus, TrafficFilter,
     parse_status_filter,

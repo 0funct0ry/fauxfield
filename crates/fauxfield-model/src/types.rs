@@ -130,10 +130,25 @@ pub struct Dataset {
     /// true: mutations are written to `.fauxfield/state/` and reloaded on start.
     #[serde(default)]
     pub persist: bool,
+    /// Optional column list (M10.04): drives the Data Table's cell editors and validation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub columns: Vec<DatasetColumn>,
     #[serde(flatten)]
     #[schemars(skip)]
     pub extra: Extra,
 }
+
+/// One declared column of a Dataset (M10.04).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DatasetColumn {
+    pub name: String,
+    /// One of [`COLUMN_TYPES`] (default `string`).
+    #[serde(default, rename = "type")]
+    pub ty: String,
+}
+
+/// Column types a Dataset column may declare.
+pub const COLUMN_TYPES: &[&str] = &["string", "int", "float", "bool", "datetime", "json"];
 
 impl Dataset {
     pub fn key_name(&self) -> &str {

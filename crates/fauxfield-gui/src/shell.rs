@@ -96,6 +96,29 @@ pub enum PromptAction {
     RenameDataset {
         key: String,
     },
+    /// "From table" start, step 1 (name) and 2 (columns `name:type, ...`), M10.04.
+    NewDatasetTableName {
+        server: String,
+    },
+    NewDatasetColumns {
+        server: String,
+        name: String,
+    },
+    /// `name:type` or `name:type=generator`.
+    AddColumn {
+        key: String,
+    },
+    RenameColumn {
+        key: String,
+        from: String,
+    },
+    RemoveColumn {
+        key: String,
+    },
+    /// `N bake` or `N keep`.
+    GenerateRows {
+        key: String,
+    },
     NewEnvironment,
     RenameEnvironment {
         name: String,
@@ -193,6 +216,15 @@ impl PromptAction {
                 "Fake kinds (name, internet.email, ...) or int, float, bool, uuid. An id field is added."
             }
             PromptAction::EditCell { .. } => "Changes live data only; Reset restores the seed.",
+            PromptAction::NewDatasetColumns { .. } => {
+                "Types: string, int, float, bool, datetime, json. The first column is the row key."
+            }
+            PromptAction::AddColumn { .. } => {
+                "name:type, or name:type=generator (e.g. email:string=fake:internet.email)."
+            }
+            PromptAction::GenerateRows { .. } => {
+                "`bake` appends rows to the seed; `keep` regenerates them at each start (deterministic with fake_seed)."
+            }
             _ => "",
         }
     }
@@ -210,6 +242,12 @@ impl PromptAction {
             PromptAction::ExportDataset { .. } => "Export to file",
             PromptAction::NewDataset { .. } => "New dataset name",
             PromptAction::RenameDataset { .. } => "Dataset name",
+            PromptAction::NewDatasetTableName { .. } => "New dataset from table: name",
+            PromptAction::NewDatasetColumns { .. } => "Columns (name:type, ...)",
+            PromptAction::AddColumn { .. } => "Add column (name:type)",
+            PromptAction::RenameColumn { .. } => "New column name",
+            PromptAction::RemoveColumn { .. } => "Column to remove",
+            PromptAction::GenerateRows { .. } => "Generate rows (count, bake or keep)",
             PromptAction::NewEnvironment => "New environment name",
             PromptAction::RenameEnvironment { .. } => "Environment name",
             PromptAction::SetVariable { key: None, .. } => "Variable (KEY=value)",
@@ -332,6 +370,10 @@ pub struct Shell {
     pub(crate) traffic_scroll: UniformListScrollHandle,
     pub(crate) ds_scroll: UniformListScrollHandle,
     pub(crate) ds_json_mode: bool,
+    /// The Dataset tab shows the Seed section (M10.04).
+    pub(crate) ds_seed_mode: bool,
+    pub(crate) seed_eds:
+        std::cell::RefCell<std::collections::HashMap<String, crate::dataset_edit::SeedEd>>,
     /// One DataTable per open Dataset (key `server:name`), created lazily at render.
     pub(crate) ds_tables: std::cell::RefCell<
         HashMap<
@@ -591,6 +633,8 @@ impl Shell {
             traffic_scroll: UniformListScrollHandle::new(),
             ds_scroll: UniformListScrollHandle::new(),
             ds_json_mode: false,
+            ds_seed_mode: false,
+            seed_eds: Default::default(),
             ds_tables: Default::default(),
             ds_table_subs: Default::default(),
             ds_row_targets: Default::default(),
@@ -2698,6 +2742,24 @@ impl Shell {
             PromptAction::ExportDataset { key } => self.export_dataset(&key, &v, cx),
             PromptAction::NewDataset { server } => self.create_dataset_now(&server, v.trim(), cx),
             PromptAction::RenameDataset { key } => self.rename_dataset_now(&key, v.trim(), cx),
+            PromptAction::NewDatasetTableName { server } => {
+                self.next_prompt = Some((
+                    PromptAction::NewDatasetColumns {
+                        server,
+                        name: v.trim().to_string(),
+                    },
+                    "id:int, name:string".into(),
+                ));
+            }
+            PromptAction::NewDatasetColumns { server, name } => {
+                self.create_dataset_from_table(&server, &name, &v, cx)
+            }
+            PromptAction::AddColumn { key } => self.add_column_now(&key, v.trim(), cx),
+            PromptAction::RenameColumn { key, from } => {
+                self.rename_column_now(&key, &from, v.trim(), cx)
+            }
+            PromptAction::RemoveColumn { key } => self.remove_column_now(&key, v.trim(), cx),
+            PromptAction::GenerateRows { key } => self.generate_rows_now(&key, v.trim(), cx),
             PromptAction::NewEnvironment => {
                 let n = v.trim().to_string();
                 if self.store_op(cx, |s| s.create_environment(&n)).is_some() {
@@ -3234,6 +3296,32 @@ impl Render for Shell {
             CopyDatasetCell => |this, _w, cx| this.active_dataset_row_action(DsRowAction::CopyCell, cx),
             CopyDatasetRow => |this, _w, cx| this.active_dataset_row_action(DsRowAction::CopyRowJson, cx),
             DeleteDatasetRow => |this, _w, cx| this.active_dataset_row_action(DsRowAction::DeleteRow, cx),
+            NewDatasetFromTable => |this, w, cx| this.begin_new_dataset_from_table(w, cx),
+            AddDatasetRow => |this, _w, cx| match this.active_dataset_key() {
+                Some(k) => this.add_dataset_row(&k, cx),
+                None => this.notify("Open a dataset first.".into(), cx),
+            },
+            AddDatasetColumn => |this, w, cx| this.begin_add_column(w, cx),
+            RenameDatasetColumn => |this, w, cx| this.begin_rename_column(w, cx),
+            RemoveDatasetColumn => |this, w, cx| this.begin_remove_column(w, cx),
+            GenerateDatasetRows => |this, w, cx| this.begin_generate_rows(w, cx),
+            PasteDatasetRows => |this, _w, cx| match this.active_dataset_key() {
+                Some(k) => this.paste_dataset_rows(&k, cx),
+                None => this.notify("Open a dataset first.".into(), cx),
+            },
+            EditDatasetCell => |this, _w, cx| this.edit_selected_cell(cx),
+            SaveDatasetSeed => |this, _w, cx| match this.active_dataset_key() {
+                Some(k) => this.save_seed(&k, cx),
+                None => this.notify("Open a dataset first.".into(), cx),
+            },
+            ReloadDatasetFromSeed => |this, _w, cx| match this.active_dataset_key() {
+                Some(k) => this.reload_from_seed(&k, cx),
+                None => this.notify("Open a dataset first.".into(), cx),
+            },
+            SaveRowsToSeed => |this, _w, cx| match this.active_dataset_key() {
+                Some(k) => this.save_rows_to_seed(&k, cx),
+                None => this.notify("Open a dataset first.".into(), cx),
+            },
             NewCrudResource => |this, w, cx| this.begin_new_crud(w, cx),
             NewDataset => |this, w, cx| this.begin_new_dataset(w, cx),
             NewStaticRoute => |this, w, cx| this.begin_new_static(w, cx),

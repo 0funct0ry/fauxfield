@@ -29,6 +29,10 @@ pub struct DatasetInfo {
     pub persist: bool,
     pub seed: Option<String>,
     pub seed_template: Option<String>,
+    /// Active seed source: `static`, `template`, `generator` or `none` (M10.04).
+    pub source: String,
+    /// Declared columns (name, type), M10.04.
+    pub columns: Vec<(String, String)>,
     /// Seed loading problem (the Dataset then starts empty).
     pub error: Option<String>,
 }
@@ -64,6 +68,19 @@ fn sig(root: &Path, d: &Dataset) -> String {
         "{:?}|{:?}|{:?}|{:?}|{}|{:?}|{file}",
         d.seed, d.seed_template, d.key, d.id_strategy, d.persist, d.generator
     )
+}
+
+/// The active seed source of a Dataset definition.
+pub fn source_kind(d: &Dataset) -> &'static str {
+    if d.generator.is_some() {
+        "generator"
+    } else if d.seed_template.is_some() {
+        "template"
+    } else if d.seed.is_some() {
+        "static"
+    } else {
+        "none"
+    }
 }
 
 fn state_file(root: &Path, server_id: &str, name: &str) -> std::path::PathBuf {
@@ -316,9 +333,87 @@ impl DataStore {
                 persist: s.def.persist,
                 seed: s.def.seed.clone(),
                 seed_template: s.def.seed_template.clone(),
+                source: source_kind(&s.def).into(),
+                columns: s
+                    .def
+                    .columns
+                    .iter()
+                    .map(|c| (c.name.clone(), c.ty.clone()))
+                    .collect(),
                 error: s.error.clone(),
             })
             .collect()
+    }
+
+    /// Set one field of one row of an array Dataset (`null` removes nothing: it stores null).
+    pub fn update_cell(
+        &mut self,
+        root: &Path,
+        server_id: &str,
+        name: &str,
+        index: usize,
+        column: &str,
+        val: Value,
+    ) -> Result<(), String> {
+        let s = self.get_mut(name).ok_or("unknown dataset")?;
+        let row = match &mut s.rows {
+            Value::Array(a) => a.get_mut(index),
+            _ => None,
+        }
+        .ok_or("row out of range")?;
+        match row.as_object_mut() {
+            Some(o) => {
+                o.insert(column.into(), val);
+            }
+            None => return Err("row is not an object".into()),
+        }
+        s.persist(root, server_id);
+        Ok(())
+    }
+
+    /// Insert rows at `at` (clamped; `None` appends). Returns the index of the first new row.
+    pub fn insert_rows(
+        &mut self,
+        root: &Path,
+        server_id: &str,
+        name: &str,
+        at: Option<usize>,
+        new: Vec<Value>,
+    ) -> Result<usize, String> {
+        let s = self.get_mut(name).ok_or("unknown dataset")?;
+        let Value::Array(a) = &mut s.rows else {
+            return Err("only array Datasets take rows".into());
+        };
+        let at = at.unwrap_or(a.len()).min(a.len());
+        a.splice(at..at, new);
+        let key = s.def.key_name().to_string();
+        s.counter = max_numeric_id(&s.rows, &key);
+        s.persist(root, server_id);
+        Ok(at)
+    }
+
+    /// Delete the rows at `indices` (duplicates and out-of-range ignored). Returns the count.
+    pub fn delete_rows(
+        &mut self,
+        root: &Path,
+        server_id: &str,
+        name: &str,
+        indices: &[usize],
+    ) -> Result<usize, String> {
+        let s = self.get_mut(name).ok_or("unknown dataset")?;
+        let Value::Array(a) = &mut s.rows else {
+            return Err("only array Datasets take rows".into());
+        };
+        let set: std::collections::BTreeSet<usize> =
+            indices.iter().copied().filter(|i| *i < a.len()).collect();
+        let mut i = 0;
+        a.retain(|_| {
+            let keep = !set.contains(&i);
+            i += 1;
+            keep
+        });
+        s.persist(root, server_id);
+        Ok(set.len())
     }
 
     /// Replace live rows (GUI edits, `data import`). Persists when enabled.

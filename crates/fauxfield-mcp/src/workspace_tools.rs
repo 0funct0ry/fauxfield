@@ -105,6 +105,26 @@ struct UpsertDataset {
     /// JSON Schema file (workspace-relative) for POST/PUT/PATCH on the CRUD Route.
     #[serde(default)]
     validate: Option<String>,
+    /// Declared columns `[{name, type}]` (types: string, int, float, bool, datetime, json).
+    #[serde(default)]
+    columns: Option<Vec<fauxfield_model::DatasetColumn>>,
+    /// Declarative generator seed (`{rows, fields:[{name, kind, ...}]}`); replaces any seed source.
+    #[serde(default)]
+    generator: Option<fauxfield_model::GeneratorSeed>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct BakeDataset {
+    /// Server ID, name or file slug.
+    server: String,
+    /// Dataset name (must have a generator).
+    name: String,
+    /// Row count override.
+    #[serde(default)]
+    rows: Option<u32>,
+    /// Seed for deterministic output (default: the Server `fake_seed`).
+    #[serde(default)]
+    seed: Option<u64>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -473,8 +493,57 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                     validate: a.validate,
                 };
                 let route = s.upsert_dataset(&id, &spec).map_err(e)?;
+                if let Some(cols) = &a.columns {
+                    s.set_dataset_columns(&id, &a.name, cols).map_err(e)?;
+                }
+                if let Some(g) = &a.generator {
+                    s.set_dataset_generator(&id, &a.name, Some(g)).map_err(e)?;
+                }
                 s.flush().map_err(e)?;
                 Ok(json!({ "server": id, "dataset": a.name, "route": route }))
+            });
+            Box::pin(async move { out })
+        },
+    ));
+    let p = provider.clone();
+    r.register(ToolDef::new::<BakeDataset>(
+        "bake_dataset",
+        "Generate a Dataset's rows from its generator and write them to data/<name>.json as the static seed (the generator block is replaced).",
+        ToolClass::Write,
+        move |m| {
+            let Some(s) = p() else { return no_workspace() };
+            let out = parse::<BakeDataset>(m).and_then(|a| {
+                let id = resolve_server(&s, &a.server)?;
+                let snap = s.snapshot();
+                let srv = snap
+                    .servers
+                    .iter()
+                    .map(|(_, x)| x)
+                    .find(|x| x.id == id)
+                    .ok_or_else(|| format!("no server `{}`", a.server))?;
+                let d = srv
+                    .datasets
+                    .iter()
+                    .find(|d| d.name == a.name)
+                    .ok_or_else(|| format!("no dataset `{}`", a.name))?;
+                if d.generator.is_none() {
+                    return Err(format!("dataset `{}` has no generator", a.name));
+                }
+                let rows = fauxfield_engine::generate::generate_dataset(
+                    &srv.datasets,
+                    &a.name,
+                    a.rows,
+                    a.seed.or(srv.fake_seed),
+                    &s.root(),
+                )?;
+                let text = serde_json::to_string_pretty(&rows).unwrap_or_default();
+                s.write_dataset_seed(&id, &a.name, &text).map_err(e)?;
+                s.flush().map_err(e)?;
+                Ok(json!({
+                    "server": id, "dataset": a.name,
+                    "rows": rows.as_array().map_or(1, Vec::len),
+                    "seed": format!("data/{}.json", a.name),
+                }))
             });
             Box::pin(async move { out })
         },

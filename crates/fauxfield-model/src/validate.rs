@@ -443,6 +443,29 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                     "set at most one of `seed`, `seed_template` and `generator`",
                 ));
             }
+            let mut col_names = std::collections::HashSet::new();
+            for (ci, c) in d.columns.iter().enumerate() {
+                if c.name.trim().is_empty() || !col_names.insert(c.name.as_str()) {
+                    out.push(Diagnostic::error(
+                        file,
+                        format!("{dp}.columns[{ci}].name"),
+                        "E078",
+                        format!("column name `{}` is empty or duplicated", c.name),
+                    ));
+                }
+                if !c.ty.is_empty() && !crate::COLUMN_TYPES.contains(&c.ty.as_str()) {
+                    out.push(Diagnostic::error(
+                        file,
+                        format!("{dp}.columns[{ci}].type"),
+                        "E079",
+                        format!(
+                            "column type must be one of {}, got `{}`",
+                            crate::COLUMN_TYPES.join(", "),
+                            c.ty
+                        ),
+                    ));
+                }
+            }
             if let Some(g) = &d.generator {
                 let names: Vec<&str> = s.datasets.iter().map(|x| x.name.as_str()).collect();
                 let mut refs = Vec::new();

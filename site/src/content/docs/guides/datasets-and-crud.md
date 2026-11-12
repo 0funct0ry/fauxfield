@@ -115,3 +115,25 @@ The Dataset tab shows rows in a virtualised table that stays smooth with 100,000
 - Right-click a row for *Copy cell*, *Copy row as JSON* and *Delete row*. Double-click a row to open it in the JSON view.
 
 The table is read-only in this version; use *Add row*, the JSON view or the seed file to change data.
+
+## Building a Dataset in the table
+
+Run **Dataset: New From Table…** from the Command Palette, name the Dataset and list its columns as `name:type, ...` (types `string`, `int`, `float`, `bool`, `datetime`, `json`). No Route is created.
+
+- Double-click a row to edit a cell; Enter commits, Esc cancels. Values are checked against the column type.
+- **Add row**, **Paste Rows** (tab-separated text) and Delete Row write through to `data/<name>.json` for a Dataset built this way. Other edits are live-only until **Save Rows to Seed**; Reset restores the seed.
+- **Add column…** takes `name:type` or `name:type=generator` (for example `email:string=fake:internet.email`).
+- **Generate rows…** takes `200 bake` (append to the static seed) or `200 keep` (write a `[datasets.generator]` block, regenerated at each start and deterministic with `fake_seed`).
+- The **Seed** view edits the seed file as JSON; **Save seed** writes it, **Reload from seed** discards edits.
+
+```toml
+[[datasets]]
+name = "products"
+seed = "data/products.json"
+
+[[datasets.columns]]
+name = "id"
+type = "int"
+```
+
+From the command line: `fauxfield data create <server> products --column id:int --column name:string`. MCP: `upsert_dataset` accepts `columns` and `generator`, and `bake_dataset` writes generated rows to the seed.

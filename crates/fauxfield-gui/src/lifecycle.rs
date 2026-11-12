@@ -780,6 +780,7 @@ impl Shell {
             }
             PromptAction::NewDataset { .. }
             | PromptAction::RenameDataset { .. }
+            | PromptAction::NewDatasetTableName { .. }
             | PromptAction::NewCrudName { .. } => {
                 let ok = !value.is_empty()
                     && value
@@ -787,6 +788,12 @@ impl Shell {
                         .all(|c| c.is_alphanumeric() || c == '_' || c == '-');
                 ok.then_some(())
                     .ok_or_else(|| "Use letters, digits, `_` and `-`.".to_string())
+            }
+            PromptAction::NewDatasetColumns { .. } => {
+                crate::dataset_edit::parse_columns(value).map(|_| ())
+            }
+            PromptAction::GenerateRows { .. } => {
+                crate::dataset_edit::parse_generate(value).map(|_| ())
             }
             PromptAction::NewCrudPath { .. } => value
                 .starts_with('/')

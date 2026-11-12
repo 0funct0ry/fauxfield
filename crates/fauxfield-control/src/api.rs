@@ -82,6 +82,30 @@ pub trait ControlApi: Send + Sync {
         dataset: String,
         rows: serde_json::Value,
     ) -> Result<(), ControlError>;
+    /// Set one cell of a live row (M10.04).
+    async fn data_update_cell(
+        &self,
+        server: String,
+        dataset: String,
+        index: usize,
+        column: String,
+        value: serde_json::Value,
+    ) -> Result<(), ControlError>;
+    /// Insert live rows (append when `at` is `None`); returns the first new row's index.
+    async fn data_insert(
+        &self,
+        server: String,
+        dataset: String,
+        at: Option<usize>,
+        rows: Vec<serde_json::Value>,
+    ) -> Result<usize, ControlError>;
+    /// Delete live rows by index; returns the number removed.
+    async fn data_delete(
+        &self,
+        server: String,
+        dataset: String,
+        indices: Vec<usize>,
+    ) -> Result<usize, ControlError>;
     /// Reset state (SPEC §6.4): all Servers, one Server, or one Dataset of a Server.
     async fn reset_state(
         &self,
@@ -242,6 +266,38 @@ impl ControlApi for LocalControl {
         rows: serde_json::Value,
     ) -> Result<(), ControlError> {
         Ok(self.engine.dataset_set(&server, &dataset, rows)?)
+    }
+
+    async fn data_update_cell(
+        &self,
+        server: String,
+        dataset: String,
+        index: usize,
+        column: String,
+        value: serde_json::Value,
+    ) -> Result<(), ControlError> {
+        Ok(self
+            .engine
+            .dataset_update_cell(&server, &dataset, index, &column, value)?)
+    }
+
+    async fn data_insert(
+        &self,
+        server: String,
+        dataset: String,
+        at: Option<usize>,
+        rows: Vec<serde_json::Value>,
+    ) -> Result<usize, ControlError> {
+        Ok(self.engine.dataset_insert(&server, &dataset, at, rows)?)
+    }
+
+    async fn data_delete(
+        &self,
+        server: String,
+        dataset: String,
+        indices: Vec<usize>,
+    ) -> Result<usize, ControlError> {
+        Ok(self.engine.dataset_delete(&server, &dataset, &indices)?)
     }
 
     async fn reset_state(
