@@ -700,3 +700,83 @@ fn dataset_actions_and_rules_are_references_and_follow_a_rename() {
         1
     );
 }
+
+#[test]
+fn proxy_settings_and_route_flags_round_trip() {
+    let (dir, _s) = ws();
+    std::fs::write(dir.path().join("servers/hand.toml"), COMMENTED).unwrap();
+    let s = Store::open(dir.path()).unwrap();
+    s.set_server_table_bool("srv_hand", "proxy", "enabled", true)
+        .unwrap();
+    s.set_server_table_str("srv_hand", "proxy", "upstream", Some("https://api.test"))
+        .unwrap();
+    s.set_proxy_header("srv_hand", "request_headers", "x-a", Some("1"))
+        .unwrap();
+    s.set_proxy_header("srv_hand", "response_headers", "x-b", Some("2"))
+        .unwrap();
+    s.set_route_flag("rte_a", "pinned", true).unwrap();
+    s.flush().unwrap();
+    let out = std::fs::read_to_string(dir.path().join("servers/hand.toml")).unwrap();
+    for keep in [
+        "# Hand-written server",
+        "# keep me",
+        "future_field = 7",
+        "pinned = true",
+    ] {
+        assert!(out.contains(keep), "lost `{keep}` in:\n{out}");
+    }
+    let snap = s.snapshot();
+    let hand = &snap
+        .servers
+        .iter()
+        .find(|x| x.1.id == "srv_hand")
+        .unwrap()
+        .1;
+    let px = hand.proxy.clone().unwrap();
+    assert!(px.enabled && px.upstream.as_deref() == Some("https://api.test"));
+    assert_eq!(px.request_headers.get("x-a").map(String::as_str), Some("1"));
+    assert!(hand.routes[0].pinned);
+    // Removing the last header drops its table; flags default off and disappear.
+    s.set_proxy_header("srv_hand", "request_headers", "x-a", None)
+        .unwrap();
+    s.set_route_flag("rte_a", "pinned", false).unwrap();
+    s.flush().unwrap();
+    let out = std::fs::read_to_string(dir.path().join("servers/hand.toml")).unwrap();
+    assert!(
+        !out.contains("request_headers") && !out.contains("pinned"),
+        "{out}"
+    );
+    assert!(out.contains("response_headers"));
+    assert!(s.set_route_flag("rte_a", "bogus", true).is_err());
+}
+
+#[test]
+fn create_route_from_recording_uses_the_recorded_response() {
+    let (dir, _s) = ws();
+    std::fs::write(dir.path().join("servers/hand.toml"), COMMENTED).unwrap();
+    let s = Store::open(dir.path()).unwrap();
+    drop(s);
+    let s = Store::open(dir.path()).unwrap();
+    let id = s
+        .create_route_from_recording(
+            "srv_hand",
+            "get",
+            "/users/42",
+            404,
+            Some("application/json"),
+            "{\"e\":1}",
+        )
+        .unwrap();
+    s.flush().unwrap();
+    let snap = s.snapshot();
+    let hand = &snap
+        .servers
+        .iter()
+        .find(|x| x.1.id == "srv_hand")
+        .unwrap()
+        .1;
+    let r = hand.routes.iter().find(|r| r.id == id).unwrap();
+    assert_eq!(r.method, "GET");
+    assert_eq!(r.responses[0].status, 404);
+    assert_eq!(r.responses[0].body.as_deref(), Some("{\"e\":1}"));
+}

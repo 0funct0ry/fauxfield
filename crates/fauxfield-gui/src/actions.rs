@@ -108,6 +108,10 @@ actions!(
         RestartServer,
         ClearTraffic,
         CopyAsCurl,
+        MockThisRoute,
+        ToggleServerProxy,
+        ToggleRouteForward,
+        ToggleRoutePinned,
         EditServerPort,
         QuitAnyway,
         CancelQuit,
@@ -223,6 +227,18 @@ pub static ACTIONS: &[ActionInfo] = &[
     row!("edit_server_port", "Server: Change Port…", EditServerPort),
     row!("clear_traffic", "Traffic: Clear", ClearTraffic),
     row!("copy_as_curl", "Traffic: Copy as cURL", CopyAsCurl),
+    row!("mock_this_route", "Traffic: Mock This Route", MockThisRoute),
+    row!("toggle_proxy", "Server: Toggle Proxy", ToggleServerProxy),
+    row!(
+        "toggle_route_forward",
+        "Route: Toggle Forward to Upstream",
+        ToggleRouteForward
+    ),
+    row!(
+        "toggle_route_pinned",
+        "Route: Toggle Pin Mock",
+        ToggleRoutePinned
+    ),
     row!("quit_anyway", "Quit: Stop Servers and Quit", QuitAnyway),
     row!("cancel_quit", "Quit: Cancel", CancelQuit),
     row!("new_server", "Server: New…", NewServer),

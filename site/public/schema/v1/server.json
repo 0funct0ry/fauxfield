@@ -623,6 +623,76 @@
       },
       "type": "object"
     },
+    "Proxy": {
+      "description": "Server `[proxy]` table (SPEC §7.1).",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "insecure": {
+          "default": false,
+          "description": "Accept invalid upstream certificates (default false).",
+          "type": "boolean"
+        },
+        "mode": {
+          "default": null,
+          "description": "`fallback` (default) or `passthrough`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "preserve_host": {
+          "default": false,
+          "description": "Send the client's `Host` header upstream instead of the upstream host.",
+          "type": "boolean"
+        },
+        "record": {
+          "default": null,
+          "description": "Keep proxied traffic in Traffic and recordings (default true).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "request_headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Headers set on the upstream request (values templated).",
+          "type": "object"
+        },
+        "response_headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Headers set on the response to the client (values templated).",
+          "type": "object"
+        },
+        "timeout_ms": {
+          "default": null,
+          "description": "Upstream timeout in ms (default 30000).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "upstream": {
+          "default": null,
+          "description": "Upstream base URL; may contain `{{ vars.x }}`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "RateLimit": {
       "description": "Server `[rate_limit]` table.",
       "properties": {
@@ -865,6 +935,10 @@
         "path": {
           "type": "string"
         },
+        "pinned": {
+          "description": "In `passthrough` mode keep this Route mocked instead of forwarding it (M11).",
+          "type": "boolean"
+        },
         "priority": {
           "default": null,
           "description": "Higher wins; default 0.",
@@ -873,6 +947,10 @@
             "integer",
             "null"
           ]
+        },
+        "proxy": {
+          "description": "Forward this Route to the proxy upstream even when other Routes are mocked (M11).",
+          "type": "boolean"
         },
         "response_mode": {
           "default": null,
@@ -1076,6 +1154,18 @@
         "string",
         "null"
       ]
+    },
+    "proxy": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Proxy"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Proxy and partial mocking (SPEC §7.1)."
     },
     "rate_limit": {
       "anyOf": [

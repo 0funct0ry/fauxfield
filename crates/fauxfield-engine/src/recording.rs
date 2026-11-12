@@ -20,6 +20,9 @@ pub struct Timing {
     /// Sending the body (throttled bodies take longer), milliseconds.
     #[serde(default)]
     pub transfer_ms: u64,
+    /// Waiting for the upstream response head, milliseconds (proxied requests).
+    #[serde(default)]
+    pub upstream_ms: u64,
     /// Whole request, milliseconds.
     pub total_ms: u64,
 }
@@ -35,7 +38,7 @@ pub struct Recording {
     pub ts_ms: u64,
     pub server_id: String,
     pub server: String,
-    /// Route ID, or `unmatched`.
+    /// Route ID, `proxy` or `unmatched`.
     pub route: String,
     /// The Response that answered (empty when unmatched).
     #[serde(default)]
@@ -69,6 +72,9 @@ pub struct Recording {
     pub fault: Option<String>,
     /// `mock` for real clients, `test` for Send test.
     pub source: String,
+    /// The rendered upstream URL when the request was proxied (route is `proxy`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream: Option<String>,
 }
 
 pub(crate) fn redact(headers: Vec<(String, String)>) -> Vec<(String, String)> {
@@ -157,6 +163,7 @@ mod tests {
             error: None,
             fault: None,
             source: "mock".into(),
+            upstream: None,
         };
         let c = to_curl(&rec, "http://127.0.0.1:1");
         assert!(c.starts_with("curl -X POST 'http://127.0.0.1:1/a?b=1'"));

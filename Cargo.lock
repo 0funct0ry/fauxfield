@@ -2134,6 +2134,7 @@ dependencies = [
  "regex",
  "regex-syntax",
  "rustls",
+ "rustls-native-certs",
  "rustls-pemfile",
  "rustls-pki-types",
  "serde",

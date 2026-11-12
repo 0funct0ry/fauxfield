@@ -61,6 +61,10 @@ pub struct Route {
     pub dir: Option<String>,
     pub template_extensions: Vec<String>,
     pub index: Option<String>,
+    /// Forward to the proxy upstream even when other Routes are mocked (M11).
+    pub forward: bool,
+    /// Stay mocked when the proxy is in passthrough mode (M11).
+    pub pinned: bool,
 }
 
 impl Route {
@@ -106,6 +110,8 @@ pub struct Server {
     pub tls: Option<fauxfield_model::Tls>,
     /// `[cors]` as written (M10).
     pub cors: Option<fauxfield_model::Cors>,
+    /// `[proxy]` as written (M11).
+    pub proxy: Option<fauxfield_model::Proxy>,
     /// Certificate details while an HTTPS Server runs (engine status).
     pub cert: Option<fauxfield_engine::tls::CertStatus>,
     pub running: bool,
@@ -370,6 +376,8 @@ impl Workspace {
             dir: r.dir.clone(),
             template_extensions: r.template_extensions.clone(),
             index: r.index.clone(),
+            forward: r.proxy,
+            pinned: r.pinned,
             method: if r.kind == "static" {
                 "FILES".to_string()
             } else if r.kind == "crud" {
@@ -483,6 +491,7 @@ impl Workspace {
                     chaos: None,
                     tls: s.tls.clone(),
                     cors: s.cors.clone(),
+                    proxy: s.proxy.clone(),
                     cert: None,
                     running: false,
                     listen: None,

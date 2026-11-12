@@ -119,6 +119,8 @@ fixtures!(
     "sidebar-datasets-empty",
     "sidebar-many-servers",
     "server-network",
+    "server-proxy",
+    "traffic-proxy",
     "network-profile-open",
 );
 

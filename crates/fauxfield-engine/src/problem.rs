@@ -54,3 +54,15 @@ pub fn chaos_error(path: &str) -> Value {
         "instance": path,
     })
 }
+
+/// RFC 9457 body for an upstream that could not be reached (502) or timed out (504).
+pub fn bad_gateway(status: u16, upstream: &str, detail: &str, path: &str) -> Value {
+    json!({
+        "type": "about:blank",
+        "title": if status == 504 { "Upstream timed out" } else { "Upstream unreachable" },
+        "status": status,
+        "detail": format!("{detail} (upstream {upstream})"),
+        "upstream": upstream,
+        "instance": path,
+    })
+}

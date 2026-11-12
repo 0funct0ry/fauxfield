@@ -104,6 +104,9 @@ pub struct DatasetViewState {
 pub struct RouteState {
     pub id: String,
     pub response_mode: String,
+    /// `proxy = true` (Forward to upstream) and `pinned = true` (Pin mock), M11.
+    pub forward: bool,
+    pub pinned: bool,
     pub sub_tab: usize,
     pub selected_response: usize,
     pub sample_dialog: bool,
@@ -421,6 +424,8 @@ pub struct TreeState {
     pub expanded: Vec<String>,
     /// Row ids currently drawn (the active sidebar tab).
     pub visible_rows: Vec<String>,
+    /// Route row id to `proxied` or `pinned` for the rows that show the M11 icon.
+    pub route_sources: std::collections::BTreeMap<String, &'static str>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -448,6 +453,9 @@ pub struct PickerState {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TrafficState {
     pub row_count: usize,
+    /// Rows answered by the proxy and rows that are proxied 502/504 (M11).
+    pub proxied_count: usize,
+    pub upstream_errors: usize,
     pub filters: Vec<String>,
     pub selected: Option<usize>,
     /// Newest engine recording ID shown (0 when only synthetic rows or none).
@@ -462,6 +470,9 @@ pub struct LastRequest {
     pub status: u16,
     pub route: String,
     pub server: String,
+    /// Answered by the proxy upstream, and which upstream (M11).
+    pub proxied: bool,
+    pub upstream: Option<String>,
     /// The Response that answered, and why (M5 rule trace).
     pub response_id: String,
     pub selection_reason: String,
@@ -501,6 +512,23 @@ pub struct ServerState {
     pub cert_days_left: Option<i64>,
     /// `[cors]` as written; absent when the table is.
     pub cors: Option<CorsState>,
+    /// `[proxy]` as written; absent when the table is (M11).
+    pub proxy: Option<ProxyState>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ProxyState {
+    pub enabled: bool,
+    pub mode: String,
+    pub upstream: String,
+    /// The upstream with templates rendered, or the template error.
+    pub upstream_preview: String,
+    pub preview_error: bool,
+    pub preserve_host: bool,
+    pub timeout_ms: u64,
+    pub insecure: bool,
+    pub request_headers: Vec<(String, String)>,
+    pub response_headers: Vec<(String, String)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -619,6 +647,21 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
                 .map(|r| r.id.clone())
                 .collect(),
             visible_rows: visible.iter().map(|r| r.id.clone()).collect(),
+            route_sources: visible
+                .iter()
+                .filter_map(|r| match &r.kind {
+                    tree::RowKind::Route {
+                        source: Some(s), ..
+                    } => Some((
+                        r.id.clone(),
+                        match s {
+                            tree::RouteSource::Proxied => "proxied",
+                            tree::RouteSource::Pinned => "pinned",
+                        },
+                    )),
+                    _ => None,
+                })
+                .collect(),
         },
         sidebar: SidebarState {
             tab: shell.sidebar_tab.id(),
@@ -648,6 +691,8 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
         toast_action: shell.notice_action.as_ref().map(|a| a.label.to_string()),
         traffic: TrafficState {
             row_count: shell.traffic.len(),
+            proxied_count: shell.traffic.iter().filter(|r| r.proxied).count(),
+            upstream_errors: shell.traffic.iter().filter(|r| r.upstream_error()).count(),
             filters: Vec::new(),
             selected: shell.traffic_selected,
             last_id: shell
@@ -667,6 +712,8 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
                     status: r.status,
                     route: r.route.clone(),
                     server: r.server.clone(),
+                    proxied: r.proxied,
+                    upstream: r.rec.as_ref().and_then(|x| x.upstream.clone()),
                     response_id: r
                         .rec
                         .as_ref()
@@ -773,6 +820,32 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
                         credentials: c.credentials,
                         max_age: c.max_age,
                     }),
+                    proxy: s.proxy.as_ref().map(|p| {
+                        let (preview, err) = match shell.upstream_preview(s) {
+                            Ok(v) => (v, false),
+                            Err(e) => (e, true),
+                        };
+                        ProxyState {
+                            enabled: p.enabled,
+                            mode: p.mode_name().to_string(),
+                            upstream: p.upstream.clone().unwrap_or_default(),
+                            upstream_preview: preview,
+                            preview_error: err,
+                            preserve_host: p.preserve_host,
+                            timeout_ms: p.timeout(),
+                            insecure: p.insecure,
+                            request_headers: p
+                                .request_headers
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect(),
+                            response_headers: p
+                                .response_headers
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect(),
+                        }
+                    }),
                 }
             })
             .collect(),
@@ -869,6 +942,8 @@ fn route_state(shell: &Shell) -> Option<RouteState> {
     Some(RouteState {
         id: r.id.clone(),
         response_mode: r.response_mode.clone(),
+        forward: r.forward,
+        pinned: r.pinned,
         sub_tab: shell.route_sub.get(&r.id).copied().unwrap_or(0),
         selected_response: shell.resp_sel.get(&r.id).copied().unwrap_or(0),
         sample_dialog: shell.sample_dialog.is_some(),

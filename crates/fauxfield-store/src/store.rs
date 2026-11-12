@@ -1169,6 +1169,105 @@ impl Store {
         })
     }
 
+    /// Set (or with `None`, remove) one `[proxy.request_headers]` or `[proxy.response_headers]`
+    /// entry (`kind` is `request_headers` or `response_headers`). Emptied tables are removed.
+    pub fn set_proxy_header(
+        &self,
+        server_id: &str,
+        kind: &str,
+        name: &str,
+        val: Option<&str>,
+    ) -> Result<(), StoreError> {
+        if kind != "request_headers" && kind != "response_headers" {
+            return Err(StoreError::Invalid(format!("unknown proxy table `{kind}`")));
+        }
+        let t = Target::Server(server_id.into());
+        let file = self
+            .file_of(&t)
+            .ok_or_else(|| StoreError::NotFound(server_id.into()))?;
+        self.edit(&file, |d| {
+            let root = d.as_table_mut();
+            match val {
+                Some(v) => {
+                    if !root.get("proxy").is_some_and(Item::is_table) {
+                        root.insert("proxy", Item::Table(Table::new()));
+                    }
+                    let px = root["proxy"].as_table_mut().expect("table");
+                    if !px.get(kind).is_some_and(Item::is_table) {
+                        px.insert(kind, Item::Table(Table::new()));
+                    }
+                    px[kind][name] = value(v);
+                }
+                None => {
+                    if let Some(px) = root.get_mut("proxy").and_then(Item::as_table_mut) {
+                        if let Some(h) = px.get_mut(kind).and_then(Item::as_table_mut) {
+                            h.remove(name);
+                            if h.is_empty() {
+                                px.remove(kind);
+                            }
+                        }
+                        if px.is_empty() {
+                            root.remove("proxy");
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// Turn a Route flag (`proxy` or `pinned`) on (written) or off (removed, the default).
+    pub fn set_route_flag(&self, route_id: &str, flag: &str, on: bool) -> Result<(), StoreError> {
+        if flag != "proxy" && flag != "pinned" {
+            return Err(StoreError::Invalid(format!("unknown Route flag `{flag}`")));
+        }
+        let t = Target::Route(route_id.into());
+        if on {
+            self.set_bool(&t, flag, true)
+        } else {
+            self.set_item_none(&t, flag)
+        }
+    }
+
+    /// Create an `http` Route mirroring a recorded exchange (the Traffic *Mock this route*
+    /// action): the recorded status, content type and body become its default Response.
+    pub fn create_route_from_recording(
+        &self,
+        server_id: &str,
+        method: &str,
+        path: &str,
+        status: u16,
+        content_type: Option<&str>,
+        body: &str,
+    ) -> Result<String, StoreError> {
+        let id = self.create_route_with(server_id, None, method, path, &RouteOpts::default())?;
+        let rid = id.clone();
+        let t = Target::Route(id.clone());
+        let file = self
+            .file_of(&t)
+            .ok_or_else(|| StoreError::NotFound(id.clone()))?;
+        self.edit(&file, |d| {
+            let r =
+                find_table(d, "routes", &rid).ok_or_else(|| StoreError::NotFound(rid.clone()))?;
+            let resp = r
+                .get_mut("responses")
+                .and_then(Item::as_array_of_tables_mut)
+                .and_then(|a| a.get_mut(0))
+                .ok_or_else(|| StoreError::NotFound(rid.clone()))?;
+            resp["status"] = value(i64::from(status));
+            if !body.is_empty() {
+                resp["body"] = value(body);
+            }
+            if let Some(ct) = content_type.filter(|c| !c.is_empty()) {
+                let mut h = Table::new();
+                h["content-type"] = value(ct);
+                resp["headers"] = Item::Table(h);
+            }
+            Ok(())
+        })?;
+        Ok(id)
+    }
+
     /// Set (or with `None`, remove) the Server's `fake_seed` (SPEC §8.3).
     pub fn set_fake_seed(&self, server_id: &str, seed: Option<u64>) -> Result<(), StoreError> {
         self.set_int(

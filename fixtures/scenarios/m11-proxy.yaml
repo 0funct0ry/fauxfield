@@ -1,0 +1,29 @@
+# M11 scenario: proxy and partial mocking. The Server tab has a Proxy section (enable, mode,
+# upstream with a rendered preview, headers, insecure toggle shown in red) and Routes show
+# forwarded and pinned icons in the tree. Needs fixtures/proxy-workspace as the launch workspace.
+# Not yet run in CI.
+name: m11-proxy
+size: default
+steps:
+  - state: [reset]
+  - click_element: {id: row-srv_front}
+  - wait_for_idle: {}
+  - assert_find: {text: PROXY, ids: [proxy-enabled, proxy-preserve-host, proxy-insecure, proxy-upstream]}
+  - assert: {pointer: /servers/0/proxy/enabled, equals: true}
+  - assert: {pointer: /servers/0/proxy/mode, equals: fallback}
+  - assert: {pointer: /servers/0/proxy/upstream_preview, equals: "http://127.0.0.1:4721"}
+  - assert: {pointer: /tree/route_sources/rte_forward, equals: proxied}
+  - assert: {pointer: /tree/route_sources/rte_pinned, equals: pinned}
+  - screenshot: {name: m11-server-proxy}
+  - click_element: {id: proxy-insecure}
+  - wait_for_idle: {}
+  - assert: {pointer: /servers/0/proxy/insecure, equals: true}
+  - screenshot: {name: m11-proxy-insecure}
+  - click_element: {id: proxy-insecure}
+  - click_element: {id: proxy-enabled}
+  - wait_for_idle: {}
+  - assert: {pointer: /servers/0/proxy/enabled, equals: false}
+  - click_element: {id: proxy-enabled}
+  - wait_for_idle: {}
+  - assert: {pointer: /servers/0/proxy/enabled, equals: true}
+  - audit: {themes: [one-dark, one-light], sizes: [default, min]}

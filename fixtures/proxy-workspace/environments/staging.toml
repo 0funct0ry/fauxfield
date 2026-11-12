@@ -1,0 +1,3 @@
+name = "staging"
+[variables]
+upstream = "http://127.0.0.1:4722"

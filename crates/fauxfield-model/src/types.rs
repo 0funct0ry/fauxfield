@@ -91,6 +91,9 @@ pub struct Server {
     /// CORS settings (SPEC §5.7).
     #[serde(default)]
     pub cors: Option<Cors>,
+    /// Proxy and partial mocking (SPEC §7.1).
+    #[serde(default)]
+    pub proxy: Option<Proxy>,
     /// Seed for fake data and random functions; unset means random (SPEC §8.3).
     #[serde(default)]
     pub fake_seed: Option<u64>,
@@ -227,6 +230,12 @@ pub struct Route {
     /// `static` routes: file served for a directory request (default none).
     #[serde(default)]
     pub index: Option<String>,
+    /// Forward this Route to the proxy upstream even when other Routes are mocked (M11).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub proxy: bool,
+    /// In `passthrough` mode keep this Route mocked instead of forwarding it (M11).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pinned: bool,
     #[serde(flatten)]
     #[schemars(skip)]
     pub extra: Extra,
@@ -432,6 +441,58 @@ impl Tls {
             .as_deref()
             .filter(|m| !m.is_empty())
             .unwrap_or("dev-ca")
+    }
+}
+
+/// Proxy modes (SPEC §7.1).
+pub const PROXY_MODES: &[&str] = &["fallback", "passthrough"];
+/// Default upstream timeout in milliseconds.
+pub const PROXY_TIMEOUT_MS: u64 = 30_000;
+
+/// Server `[proxy]` table (SPEC §7.1).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Proxy {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Upstream base URL; may contain `{{ vars.x }}`.
+    #[serde(default)]
+    pub upstream: Option<String>,
+    /// `fallback` (default) or `passthrough`.
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// Send the client's `Host` header upstream instead of the upstream host.
+    #[serde(default)]
+    pub preserve_host: bool,
+    /// Keep proxied traffic in Traffic and recordings (default true).
+    #[serde(default)]
+    pub record: Option<bool>,
+    /// Upstream timeout in ms (default 30000).
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+    /// Accept invalid upstream certificates (default false).
+    #[serde(default)]
+    pub insecure: bool,
+    /// Headers set on the upstream request (values templated).
+    #[serde(default)]
+    #[schemars(with = "BTreeMap<String, String>")]
+    pub request_headers: indexmap::IndexMap<String, String>,
+    /// Headers set on the response to the client (values templated).
+    #[serde(default)]
+    #[schemars(with = "BTreeMap<String, String>")]
+    pub response_headers: indexmap::IndexMap<String, String>,
+}
+
+impl Proxy {
+    pub fn mode_name(&self) -> &str {
+        self.mode
+            .as_deref()
+            .filter(|m| !m.is_empty())
+            .unwrap_or("fallback")
+    }
+    pub fn timeout(&self) -> u64 {
+        self.timeout_ms
+            .filter(|t| *t > 0)
+            .unwrap_or(PROXY_TIMEOUT_MS)
     }
 }
 

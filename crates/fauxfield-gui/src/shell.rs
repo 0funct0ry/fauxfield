@@ -1446,6 +1446,8 @@ impl Shell {
             MenuAct::MoveUp => self.move_row(&m.row_id, -1, cx),
             MenuAct::MoveDown => self.move_row(&m.row_id, 1, cx),
             MenuAct::MoveToRoot => self.move_to_root(&m.row_id, cx),
+            MenuAct::ToggleForward => self.toggle_route_flag(&m.row_id, "proxy", cx),
+            MenuAct::TogglePinned => self.toggle_route_flag(&m.row_id, "pinned", cx),
             MenuAct::ToggleResponseDisabled => self.toggle_response_disabled(&m.row_id, cx),
             MenuAct::ErrorPreset(code) => {
                 let route = m.row_id.clone();
@@ -3402,6 +3404,19 @@ impl Render for Shell {
             RestartServer => |this, _w, cx| this.restart_current(cx),
             ClearTraffic => |this, _w, cx| this.clear_traffic(cx),
             CopyAsCurl => |this, _w, cx| this.copy_curl(cx),
+            MockThisRoute => |this, _w, cx| this.mock_this_route(cx),
+            ToggleServerProxy => |this, _w, cx| match this.current_server_id() {
+                Some(id) => this.toggle_proxy(&id, "enabled", cx),
+                None => this.notify("Select a server first.".into(), cx),
+            },
+            ToggleRouteForward => |this, _w, cx| match this.current_route_id() {
+                Some(id) => this.toggle_route_flag(&id, "proxy", cx),
+                None => this.notify("Select a route first.".into(), cx),
+            },
+            ToggleRoutePinned => |this, _w, cx| match this.current_route_id() {
+                Some(id) => this.toggle_route_flag(&id, "pinned", cx),
+                None => this.notify("Select a route first.".into(), cx),
+            },
             EditServerPort => |this, w, cx| match this.notice_action.as_ref().and_then(|a| match &a.action { crate::run::ToastAction::ChangePort(id) => Some(id.clone()), _ => None }).or_else(|| this.current_server().and_then(|i| this.ws.servers.get(i)).map(|s| s.id.clone())) {
                 Some(id) => this.change_port(&id, w, cx),
                 None => this.notify("Select a server first.".into(), cx),

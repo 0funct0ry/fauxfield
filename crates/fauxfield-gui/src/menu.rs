@@ -241,6 +241,15 @@ pub const NOT_IN_MENU: &[(&str, &str)] = &[
     ),
     ("route_move_to_root", "row context menu and palette"),
     ("edit_route_priority", "Route Settings field and palette"),
+    ("toggle_proxy", "Server Proxy section and palette"),
+    (
+        "toggle_route_forward",
+        "Route Settings, row context menu and palette",
+    ),
+    (
+        "toggle_route_pinned",
+        "Route Settings, row context menu and palette",
+    ),
     ("edit_route_match", "Route Settings field and palette"),
     ("route_test_path", "Route Settings field and palette"),
     (
@@ -491,6 +500,7 @@ pub fn build_menus(ctx: &MenuContext) -> Vec<MenuDef> {
                 vec![
                     act("clear_traffic", "Clear Traffic"),
                     act("copy_as_curl", "Copy as cURL"),
+                    act("mock_this_route", "Mock This Route"),
                 ],
             ),
         ],
@@ -622,19 +632,21 @@ pub fn enabled(id: &str, ctx: &MenuContext) -> bool {
         "run_all" => ctx.servers_enabled > 0,
         // A disabled server stays startable on purpose: starting it explains itself with the
         // M3.1 "Enable and start" toast (SPEC §20.14).
-        "toggle_server" | "toggle_chaos" => ctx.current_server.is_some(),
+        "toggle_server" | "toggle_chaos" | "toggle_proxy" => ctx.current_server.is_some(),
         "switch_network_profile" => ctx.workspace_open,
         "restart_server" => ctx.current_server_running,
         "edit_server_port" => ctx.current_server.is_some(),
         "clear_traffic" => ctx.traffic_rows > 0,
-        "copy_as_curl" => ctx.traffic_row_selected,
+        "copy_as_curl" | "mock_this_route" => ctx.traffic_row_selected,
         "copy_dataset_cell" | "copy_dataset_row" | "delete_dataset_row" => ctx.dataset_row_target,
         "send_test"
         | "edit_sample_request"
         | "edit_route_method"
         | "edit_route_path"
         | "new_response"
-        | "add_dataset_action" => ctx.current_route.is_some(),
+        | "add_dataset_action"
+        | "toggle_route_forward"
+        | "toggle_route_pinned" => ctx.current_route.is_some(),
         "set_default_response"
         | "edit_response_status"
         | "edit_response_name"

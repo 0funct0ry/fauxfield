@@ -55,6 +55,28 @@ struct UpdateServer {
     fake_seed: Option<u64>,
     /// Remove the seed (output becomes random).
     clear_seed: Option<bool>,
+    /// Proxy settings (`[proxy]`, SPEC §7.1); only the given keys change.
+    proxy: Option<ProxySpec>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct ProxySpec {
+    enabled: Option<bool>,
+    /// Upstream base URL; may use `{{ vars.x }}`. An empty string removes it.
+    upstream: Option<String>,
+    /// `fallback` (unmatched requests go upstream) or `passthrough` (everything unless a Route is pinned).
+    mode: Option<String>,
+    preserve_host: Option<bool>,
+    /// Keep proxied traffic in Traffic and recordings (default true).
+    record: Option<bool>,
+    /// Upstream timeout in ms (default 30000); 0 removes it.
+    timeout_ms: Option<u64>,
+    /// Accept invalid upstream certificates (default false; flagged in the GUI).
+    insecure: Option<bool>,
+    /// Headers set on the upstream request; an empty value removes the header.
+    request_headers: Option<std::collections::BTreeMap<String, String>>,
+    /// Headers set on the response to the client; an empty value removes the header.
+    response_headers: Option<std::collections::BTreeMap<String, String>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -254,6 +276,10 @@ struct UpsertRoute {
     response_mode: Option<String>,
     /// Route headers (values are templated); set or replace by name.
     headers: Option<std::collections::BTreeMap<String, String>>,
+    /// Forward this Route to the proxy upstream even when other Routes are mocked.
+    proxy: Option<bool>,
+    /// Keep this Route mocked when the proxy is in `passthrough` mode.
+    pinned: Option<bool>,
     responses: Option<Vec<ResponseSpec>>,
 }
 
@@ -805,7 +831,7 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
     let p = provider.clone();
     r.register(ToolDef::new::<UpdateServer>(
         "update_server",
-        "Update Server fields (name, port, host, enabled, prefix, unmatched_hint).",
+        "Update Server fields (name, port, host, enabled, prefix, unmatched_hint, fake_seed) and the `proxy` settings.",
         ToolClass::Write,
         move |m| {
             let Some(s) = p() else { return no_workspace() };
@@ -836,6 +862,53 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                     s.set_fake_seed(&srv.id, None).map_err(e)?;
                 } else if let Some(v) = a.fake_seed {
                     s.set_fake_seed(&srv.id, Some(v)).map_err(e)?;
+                }
+                if let Some(px) = &a.proxy {
+                    if let Some(m) = px.mode.as_deref()
+                        && !fauxfield_model::PROXY_MODES.contains(&m)
+                    {
+                        return Err(format!("unknown proxy mode `{m}` (fallback or passthrough)"));
+                    }
+                    if let Some(u) = px.upstream.as_deref()
+                        && !u.is_empty()
+                        && !u.contains("{{")
+                        && !(u.starts_with("http://") || u.starts_with("https://"))
+                    {
+                        return Err(format!("upstream `{u}` must be an http:// or https:// URL"));
+                    }
+                    let sid = srv.id.as_str();
+                    if let Some(v) = px.enabled {
+                        s.set_server_table_bool(sid, "proxy", "enabled", v).map_err(e)?;
+                    }
+                    if let Some(v) = &px.upstream {
+                        s.set_server_table_str(sid, "proxy", "upstream", (!v.is_empty()).then_some(v.as_str()))
+                            .map_err(e)?;
+                    }
+                    if let Some(v) = &px.mode {
+                        s.set_server_table_str(sid, "proxy", "mode", Some(v)).map_err(e)?;
+                    }
+                    if let Some(v) = px.preserve_host {
+                        s.set_server_table_bool(sid, "proxy", "preserve_host", v).map_err(e)?;
+                    }
+                    if let Some(v) = px.record {
+                        s.set_server_table_bool(sid, "proxy", "record", v).map_err(e)?;
+                    }
+                    if let Some(v) = px.timeout_ms {
+                        s.set_server_table_int(sid, "proxy", "timeout_ms", (v > 0).then_some(v as i64))
+                            .map_err(e)?;
+                    }
+                    if let Some(v) = px.insecure {
+                        s.set_server_table_bool(sid, "proxy", "insecure", v).map_err(e)?;
+                    }
+                    for (kind, map) in [
+                        ("request_headers", &px.request_headers),
+                        ("response_headers", &px.response_headers),
+                    ] {
+                        for (k, v) in map.iter().flatten() {
+                            s.set_proxy_header(sid, kind, k, (!v.is_empty()).then_some(v.as_str()))
+                                .map_err(e)?;
+                        }
+                    }
                 }
                 s.flush().map_err(e)?;
                 Ok(json!({ "id": srv.id }))
@@ -889,7 +962,7 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
     let p = provider.clone();
     r.register(ToolDef::new::<UpsertRoute>(
         "upsert_route",
-        "Create or update a Route and its Responses in one call.",
+        "Create or update a Route and its Responses in one call (also `proxy` and `pinned` flags).",
         ToolClass::Write,
         move |m| {
             let Some(s) = p() else { return no_workspace() };
@@ -944,6 +1017,12 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                 }
                 if let Some(v) = &a.name {
                     s.set_str(&t, "name", Some(v)).map_err(e)?;
+                }
+                if let Some(v) = a.proxy {
+                    s.set_route_flag(&rid, "proxy", v).map_err(e)?;
+                }
+                if let Some(v) = a.pinned {
+                    s.set_route_flag(&rid, "pinned", v).map_err(e)?;
                 }
                 if let Some(v) = &a.response_mode {
                     s.set_response_mode(&rid, v).map_err(e)?;

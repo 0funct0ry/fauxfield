@@ -400,7 +400,30 @@ impl Shell {
                 t.icon_muted,
             )
             .into_any_element(),
-            RowKind::Route { method, .. } => method_badge(t, method).into_any_element(),
+            RowKind::Route { method, source, .. } => div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(3.))
+                .child(method_badge(t, method))
+                .children(source.map(|src| {
+                    let (name, tip) = match src {
+                        tree::RouteSource::Proxied => ("globe", "Forwarded to the upstream"),
+                        tree::RouteSource::Pinned => ("pin", "Pinned mock"),
+                    };
+                    crate::dev_id!(
+                        div()
+                            .id(crate::ui::eid(format!("src-{}", r.id)))
+                            .flex_none()
+                            .tooltip(crate::ui::tooltip(tip.into()))
+                            .child(icon(name, 11., t.icon_muted)),
+                        format!("tree-source-{}", r.id),
+                        Text,
+                        tip,
+                        None
+                    )
+                }))
+                .into_any_element(),
             RowKind::Workspace => div().into_any_element(),
             RowKind::Environment { active } => icon(
                 if *active { "check" } else { "layers" },

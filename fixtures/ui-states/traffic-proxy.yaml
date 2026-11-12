@@ -1,0 +1,5 @@
+# UI state fixture (M11): captured by `ui.screenshot {state: "traffic-proxy"}`. Traffic panel whose generated rows include proxied ones (SOURCE column).
+steps:
+  - reset
+  - invoke: show_traffic
+  - wait_idle

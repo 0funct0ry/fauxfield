@@ -652,6 +652,61 @@ impl Shell {
                     .clone()
                     .map(|by| note(format!("Never reached: shadowed by {by}"), t.modified)),
             )
+            .when(r.kind == "http", |d| {
+                let proxy_on = s.proxy.as_ref().is_some_and(|p| p.enabled);
+                let toggle = |this: &Self, flag: &'static str, on: bool, cx: &mut Context<Self>| {
+                    let rid = r.id.clone();
+                    let (idn, text) = (
+                        if flag == "proxy" {
+                            "route-forward"
+                        } else {
+                            "route-pinned"
+                        },
+                        if on { "On" } else { "Off" },
+                    );
+                    crate::dev_id!(
+                        this.state_button(
+                            t,
+                            format!("{idn}-{}", r.id),
+                            text.into(),
+                            on,
+                            70.,
+                            move |this, cx| this.toggle_route_flag(&rid, flag, cx),
+                            cx,
+                        ),
+                        idn,
+                        Button,
+                        text,
+                        Press(format!("{idn}:{}", r.id))
+                    )
+                };
+                d.child(div().mt(px(14.)).child(section_heading(t, "Proxy")))
+                    .child(
+                        row()
+                            .child(label("Forward to upstream"))
+                            .child(toggle(self, "proxy", r.forward, cx)),
+                    )
+                    .child(
+                        row()
+                            .child(label("Pin mock"))
+                            .child(toggle(self, "pinned", r.pinned, cx)),
+                    )
+                    .child(note(
+                        if !proxy_on {
+                            "The proxy is off for this Server: enable it in the Server tab (Proxy)."
+                                .to_string()
+                        } else if r.pinned {
+                            "Pinned: always answered by this mock, even in passthrough mode."
+                                .to_string()
+                        } else if r.forward {
+                            "Forwarded to the upstream; the Responses below are not used."
+                                .to_string()
+                        } else {
+                            "Mocked unless the proxy mode is passthrough.".to_string()
+                        },
+                        t.text_muted,
+                    ))
+            })
             .child(div().mt(px(14.)).child(self.render_var_section(
                 t,
                 Scope::Route,
@@ -1092,6 +1147,9 @@ impl Shell {
                         }
                         if i == 4 {
                             return self.server_rate_limit_section(t, s, cx);
+                        }
+                        if i == 5 {
+                            return self.server_proxy_section(t, s, cx);
                         }
                         if i == 6 {
                             return self.server_datasets_section(t, s, cx);
@@ -1789,20 +1847,40 @@ impl Shell {
             .min_h_0()
             .flex()
             .flex_col()
-            .child(div().px(px(10.)).py(px(4.)).child(crate::dev_id!(
-                    toolbar_button(t, "copy-curl")
-                        .child(icon("copy", 12., t.icon_muted))
-                        .child("Copy as cURL")
-                        .on_click(cx.listener(|this, _, w, cx| this.run_action_id(
-                            "copy_as_curl",
-                            w,
-                            cx
-                        ))),
-                    "copy-curl",
-                    Button,
-                    "Copy as cURL",
-                    Action("copy_as_curl")
-                )))
+            .child(
+                div()
+                    .px(px(10.))
+                    .py(px(4.))
+                    .child(crate::dev_id!(
+                        toolbar_button(t, "copy-curl")
+                            .child(icon("copy", 12., t.icon_muted))
+                            .child("Copy as cURL")
+                            .on_click(cx.listener(|this, _, w, cx| this.run_action_id(
+                                "copy_as_curl",
+                                w,
+                                cx
+                            ))),
+                        "copy-curl",
+                        Button,
+                        "Copy as cURL",
+                        Action("copy_as_curl")
+                    ))
+                    .when(rec.route == "proxy" || rec.route == "unmatched", |d| {
+                        d.child(crate::dev_id!(
+                            toolbar_button(t, "mock-this-route")
+                                .child("Mock this route")
+                                .on_click(cx.listener(|this, _, w, cx| this.run_action_id(
+                                    "mock_this_route",
+                                    w,
+                                    cx
+                                ))),
+                            "mock-this-route",
+                            Button,
+                            "Mock this route",
+                            Action("mock_this_route")
+                        ))
+                    }),
+            )
             .child(crate::dev_id!(
                 col,
                 "inspector-detail",
@@ -2175,7 +2253,20 @@ impl Shell {
             return vec![];
         };
         let sid = self.ws.servers[si].id.clone();
-        let rid = self.current_route_id();
+        self.scope_vars_in(&sid, self.current_route_id())
+    }
+
+    /// Effective variables of a Server (no Route scope), for previews in its tab.
+    pub(crate) fn scope_vars_of(&self, sid: &str) -> Vec<fauxfield_model::vars::ResolvedVar> {
+        self.scope_vars_in(sid, None)
+    }
+
+    fn scope_vars_in(
+        &self,
+        sid: &str,
+        rid: Option<String>,
+    ) -> Vec<fauxfield_model::vars::ResolvedVar> {
+        let sid = sid.to_string();
         if let Some(h) = &self.host
             && let Ok(v) = h.engine().vars_in_scope(&sid, rid.as_deref())
         {

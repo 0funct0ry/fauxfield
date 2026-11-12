@@ -103,6 +103,8 @@ pub enum RowKind {
         warn: Option<RouteWarn>,
         /// Route sits in a disabled Folder.
         disabled: bool,
+        /// Proxied or pinned under the Server's proxy settings (M11).
+        source: Option<RouteSource>,
     },
     Environment {
         active: bool,
@@ -132,6 +134,25 @@ pub struct RouteWarn {
     /// `true`: invalid pattern (error colour); `false`: shadowed (warning colour).
     pub error: bool,
     pub message: String,
+}
+
+/// How a Route is answered when its Server has the proxy on (M11).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RouteSource {
+    Proxied,
+    Pinned,
+}
+
+/// `None` = plain mock (or the proxy is off).
+pub fn route_source(s: &crate::view::Server, r: &crate::view::Route) -> Option<RouteSource> {
+    let p = s.proxy.as_ref().filter(|p| p.enabled)?;
+    if r.pinned {
+        Some(RouteSource::Pinned)
+    } else if p.mode_name() == "passthrough" || (r.kind == "http" && r.forward) {
+        Some(RouteSource::Proxied)
+    } else {
+        None
+    }
 }
 
 fn route_warn(r: &crate::view::Route) -> Option<RouteWarn> {
@@ -189,6 +210,7 @@ pub const CRUD_OPS: [(&str, &str); 6] = [
 fn route_rows(
     rows: &mut Vec<TreeRow>,
     collapsed: &HashSet<String>,
+    srv: &crate::view::Server,
     r: &crate::view::Route,
     depth: u8,
     disabled: bool,
@@ -203,6 +225,7 @@ fn route_rows(
             method: r.method.clone(),
             warn: route_warn(r),
             disabled,
+            source: route_source(srv, r),
         },
         expandable: crud,
         expanded: open,
@@ -275,12 +298,12 @@ pub fn flatten(
                 );
                 if open {
                     for r in &f.routes {
-                        route_rows(&mut rows, collapsed, r, 2, !f.enabled);
+                        route_rows(&mut rows, collapsed, s, r, 2, !f.enabled);
                     }
                 }
             }
             for r in &s.routes {
-                route_rows(&mut rows, collapsed, r, 1, false);
+                route_rows(&mut rows, collapsed, s, r, 1, false);
             }
         }
     }
@@ -339,6 +362,10 @@ pub enum MenuAct {
     MoveUp,
     MoveDown,
     MoveToRoot,
+    /// Route: toggle `proxy` (forward to the upstream, M11).
+    ToggleForward,
+    /// Route: toggle `pinned` (keep the mock in passthrough mode, M11).
+    TogglePinned,
     SetDefaultResponse,
     /// Response: toggle `disabled`.
     ToggleResponseDisabled,
@@ -391,6 +418,8 @@ impl MenuAct {
             MoveUp => "move-up".into(),
             MoveDown => "move-down".into(),
             MoveToRoot => "move-to-root".into(),
+            ToggleForward => "toggle-forward".into(),
+            TogglePinned => "toggle-pinned".into(),
             SetDefaultResponse => "set-default-response".into(),
             ToggleResponseDisabled => "toggle-response-disabled".into(),
             ErrorPreset(c) => format!("error-preset-{c}"),
@@ -519,17 +548,26 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
             ("Delete folder, keep routes", Delete),
             ("Delete folder and its routes", DeleteWithRoutes),
         ],
-        RowKind::Route { .. } => vec![
-            ("Open", Open),
-            ("Open pinned", OpenPinned),
-            ("New response", NewResponse),
-            ("Rename…", Rename),
-            ("Duplicate", Duplicate),
-            ("Move up", MoveUp),
-            ("Move down", MoveDown),
-            ("Move to server root", MoveToRoot),
-            ("Delete", Delete),
-        ],
+        RowKind::Route { method, .. } => {
+            let mut v = vec![
+                ("Open", Open),
+                ("Open pinned", OpenPinned),
+                ("New response", NewResponse),
+            ];
+            if method != "FILES" && method != "CRUD" {
+                v.push(("Forward to upstream", ToggleForward));
+                v.push(("Pin mock", TogglePinned));
+            }
+            v.extend([
+                ("Rename…", Rename),
+                ("Duplicate", Duplicate),
+                ("Move up", MoveUp),
+                ("Move down", MoveDown),
+                ("Move to server root", MoveToRoot),
+                ("Delete", Delete),
+            ]);
+            v
+        }
         RowKind::Environment { active } => {
             let mut v = vec![("Open", Open), ("Open pinned", OpenPinned)];
             if !active {

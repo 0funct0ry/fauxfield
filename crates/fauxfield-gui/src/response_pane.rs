@@ -89,6 +89,11 @@ pub enum InlineTarget {
     /// A Response's `fault_rate` (M9).
     FaultRate(String),
     /// A TLS or CORS field of a Server (M10).
+    /// A field of the Server tab's Proxy section (M11).
+    Proxy {
+        server: String,
+        field: crate::proxy_ui::ProxyField,
+    },
     Https {
         server: String,
         field: crate::https_ui::HttpsField,
@@ -174,7 +179,8 @@ impl Shell {
         self.commit_inline(Nav::Stay, window, cx);
         self.commit_body_edit(cx);
         let numeric = matches!(target, InlineTarget::Status(_) | InlineTarget::Seed(_))
-            || matches!(&target, InlineTarget::Net { field, .. } if field.numeric());
+            || matches!(&target, InlineTarget::Net { field, .. } if field.numeric())
+            || matches!(&target, InlineTarget::Proxy { field, .. } if field.numeric());
         let vertical = target.is_header();
         let input = cx.new(|cx| {
             let t = TextInput::new(cx).flush();
@@ -388,6 +394,9 @@ impl Shell {
             }
             InlineTarget::Net { server, field } => self.commit_net_field(&server, field, &v, cx),
             InlineTarget::FaultRate(id) => self.commit_fault_rate(&id, &v, cx),
+            InlineTarget::Proxy { server, field } => {
+                self.commit_proxy_field(&server, field, &v, cx)
+            }
             InlineTarget::Https { server, field } => {
                 self.commit_https_field(&server, field, &v, cx)
             }

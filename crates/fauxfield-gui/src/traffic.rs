@@ -20,6 +20,15 @@ pub struct TrafficRow {
     pub size: u32,
     /// Injected fault or rate limit (M9): `reset`, `chaos:close`, `rate_limited`…
     pub fault: Option<String>,
+    /// Answered by the proxy upstream rather than a mock (M11).
+    pub proxied: bool,
+}
+
+impl TrafficRow {
+    /// A proxied request whose upstream could not be reached or timed out (502/504).
+    pub fn upstream_error(&self) -> bool {
+        self.proxied && matches!(self.status, 502 | 504)
+    }
 }
 
 impl TrafficRow {
@@ -35,6 +44,7 @@ impl TrafficRow {
             duration_ms: r.timing.total_ms as f32,
             size: r.response_body.len() as u32,
             fault: r.fault.clone(),
+            proxied: r.route == "proxy",
             rec: Some(Box::new(r.clone())),
         }
     }
@@ -63,6 +73,8 @@ pub fn synthetic(n: usize) -> Vec<TrafficRow> {
             } else {
                 ("Users API", format!("/api/users/{id}"), "Get user")
             };
+            // Some rows were answered by the proxy upstream (M11).
+            let proxied = (r >> 16) % 7 == 0;
             TrafficRow {
                 id: 0,
                 rec: None,
@@ -77,10 +89,11 @@ pub fn synthetic(n: usize) -> Vec<TrafficRow> {
                 method: method.to_string(),
                 path,
                 status: STATUS[((r >> 40) % 8) as usize],
-                route: route.into(),
+                route: if proxied { "proxy" } else { route }.into(),
                 duration_ms: ((r >> 50) % 4000) as f32 / 100.0,
                 size: ((r >> 12) % 9000) as u32 + 20,
                 fault: None,
+                proxied,
             }
         })
         .collect()

@@ -13,8 +13,8 @@ use crate::traffic::TrafficRow;
 use crate::ui::{ROW_H, TAB_BAR_H, icon};
 
 pub const TRAFFIC_ROW_H: f32 = 22.0;
-/// Column widths: time, server, method, status, route, duration, size. Path takes the rest.
-const COLS: [f32; 7] = [96., 100., 56., 52., 120., 72., 64.];
+/// Column widths: time, server, method, status, route, duration, size, source. Path takes the rest.
+const COLS: [f32; 8] = [96., 100., 56., 52., 120., 72., 64., 56.];
 
 impl Shell {
     pub(crate) fn render_bottom_dock(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
@@ -133,7 +133,8 @@ impl Shell {
                         .child(head(COLS[3], "STATUS"))
                         .child(head(COLS[4], "ROUTE"))
                         .child(head(COLS[5], "DURATION"))
-                        .child(head(COLS[6], "SIZE")),
+                        .child(head(COLS[6], "SIZE"))
+                        .child(head(COLS[7], "SOURCE")),
                 )
                 .child(if self.traffic.is_empty() {
                     div()
@@ -198,6 +199,8 @@ impl Shell {
                 .font_family(BUFFER_FONT)
                 .text_size(px(11.))
                 .cursor_pointer()
+                .when(r.upstream_error() && !selected, |d| d
+                    .bg(t.deleted.opacity(0.12)))
                 .when(selected, |d| d.bg(sel))
                 .hover(move |s| s.bg(hover))
                 .on_click(cx.listener(move |this, _, _, cx| {
@@ -283,7 +286,14 @@ impl Shell {
                     COLS[5],
                     volatile(this_mask, format!("{:.1} ms", r.duration_ms), "-- ms")
                 ))
-                .child(cell(COLS[6], format!("{} B", r.size))),
+                .child(cell(COLS[6], format!("{} B", r.size)))
+                .child(
+                    div()
+                        .w(px(COLS[7]))
+                        .flex_none()
+                        .text_color(if r.proxied { t.modified } else { t.text_muted })
+                        .child(if r.proxied { "proxy" } else { "mock" }),
+                ),
             format!("traffic-row-{i}"),
             Row,
             format!("{} {}", r.method, r.path),

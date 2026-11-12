@@ -29,6 +29,7 @@ pub mod menubar;
 pub mod network_ui;
 pub mod overlay;
 pub mod preview;
+pub mod proxy_ui;
 pub mod response_pane;
 pub mod route_headers;
 pub mod rule_curl;

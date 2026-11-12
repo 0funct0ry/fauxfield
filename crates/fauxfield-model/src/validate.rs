@@ -125,6 +125,14 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                     format!("unknown kind `{}`", r.kind),
                 ));
             }
+            if (r.proxy || r.pinned) && r.kind != "http" {
+                out.push(Diagnostic::warning(
+                    file,
+                    format!("{rp}.proxy"),
+                    "W092",
+                    "proxy and pinned only apply to http Routes",
+                ));
+            }
             if r.kind == "crud" {
                 if !r.path.starts_with('/') {
                     out.push(Diagnostic::error(
@@ -595,6 +603,48 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                 "CORS is enabled but no origins are allowed",
             ));
         }
+        if let Some(p) = &s.proxy {
+            if let Some(m) = p.mode.as_deref()
+                && !m.is_empty()
+                && !crate::PROXY_MODES.contains(&m)
+            {
+                out.push(Diagnostic::error(
+                    file,
+                    "proxy.mode",
+                    "E095",
+                    format!("unknown proxy mode `{m}` (fallback or passthrough)"),
+                ));
+            }
+            let up = p.upstream.as_deref().unwrap_or("").trim();
+            if p.enabled && up.is_empty() {
+                out.push(Diagnostic::error(
+                    file,
+                    "proxy.upstream",
+                    "E096",
+                    "the proxy is enabled but has no upstream",
+                ));
+            } else if !up.is_empty() && !up.contains("{{") && !up.contains("{%") {
+                let ok = up.split_once("://").is_some_and(|(sch, rest)| {
+                    (sch == "http" || sch == "https") && !rest.trim_start_matches('/').is_empty()
+                });
+                if !ok {
+                    out.push(Diagnostic::error(
+                        file,
+                        "proxy.upstream",
+                        "E097",
+                        format!("upstream `{up}` must be an http:// or https:// URL"),
+                    ));
+                }
+            }
+            if p.insecure {
+                out.push(Diagnostic::warning(
+                    file,
+                    "proxy.insecure",
+                    "W091",
+                    "invalid upstream certificates are accepted",
+                ));
+            }
+        }
         for sh in pattern::shadowed_routes(s) {
             let by = s.routes.iter().find(|r| r.id == sh.by);
             let me = s.routes.iter().find(|r| r.id == sh.route);
@@ -722,6 +772,19 @@ mod tests {
         let d = validate_servers(&[("servers/a.toml".into(), parse_server(t).unwrap())]);
         let codes: Vec<_> = d.iter().map(|d| d.code.as_str()).collect();
         for c in ["E070", "E071", "E072", "E073", "E074", "E075"] {
+            assert!(codes.contains(&c), "{c} in {codes:?}");
+        }
+    }
+
+    #[test]
+    fn proxy_checks() {
+        let s = crate::parse_server(
+        "id=\"srv_a\"\nname=\"A\"\nport=1\n[proxy]\nenabled=true\nmode=\"bogus\"\nupstream=\"ftp://x\"\ninsecure=true\n[[routes]]\nid=\"r1\"\npath=\"/a\"\nkind=\"static\"\ndir=\"p\"\nproxy=true\n",
+    )
+    .unwrap();
+        let d = validate_servers(&[("a.toml".into(), s)]);
+        let codes: Vec<_> = d.iter().map(|d| d.code.as_str()).collect();
+        for c in ["E095", "E097", "W091", "W092"] {
             assert!(codes.contains(&c), "{c} in {codes:?}");
         }
     }

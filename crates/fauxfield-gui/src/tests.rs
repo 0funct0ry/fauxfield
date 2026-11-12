@@ -2402,6 +2402,83 @@ fn tls_cors_and_static_controls(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn proxy_controls_and_route_flags(cx: &mut TestAppContext) {
+    use crate::proxy_ui::ProxyField;
+    use crate::response_pane::{InlineTarget as I, Nav};
+    let (view, cx) = setup(cx, None);
+    let sid = read(&view, cx, |s| s.ws.servers[0].id.clone());
+    let type_field =
+        |view: &Entity<Shell>, cx: &mut VisualTestContext, f: ProxyField, text: &str| {
+            let t = I::Proxy {
+                server: sid.clone(),
+                field: f,
+            };
+            view.update_in(cx, |s, w, cx| {
+                s.begin_inline(t, "", false, w, cx);
+                s.set_inline_text(text, cx);
+                s.commit_inline(Nav::Stay, w, cx);
+            });
+        };
+    let proxy = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
+        read(view, cx, |s| {
+            s.ws.servers[0].proxy.clone().unwrap_or_default()
+        })
+    };
+    view.update(cx, |s, cx| s.toggle_proxy(&sid, "enabled", cx));
+    assert!(proxy(&view, cx).enabled);
+    type_field(&view, cx, ProxyField::Upstream, "ftp://nope"); // rejected
+    assert_eq!(proxy(&view, cx).upstream, None);
+    type_field(&view, cx, ProxyField::Upstream, "https://api.example.com");
+    type_field(&view, cx, ProxyField::Timeout, "abc"); // rejected
+    type_field(&view, cx, ProxyField::Timeout, "1500");
+    type_field(&view, cx, ProxyField::RequestHeader, "no colon here"); // rejected
+    type_field(&view, cx, ProxyField::RequestHeader, "X-Env: staging");
+    type_field(
+        &view,
+        cx,
+        ProxyField::ResponseHeader,
+        "x-served-by: fauxfield",
+    );
+    view.update(cx, |s, cx| s.set_proxy_mode(&sid, "passthrough", cx));
+    view.update(cx, |s, cx| s.toggle_proxy(&sid, "insecure", cx));
+    let p = proxy(&view, cx);
+    assert_eq!(p.upstream.as_deref(), Some("https://api.example.com"));
+    assert_eq!(p.timeout_ms, Some(1500));
+    assert_eq!(
+        p.request_headers.get("X-Env").map(String::as_str),
+        Some("staging")
+    );
+    assert_eq!(p.response_headers.len(), 1);
+    assert_eq!((p.mode_name(), p.insecure), ("passthrough", true));
+    assert_eq!(
+        read(&view, cx, |s| s.upstream_preview(&s.ws.servers[0])),
+        Ok("https://api.example.com".into())
+    );
+    view.update(cx, |s, cx| {
+        s.remove_proxy_header(&sid, "request_headers", "X-Env", cx)
+    });
+    assert!(proxy(&view, cx).request_headers.is_empty());
+    view.update(cx, |s, cx| s.set_proxy_mode(&sid, "fallback", cx));
+    assert_eq!(proxy(&view, cx).mode, None);
+
+    // Route flags and the tree icon source.
+    let rid = read(&view, cx, |s| {
+        s.ws.servers[0].all_routes().next().unwrap().id.clone()
+    });
+    view.update(cx, |s, cx| s.toggle_route_flag(&rid, "proxy", cx));
+    let (fwd, src) = read(&view, cx, |s| {
+        let r = s.ws.find_route(&rid).unwrap().1;
+        (r.forward, crate::tree::route_source(&s.ws.servers[0], r))
+    });
+    assert!(fwd && src == Some(crate::tree::RouteSource::Proxied));
+    view.update(cx, |s, cx| s.toggle_route_flag(&rid, "pinned", cx));
+    let src = read(&view, cx, |s| {
+        crate::tree::route_source(&s.ws.servers[0], s.ws.find_route(&rid).unwrap().1)
+    });
+    assert_eq!(src, Some(crate::tree::RouteSource::Pinned));
+}
+
+#[gpui::test]
 fn comboboxes_are_keyboard_operable(cx: &mut TestAppContext) {
     let (view, cx) = setup(cx, None);
     view.update(cx, |s, _cx| {

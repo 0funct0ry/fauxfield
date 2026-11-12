@@ -415,6 +415,55 @@ impl Shell {
         self.notify("Copied cURL command".into(), cx);
     }
 
+    /// Traffic: create an `http` Route mirroring the selected request (the proxied or unmatched
+    /// answer becomes its Response; an unreachable upstream yields an empty JSON 200).
+    pub fn mock_this_route(&mut self, cx: &mut Context<Self>) {
+        let Some(rec) = self
+            .traffic_selected
+            .and_then(|i| self.traffic.get(i))
+            .and_then(|r| r.rec.clone())
+        else {
+            return self.notify("Select a request in Traffic first.".into(), cx);
+        };
+        let Some(store) = self.store.clone() else {
+            return;
+        };
+        let Some(srv) = self.ws.find_server(&rec.server_id) else {
+            return self.notify("That server no longer exists.".into(), cx);
+        };
+        let prefix = srv.prefix.clone();
+        let path = rec.url.split('?').next().unwrap_or("/");
+        let path = path
+            .strip_prefix(prefix.as_str())
+            .filter(|p| !prefix.is_empty() && p.starts_with('/'))
+            .unwrap_or(path);
+        let failed =
+            matches!(rec.status, 0 | 502 | 504) || rec.status == 404 && rec.route == "unmatched";
+        let ct = rec
+            .response_headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+            .map(|(_, v)| v.clone());
+        let (status, ct, body) = if failed {
+            (200, Some("application/json".to_string()), "{}".to_string())
+        } else {
+            (rec.status, ct, rec.response_body.clone())
+        };
+        let (sid, method, path) = (rec.server_id.clone(), rec.method.clone(), path.to_string());
+        match store.create_route_from_recording(&sid, &method, &path, status, ct.as_deref(), &body)
+        {
+            Ok(id) => {
+                self.reload(cx);
+                if let Some((_, r)) = self.ws.find_route(&id) {
+                    let title = format!("{} {}", r.method, r.path);
+                    self.open_tab(&id, crate::tabs::TabKind::Route, &title, true);
+                }
+                self.notify(format!("Mocked {method} {path}"), cx);
+            }
+            Err(e) => self.notify(e.to_string(), cx),
+        }
+    }
+
     /// Rules tab: copy a `curl` that triggers rule `idx` of Response `resp` (all rules of the
     /// Response when they are combined with AND, since each must hold).
     pub fn copy_rule_curl(&mut self, resp: &str, idx: usize, cx: &mut Context<Self>) {

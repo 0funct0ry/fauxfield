@@ -1,0 +1,6 @@
+schema = 1
+name = "proxy-workspace"
+default_environment = "local"
+
+[variables]
+upstream = "http://127.0.0.1:4721"

@@ -17,6 +17,9 @@ use tokio::net::TcpListener;
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 
+mod proxy;
+pub use proxy::RespBody;
+
 use crate::problem;
 use crate::recording::{Recording, Timing, body_text, redact};
 use crate::router::RouteTable;
@@ -794,27 +797,35 @@ impl Engine {
         let mut s = s.clone();
         if let Some(p) = s.prefix.as_deref()
             && (p.contains("{{") || p.contains("{%"))
+            && let Ok(r) = self.render_str(&s, p)
         {
-            let vc = self.inner.vars.read().unwrap();
-            let ctx = serde_json::json!({
-                "vars": vc.vars_json(&s, None),
-                "env": vc.active_env,
-                "state": vc.state_json(),
-                "server": { "name": s.name, "port": s.port },
-            });
-            let input = crate::template::Input {
-                context: ctx,
-                root: &self.inner.cfg.root,
-                seed: s.fake_seed,
-                route_id: "",
-                counter: 0,
-                seq: None,
-            };
-            if let Ok(r) = crate::template::render(p, &input) {
-                s.prefix = Some(r.trim().to_string());
-            }
+            s.prefix = Some(r.trim().to_string());
         }
         RouteTable::compile(&s)
+    }
+
+    /// Render a Server-level template string (prefix, proxy upstream and headers) against the
+    /// current variables. Plain text is returned unchanged.
+    pub(crate) fn render_str(&self, s: &Server, text: &str) -> Result<String, String> {
+        if !text.contains("{{") && !text.contains("{%") {
+            return Ok(text.to_string());
+        }
+        let vc = self.inner.vars.read().unwrap();
+        let ctx = serde_json::json!({
+            "vars": vc.vars_json(s, None),
+            "env": vc.active_env,
+            "state": vc.state_json(),
+            "server": { "name": s.name, "port": s.port },
+        });
+        let input = crate::template::Input {
+            context: ctx,
+            root: &self.inner.cfg.root,
+            seed: s.fake_seed,
+            route_id: "",
+            counter: 0,
+            seq: None,
+        };
+        crate::template::render(text, &input).map_err(|e| e.to_string())
     }
 
     /// Recompile every Route table and drop rule caches (variables changed). No restart.
@@ -1122,9 +1133,9 @@ async fn handle(
     ip: String,
     reset: Arc<std::sync::atomic::AtomicBool>,
     req: Request<Incoming>,
-) -> Result<HyperResponse<SimBody>, ConnAbort> {
+) -> Result<HyperResponse<RespBody>, ConnAbort> {
     let started = Instant::now();
-    let (parts, body) = req.parse_body().await;
+    let (parts, body_in) = req.into_parts();
     let method = parts.method.as_str().to_string();
     let url = parts
         .uri
@@ -1177,6 +1188,45 @@ async fn handle(
         sim::rate_key(c, &ip, &req_headers, &url).and_then(|k| rt.limiter.check(c, &k))
     });
     let rate_limited = rate.as_ref().is_some_and(|r| r.limited);
+    let proxied = if preflight || rate_limited {
+        None
+    } else {
+        let def = rt.def.lock().unwrap().clone();
+        proxy::plan(&def, route.as_ref()).map(|p| (def, p))
+    };
+    if let Some((def, plan)) = proxied {
+        let net = profile.network().or(server_net);
+        let network_ms = net.as_ref().map_or(0, sim::latency_ms);
+        let rate_headers = rate.as_ref().map(|r| r.headers()).unwrap_or_default();
+        return proxy::forward(
+            proxy::Call {
+                engine,
+                rt,
+                server_id: id,
+                def,
+                proxy: plan.proxy,
+                ip,
+                parts,
+                req_headers,
+                method,
+                url,
+                path,
+                is_test,
+                match_us,
+                cors: cors_cfg,
+                rate_headers,
+                network_ms,
+                started,
+            },
+            body_in,
+        )
+        .await;
+    }
+    let body = body_in
+        .collect()
+        .await
+        .map(|c| c.to_bytes())
+        .unwrap_or_default();
     let mut fault: Option<(Fault, &'static str)> = None;
     let mut render_us = 0u64;
     let mut delay_ms = 0;
@@ -1559,6 +1609,7 @@ async fn handle(
                 render_us,
                 network_ms,
                 transfer_ms,
+                upstream_ms: 0,
                 total_ms: started.elapsed().as_millis() as u64 + transfer_ms,
             },
             truncated: req_cut || resp_cut,
@@ -1566,6 +1617,7 @@ async fn handle(
             fault: fault_label,
             dataset_changes,
             source: if is_test { "test" } else { "mock" }.into(),
+            upstream: None,
         },
     );
 
@@ -1586,13 +1638,14 @@ async fn handle(
     for (k, v) in &headers {
         b = b.header(k.as_str(), v.as_str());
     }
-    Ok(b.body(SimBody::new(bytes, mode, None)).unwrap_or_else(|_| {
-        HyperResponse::new(SimBody::new(
-            Bytes::from_static(b"invalid response headers"),
-            BodyMode::Full,
-            None,
-        ))
-    }))
+    Ok(b.body(RespBody::Sim(SimBody::new(bytes, mode, None)))
+        .unwrap_or_else(|_| {
+            HyperResponse::new(RespBody::Sim(SimBody::new(
+                Bytes::from_static(b"invalid response headers"),
+                BodyMode::Full,
+                None,
+            )))
+        }))
 }
 
 pub(crate) fn read_confined(root: &std::path::Path, file: &str) -> Result<Vec<u8>, String> {
@@ -1602,20 +1655,4 @@ pub(crate) fn read_confined(root: &std::path::Path, file: &str) -> Result<Vec<u8
         return Err("path escapes the workspace".into());
     }
     std::fs::read(full).map_err(|e| e.to_string())
-}
-
-trait ParseBody {
-    async fn parse_body(self) -> (hyper::http::request::Parts, Bytes);
-}
-
-impl ParseBody for Request<Incoming> {
-    async fn parse_body(self) -> (hyper::http::request::Parts, Bytes) {
-        let (parts, body) = self.into_parts();
-        let bytes = body
-            .collect()
-            .await
-            .map(|c| c.to_bytes())
-            .unwrap_or_default();
-        (parts, bytes)
-    }
 }

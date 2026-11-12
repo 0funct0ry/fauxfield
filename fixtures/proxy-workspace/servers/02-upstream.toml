@@ -1,0 +1,28 @@
+schema = 1
+id = "srv_upstream"
+name = "Upstream"
+port = 4721
+
+[[routes]]
+id = "rte_up_users"
+method = "GET"
+path = "/users"
+[[routes.responses]]
+id = "rsp_up_users"
+name = "OK"
+default = true
+status = 200
+body = '[{"id":1,"name":"Ada"}]'
+content_type = "application/json"
+
+[[routes]]
+id = "rte_up_catalog"
+method = "GET"
+path = "/catalog"
+[[routes.responses]]
+id = "rsp_up_catalog"
+name = "OK"
+default = true
+status = 200
+body = '{"items":["real"]}'
+content_type = "application/json"

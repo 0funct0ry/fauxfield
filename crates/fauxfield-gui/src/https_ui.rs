@@ -109,7 +109,7 @@ fn expires(c: &tls::CertStatus) -> String {
 }
 
 impl Shell {
-    fn https_label(&self, t: &Theme, l: &str, el: AnyElement) -> gpui::Div {
+    pub(crate) fn https_label(&self, t: &Theme, l: &str, el: AnyElement) -> gpui::Div {
         div()
             .flex()
             .flex_col()
@@ -149,7 +149,7 @@ impl Shell {
 
     /// A bordered On/Off or cycling button.
     #[allow(clippy::too_many_arguments)]
-    fn state_button(
+    pub(crate) fn state_button(
         &self,
         t: &Theme,
         id: String,
