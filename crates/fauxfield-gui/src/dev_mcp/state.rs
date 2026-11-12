@@ -138,6 +138,11 @@ pub struct ResponseState {
     pub disabled: bool,
     pub rules_logic: String,
     pub rules: usize,
+    /// Dataset action steps (M10.06) and those that fail validation.
+    pub actions: usize,
+    pub invalid_actions: usize,
+    /// The Dataset body source form is open.
+    pub dataset_source: bool,
     /// Rules that fail validation (shown inline in the Rules sub-tab).
     pub invalid_rules: usize,
     /// Rendered with Tera (M6).
@@ -890,6 +895,13 @@ fn route_state(shell: &Shell) -> Option<RouteState> {
                 disabled: x.disabled,
                 rules_logic: x.rules_logic.clone(),
                 rules: x.rules.len(),
+                actions: x.actions.len(),
+                invalid_actions: x
+                    .actions
+                    .iter()
+                    .filter(|a| fauxfield_model::validate_action(a).is_some())
+                    .count(),
+                dataset_source: shell.ds_read.contains_key(&x.id),
                 template: x.template,
                 invalid_rules: x
                     .rules

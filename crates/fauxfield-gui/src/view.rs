@@ -13,6 +13,10 @@ pub struct Response {
     /// `and` or `or`.
     pub rules_logic: String,
     pub rules: Vec<fauxfield_model::Rule>,
+    /// Dataset actions (M10.06).
+    pub actions: Vec<fauxfield_model::DatasetAction>,
+    /// Status when an action fails (empty = default 409).
+    pub action_error_status: String,
     pub content_type: String,
     /// Delay as written: milliseconds or a range such as `200..800`; empty = none.
     pub delay: String,
@@ -393,6 +397,11 @@ impl Workspace {
                     disabled: x.disabled,
                     rules_logic: x.rules_logic.clone().unwrap_or_else(|| "and".into()),
                     rules: x.rules.clone(),
+                    actions: x.actions.clone(),
+                    action_error_status: x
+                        .action_error_status
+                        .map(|s| s.to_string())
+                        .unwrap_or_default(),
                     content_type: x.content_type.clone().unwrap_or_default(),
                     delay: x.delay_ms.as_ref().map(|d| d.text()).unwrap_or_default(),
                     fault: x.fault.clone().filter(|f| f != "none").unwrap_or_default(),
@@ -455,14 +464,7 @@ impl Workspace {
                                 .collect()
                         }),
                         generator_preview: generator_preview(&snap.root, s, d),
-                        used_by: s
-                            .routes
-                            .iter()
-                            .filter(|r| {
-                                r.kind == "crud" && r.dataset.as_deref() == Some(d.name.as_str())
-                            })
-                            .map(|r| (r.id.clone(), format!("{} {}", r.method, r.path)))
-                            .collect(),
+                        used_by: dataset_consumers(s, &d.name),
                     });
                 }
                 Server {
@@ -642,6 +644,35 @@ pub fn test_options() -> crate::shell::ShellOptions {
 pub fn workspace() -> Workspace {
     let (_d, s) = example_store();
     Workspace::from_snapshot(&s.snapshot())
+}
+
+/// Every Route that uses a Dataset: crud Routes, Response actions, Rules and body reads
+/// (`data.<name>` or `dataset_rows(...)`), as `(route id, label)`.
+fn dataset_consumers(s: &fauxfield_model::Server, name: &str) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = vec![];
+    let reads = |text: &str| text.contains(&format!("data.{name}"));
+    for r in &s.routes {
+        let at = format!("{} {}", r.method, r.path);
+        if r.kind == "crud" && r.dataset.as_deref() == Some(name) {
+            out.push((r.id.clone(), at.clone()));
+        }
+        let (mut act, mut rule, mut read) = (false, false, false);
+        for x in &r.responses {
+            act |= x.actions.iter().any(|a| a.dataset == name);
+            rule |= x.rules.iter().any(|u| {
+                matches!(u.target.as_str(), "dataset" | "dataset_count")
+                    && fauxfield_model::rules::dataset_rule_name(u.key.as_deref().unwrap_or(""))
+                        == name
+            });
+            read |= x.body.as_deref().is_some_and(reads);
+        }
+        for (hit, what) in [(act, "action"), (rule, "rule"), (read, "read")] {
+            if hit {
+                out.push((r.id.clone(), format!("{at} ({what})")));
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]

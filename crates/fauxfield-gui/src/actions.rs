@@ -41,6 +41,7 @@ actions!(
         NewEnvironment,
         NewRoute,
         SendTest,
+        AddDatasetAction,
         Save,
         EditSampleRequest,
         Duplicate,
@@ -228,6 +229,11 @@ pub static ACTIONS: &[ActionInfo] = &[
     row!("new_environment", "Environment: New…", NewEnvironment),
     row!("new_route", "Route: New…", NewRoute),
     row!("send_test", "Route: Send Test Request", SendTest),
+    row!(
+        "add_dataset_action",
+        "Response: Add Dataset Action",
+        AddDatasetAction
+    ),
     row!("save", "File: Save", Save),
     row!(
         "edit_sample_request",

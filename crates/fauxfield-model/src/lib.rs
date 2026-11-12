@@ -14,12 +14,12 @@ pub use diagnostic::{Diagnostic, Severity};
 pub use generator::{GENERATORS, GeneratorField, GeneratorSeed, GeneratorSpec};
 pub use id::new_id;
 pub use types::{
-    COLUMN_TYPES, Cors, Dataset, DatasetColumn, Delay, Environment, FAULTS, Folder, ID_STRATEGIES,
-    Manifest, Network, ROUTE_KINDS, RateLimit, Response, Route, Rule, SCHEMA_VERSION, Server,
-    TLS_MODES, Tls, parse_delay, parse_environment, parse_manifest, parse_server, parse_window,
-    valid_rate_key,
+    ACTION_OPS, COLUMN_TYPES, Cors, Dataset, DatasetAction, DatasetColumn, Delay, Environment,
+    FAULTS, Folder, ID_STRATEGIES, Manifest, Network, ROUTE_KINDS, RateLimit, Response, Route,
+    Rule, SCHEMA_VERSION, Server, TLS_MODES, Tls, parse_delay, parse_environment, parse_manifest,
+    parse_server, parse_window, valid_rate_key,
 };
-pub use validate::{validate_environment_names, validate_servers};
+pub use validate::{validate_action, validate_environment_names, validate_servers};
 
 /// JSON Schema (draft 2020-12) for a server file, as published for Taplo.
 pub fn server_schema() -> serde_json::Value {

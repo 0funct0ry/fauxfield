@@ -507,6 +507,7 @@ pub fn build_menus(ctx: &MenuContext) -> Vec<MenuDef> {
             act("edit_route_path", "Edit Path…"),
             MenuEntry::Separator,
             act("new_response", "New Response"),
+            act("add_dataset_action", "Add Dataset Action"),
             act("set_default_response", "Make Default Response"),
             sub(
                 "response",
@@ -632,7 +633,8 @@ pub fn enabled(id: &str, ctx: &MenuContext) -> bool {
         | "edit_sample_request"
         | "edit_route_method"
         | "edit_route_path"
-        | "new_response" => ctx.current_route.is_some(),
+        | "new_response"
+        | "add_dataset_action" => ctx.current_route.is_some(),
         "set_default_response"
         | "edit_response_status"
         | "edit_response_name"

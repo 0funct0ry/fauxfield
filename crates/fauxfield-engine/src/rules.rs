@@ -175,6 +175,38 @@ impl<'a> Ctx<'a> {
         p.query(v).first().cloned()
     }
 
+    /// `name.$.path` (JSONPath) or `name.field.sub` over the live `data.<name>`.
+    fn dataset_value(&self, key: &str) -> Option<String> {
+        let data = &self.tpl.as_ref()?.context["data"];
+        let (name, rest) = key.split_once('.')?;
+        let root = data.get(name)?;
+        let path = if rest.starts_with('$') {
+            rest.to_string()
+        } else {
+            format!("$.{rest}")
+        };
+        let v = serde_json_path::JsonPath::parse(&path)
+            .ok()?
+            .query(root)
+            .first()
+            .map(|v| (*v).clone())?;
+        Some(match v {
+            Value::String(s) => s,
+            other => other.to_string(),
+        })
+    }
+
+    /// Rows of a Dataset matching CRUD-style filters: `orders?status=open&total_gte=5`.
+    fn dataset_count(&self, key: &str) -> Option<String> {
+        let data = &self.tpl.as_ref()?.context["data"];
+        let (name, q) = key.split_once('?').unwrap_or((key, ""));
+        let rows = data.get(name)?;
+        let filters: Vec<(String, String)> = form_urlencoded::parse(q.as_bytes())
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        Some(crate::data::matching(rows, &filters).len().to_string())
+    }
+
     fn actual(&self, r: &Rule) -> Option<String> {
         let key = r.key.as_deref().unwrap_or("");
         match r.target.as_str() {
@@ -203,7 +235,9 @@ impl<'a> Ctx<'a> {
                 Body::Text(t) => key.is_empty().then(|| t.clone()),
                 Body::None => None,
             },
-            // Variables and Datasets arrive in M7 and M8: they never match for now.
+            "dataset" => self.dataset_value(key),
+            "dataset_count" => self.dataset_count(key),
+            // Variables are resolved elsewhere; anything else never matches.
             _ => None,
         }
     }
@@ -369,6 +403,14 @@ fn resolved(r: &Rule, c: &Ctx) -> Rule {
         && let Ok(out) = env.render(c.root, s)
     {
         r.value = Some(toml::Value::String(out));
+    }
+    // Dataset rule keys may use the request: `orders?id={{ request.params.id }}`.
+    if matches!(r.target.as_str(), "dataset" | "dataset_count")
+        && let (Some(env), Some(k)) = (&c.tpl, r.key.as_deref())
+        && k.contains("{{")
+        && let Ok(out) = env.render(c.root, k)
+    {
+        r.key = Some(out);
     }
     r
 }

@@ -635,3 +635,68 @@ fn dataset_columns_generator_and_seed_round_trip() {
     s.set_dataset_generator(&srv, "products", None).unwrap();
     assert!(get(&s).generator.is_none());
 }
+
+#[test]
+fn dataset_actions_and_rules_are_references_and_follow_a_rename() {
+    use fauxfield_model::{DatasetAction, Rule};
+    let (_d, s) = ws();
+    let srv = s.create_server("Shop", 3011).unwrap();
+    s.create_dataset(&srv, "orders", None, None, None).unwrap();
+    let route = s.create_route(&srv, None, "POST", "/checkout").unwrap();
+    let resp = s
+        .snapshot()
+        .servers
+        .iter()
+        .flat_map(|(_, x)| x.routes.iter())
+        .find(|r| r.id == route)
+        .unwrap()
+        .responses[0]
+        .id
+        .clone();
+    let act = DatasetAction {
+        dataset: "orders".into(),
+        op: "insert".into(),
+        ..Default::default()
+    };
+    s.set_action(&resp, None, &act).unwrap();
+    let a2 = DatasetAction {
+        op: "reset".into(),
+        ..act.clone()
+    };
+    s.set_action(&resp, None, &a2).unwrap();
+    s.move_action(&resp, 1, 0).unwrap();
+    s.set_rule(
+        &resp,
+        None,
+        &Rule {
+            target: "dataset_count".into(),
+            key: Some("orders?qty_gte=2".into()),
+            op: "gte".into(),
+            value: Some(toml::Value::Integer(1)),
+            negate: false,
+            extra: Default::default(),
+        },
+    )
+    .unwrap();
+    s.flush().unwrap();
+    let refs = s.dataset_references(&srv, "orders").unwrap();
+    assert_eq!(refs.actions.len(), 2);
+    assert_eq!(refs.actions[0].op, "reset");
+    assert_eq!(refs.rules.len(), 1);
+    assert!(!refs.is_unused());
+    assert!(
+        s.delete_dataset_checked(&srv, "orders", &Default::default())
+            .is_err()
+    );
+    s.rename_dataset(&srv, "orders", "sales").unwrap();
+    s.flush().unwrap();
+    let refs = s.dataset_references(&srv, "sales").unwrap();
+    assert_eq!(refs.actions.len(), 2);
+    assert_eq!(refs.rules[0].key, "sales?qty_gte=2");
+    s.delete_action(&resp, 0).unwrap();
+    s.flush().unwrap();
+    assert_eq!(
+        s.dataset_references(&srv, "sales").unwrap().actions.len(),
+        1
+    );
+}

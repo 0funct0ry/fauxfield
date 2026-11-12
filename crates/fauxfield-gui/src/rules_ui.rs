@@ -582,6 +582,13 @@ impl Shell {
             "sample-cancel" => self.close_sample_dialog(cx),
             "sample-save" => self.save_sample(false, window, cx),
             "sample-send" => self.save_sample(true, window, cx),
+            other
+                if other.starts_with("action-")
+                    || other.starts_with("dsread-")
+                    || other == "body-source-dataset" =>
+            {
+                return self.action_press(other, &id, idx, cx, window);
+            }
             other => return Err(format!("unknown press op {other:?}")),
         }
         Ok(())

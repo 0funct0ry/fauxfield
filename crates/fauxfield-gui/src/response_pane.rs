@@ -26,7 +26,7 @@ pub const BODY_LINE_H: f32 = 20.0;
 pub const BODY_GUTTER: f32 = 44.0;
 pub const BODY_FONT_SIZE: f32 = 13.0;
 /// Response sub-tabs.
-pub const RESPONSE_SUBTABS: [&str; 2] = ["Body", "Headers"];
+pub const RESPONSE_SUBTABS: [&str; 3] = ["Body", "Headers", "Actions"];
 
 /// Which inline field is being edited.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -40,6 +40,17 @@ pub enum InlineTarget {
     SampleMethod(String),
     SampleQuery(String),
     SampleCookies(String),
+    /// A text field of action step `row` of a Response (Actions sub-tab, M10.06).
+    ActionField {
+        response: String,
+        row: usize,
+        field: crate::actions_ui::ActionField,
+    },
+    /// A field of the Dataset body source form.
+    DsRead {
+        response: String,
+        field: &'static str,
+    },
     /// Key / Value cell of rule `row` of a Response (Rules sub-tab).
     RuleKey {
         response: String,
@@ -339,6 +350,19 @@ impl Shell {
                         Some(&v).filter(|v| !v.is_empty()).map(String::as_str),
                     )
                 });
+            }
+            InlineTarget::ActionField {
+                response,
+                row,
+                field,
+            } => {
+                self.edit_action(&response, row, cx, |a| {
+                    crate::actions_ui::set_field_text(a, field, &v)
+                });
+            }
+            InlineTarget::DsRead { response, field } => {
+                self.commit_ds_read_field(&response, field, &v);
+                cx.notify();
             }
             InlineTarget::RuleKey { response, row } => {
                 self.edit_rule(&response, row, cx, |r| {
@@ -870,6 +894,7 @@ impl Shell {
             .iter()
             .filter(|r| !r.pending)
             .count();
+        let n_actions = resp.actions.len();
         div()
             .size_full()
             .flex()
@@ -1037,16 +1062,22 @@ impl Shell {
                                     cx.notify();
                                 }))
                                 .child(*name)
-                                .when(i == 1 && n_headers > 0, |d| {
-                                    d.child(
-                                        div()
-                                            .px(px(6.))
-                                            .rounded(px(8.))
-                                            .bg(t.element_selected)
-                                            .text_size(px(10.))
-                                            .child(n_headers.to_string()),
-                                    )
-                                }),
+                                .when(
+                                    (i == 1 && n_headers > 0) || (i == 2 && n_actions > 0),
+                                    |d| {
+                                        d.child(
+                                            div()
+                                                .px(px(6.))
+                                                .rounded(px(8.))
+                                                .bg(t.element_selected)
+                                                .text_size(px(10.))
+                                                .child(
+                                                    if i == 1 { n_headers } else { n_actions }
+                                                        .to_string(),
+                                                ),
+                                        )
+                                    },
+                                ),
                             format!("resp-subtab-{name}"),
                             Tab,
                             *name,
@@ -1056,6 +1087,7 @@ impl Shell {
             )
             .child(div().flex_1().min_h_0().child(match sub {
                 1 => self.render_headers_editor(t, resp, cx),
+                2 => self.render_actions_editor(t, resp, cx),
                 _ => self.render_body_tab(t, resp, cx).into_any_element(),
             }))
             .into_any_element()
@@ -1091,6 +1123,8 @@ impl Shell {
                 .child(label)
         };
         let (rid_inline, rid_file, rid_fmt) = (resp.id.clone(), resp.id.clone(), resp.id.clone());
+        let rid_ds = resp.id.clone();
+        let ds_open = self.ds_read.contains_key(&resp.id);
         let lang = self
             .body_editors
             .get(&resp.id)
@@ -1109,7 +1143,7 @@ impl Shell {
                     .items_center()
                     .gap(px(4.))
                     .child(crate::dev_id!(
-                        seg("body-source-inline", "Inline", !file_mode, true).on_click(
+                        seg("body-source-inline", "Inline", !file_mode && !ds_open, true).on_click(
                             cx.listener(move |this, _, w, cx| {
                                 this.set_body_file_mode(&rid_inline, false, w, cx)
                             })
@@ -1128,18 +1162,14 @@ impl Shell {
                         "File",
                         None
                     ))
-                    .child(crate::dev_id_meta!(
-                        seg("body-source-dataset", "Dataset", false, false).tooltip(
-                            crate::ui::tooltip("Bodies from a Dataset arrive in M8".into())
-                        ),
-                        crate::dev_mcp::tree::Meta {
-                            tooltip: true,
-                            ..Default::default()
-                        },
+                    .child(crate::dev_id!(
+                        seg("body-source-dataset", "Dataset", ds_open, true).on_click(cx.listener(
+                            move |this, _, _, cx| { this.toggle_dataset_source(&rid_ds, cx) }
+                        )),
                         "body-source-dataset",
                         Button,
-                        "Dataset (M8)",
-                        None
+                        "Dataset",
+                        Press(format!("body-source-dataset:{}", resp.id))
                     ))
                     .child(div().flex_1())
                     .child(
@@ -1171,6 +1201,9 @@ impl Shell {
                         ))
                     }),
             )
+            .when(ds_open, |d| {
+                d.child(self.render_dataset_source(t, resp, cx))
+            })
             .child(if file_mode {
                 self.render_body_file(t, resp, cx).into_any_element()
             } else {

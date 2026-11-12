@@ -231,6 +231,34 @@ impl Shell {
                         } else {
                             t.status_color(r.status)
                         })
+                        .children(
+                            r.rec
+                                .as_ref()
+                                .filter(|x| !x.dataset_changes.is_empty())
+                                .map(|x| {
+                                    let n: usize = x.dataset_changes.iter().map(|c| c.rows).sum();
+                                    let tip = format!(
+                                        "Changed Dataset: {} ({n} row{})",
+                                        x.dataset_changes
+                                            .iter()
+                                            .map(|c| format!("{} {}", c.op, c.dataset))
+                                            .collect::<Vec<_>>()
+                                            .join(", "),
+                                        if n == 1 { "" } else { "s" }
+                                    );
+                                    crate::dev_id!(
+                                        div()
+                                            .id(crate::ui::eid(format!("dataset-change-{i}")))
+                                            .flex_none()
+                                            .tooltip(crate::ui::tooltip(tip.clone()))
+                                            .child(crate::ui::icon("database", 11., t.modified)),
+                                        format!("traffic-dataset-{i}"),
+                                        Text,
+                                        tip,
+                                        None
+                                    )
+                                })
+                        )
                         .children(r.fault.as_ref().map(|f| {
                             crate::dev_id!(
                                 div()

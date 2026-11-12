@@ -147,3 +147,49 @@ Fill a Dataset from a JSON, CSV or Parquet file. Import is a one-time conversion
 CSV cells are typed by inference (int, float, bool, null, string; `007` stays a string). Warnings cover ragged rows, duplicate keys and cells that fail an overridden type. Above 100 000 rows you get a warning; above 1 000 000 the import is refused (`--soft-limit`, `--hard-limit`). Parquet and CSV exports are flat: nested values are written as JSON text.
 
 From the command line: `fauxfield data create <server> products --column id:int --column name:string`. MCP: `upsert_dataset` accepts `columns` and `generator`, and `bake_dataset` writes generated rows to the seed.
+
+## Using a Dataset from any Route
+
+A Route does not need `kind = "crud"` to use a Dataset.
+
+### Reading
+
+In the Response editor choose **Body > Dataset**, pick the Dataset and a mode, then **Generate template**. The generated body stays a normal, editable template:
+
+```toml
+body = '{{ dataset_rows(data=data.orders, sort="id", order="desc", limit=1) | first | json_encode() | safe }}'
+```
+
+`dataset_rows` takes the CRUD filter operators (`status=open&total_gte=5`, `_lte`, `_ne`, `_like`), `sort`, `order`, `page` and `limit`; `dataset_count` returns the number of matching rows. For a "no match" status add a Response with a rule `dataset_count` / key `orders?id={{ request.params.id }}` / `eq` / `0` and status 404.
+
+### Changing
+
+Add Dataset **actions** to a Response. They run after the Response is chosen and before the body renders, and apply together or not at all:
+
+```toml
+[[routes.responses]]
+id = "rsp_ok"
+status = 201
+action_error_status = 422
+body = '{{ action.0 | json_encode() | safe }}'
+
+[[routes.responses.actions]]
+dataset = "orders"
+op = "insert"
+[routes.responses.actions.fields]
+sku = "{{ request.json.sku }}"
+
+[[routes.responses.actions]]
+dataset = "stock"
+op = "increment"
+key = "{{ request.json.sku }}"
+field = "qty"
+by = "-{{ request.json.qty }}"
+fail_if = "{{ result.qty < 0 }}"
+```
+
+Ops: `insert`, `update` (`mode = "merge"` or `"replace"`), `delete`, `delete_where` (`filter`), `set`, `increment`, `reset`. Each step's result (new row, changed row, or `{count}`) is `action.<n>`. An action on a persisted Dataset writes to disk (warning W072). Traffic marks requests that changed a Dataset.
+
+### Rules and singletons
+
+Rule targets `dataset` (`name.$.path`) and `dataset_count` (`name?field=value`) branch on Dataset data. A Dataset seeded with an object accepts `PUT` (replace) and `PATCH` (merge) on its CRUD path, and `update`/`set` actions.

@@ -24,6 +24,8 @@ description: Every Tera function, filter and fake kind available in Response bod
 | `jwt` | jwt(claims=, secret=) HS256 token |
 | `lorem` | lorem(words=) filler text |
 | `file` | file(path=) workspace-relative file contents |
+| `dataset_rows` | dataset_rows(data=data.orders, filter="status=open&total_gte=5", sort="total", order="desc", page=1, limit=10) filtered, sorted, paged rows of a Dataset |
+| `dataset_count` | dataset_count(data=data.orders, filter="status=open") number of rows matching a filter |
 
 ## Filters
 

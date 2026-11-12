@@ -308,15 +308,15 @@ impl Shell {
                     None
                 ))
             })
-            .children(d.used_by.iter().map(|(rid, label)| {
+            .children(d.used_by.iter().enumerate().map(|(n, (rid, label))| {
                 let rid2 = rid.clone();
                 crate::dev_id!(
-                    toolbar_button(t, crate::ui::eid(format!("ds-used-by-{rid}")))
+                    toolbar_button(t, crate::ui::eid(format!("ds-used-by-{rid}-{n}")))
                         .child(format!("Route {label}"))
                         .on_click(
                             cx.listener(move |this, _, _, cx| { this.click_row(&rid2, 2, cx) })
                         ),
-                    format!("ds-used-by-{rid}"),
+                    format!("ds-used-by-{rid}-{n}"),
                     Button,
                     label.clone(),
                     Row(rid.clone())
@@ -635,6 +635,17 @@ impl Shell {
             .iter()
             .map(|r| format!("Route {} {}", r.method, r.path))
             .collect();
+        list.extend(refs.actions.iter().map(|a| {
+            format!(
+                "Action {} step {} ({}) of Response {}",
+                a.route_id, a.step, a.op, a.response_id
+            )
+        }));
+        list.extend(
+            refs.rules
+                .iter()
+                .map(|r| format!("Rule {} {} in Response {}", r.target, r.key, r.response_id)),
+        );
         list.extend(
             refs.free_text
                 .iter()

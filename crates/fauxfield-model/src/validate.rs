@@ -365,6 +365,47 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                         out.push(Diagnostic::error(file, format!("{sp}.rules[{k}]"), code, m));
                     }
                 }
+                for (k, rule) in resp.rules.iter().enumerate() {
+                    if matches!(rule.target.as_str(), "dataset" | "dataset_count")
+                        && let Some(key) = rule.key.as_deref()
+                    {
+                        let n = crate::rules::dataset_rule_name(key);
+                        if !n.is_empty() && !s.datasets.iter().any(|d| d.name == n) {
+                            out.push(Diagnostic::error(
+                                file,
+                                format!("{sp}.rules[{k}].key"),
+                                "E088",
+                                format!("rule reads unknown Dataset `{n}`"),
+                            ));
+                        }
+                    }
+                }
+                for (k, a) in resp.actions.iter().enumerate() {
+                    let ap = format!("{sp}.actions[{k}]");
+                    let Some(ds) = s.datasets.iter().find(|d| d.name == a.dataset) else {
+                        out.push(Diagnostic::error(
+                            file,
+                            format!("{ap}.dataset"),
+                            "E086",
+                            format!("action on unknown Dataset `{}`", a.dataset),
+                        ));
+                        continue;
+                    };
+                    if let Some(m) = validate_action(a) {
+                        out.push(Diagnostic::error(file, ap.clone(), "E087", m));
+                    }
+                    if ds.persist && !a.disabled {
+                        out.push(Diagnostic::warning(
+                            file,
+                            format!("{ap}.dataset"),
+                            "W072",
+                            format!(
+                                "action writes to Dataset `{}`, which is persisted to disk",
+                                ds.name
+                            ),
+                        ));
+                    }
+                }
                 if resp.body.is_some() && resp.body_file.is_some() {
                     out.push(Diagnostic::error(
                         file,
@@ -590,6 +631,35 @@ pub fn validate_environment_names(envs: &[(String, String)]) -> Vec<Diagnostic> 
     out
 }
 
+/// Static problems of one action step (unknown op, missing inputs, bad Tera); `None` when fine.
+pub fn validate_action(a: &crate::DatasetAction) -> Option<String> {
+    if !crate::ACTION_OPS.contains(&a.op.as_str()) {
+        return Some(format!("unknown action op `{}`", a.op));
+    }
+    // update/set/increment may omit the key on a singleton Dataset; the engine checks that.
+    let need_key = a.op == "delete";
+    if need_key && a.key.as_deref().is_none_or(str::is_empty) {
+        return Some(format!("action `{}` needs a `key` expression", a.op));
+    }
+    if a.op == "delete_where" && a.filter.is_empty() {
+        return Some("`delete_where` needs a `filter`".into());
+    }
+    if matches!(a.op.as_str(), "set" | "increment") && a.field.as_deref().is_none_or(str::is_empty)
+    {
+        return Some(format!("action `{}` needs a `field`", a.op));
+    }
+    if a.op == "set" && a.value.is_none() {
+        return Some("`set` needs a `value`".into());
+    }
+    if let Some(m) = a.mode.as_deref()
+        && m != "merge"
+        && m != "replace"
+    {
+        return Some(format!("mode must be `merge` or `replace`, got `{m}`"));
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -610,6 +680,21 @@ mod tests {
         assert!(codes.contains(&"E011"), "{codes:?}");
         let d = validate_servers(&[srv("srv_a", 3000, "rte_1"), srv("srv_a", 3001, "rte_2")]);
         assert!(d.iter().any(|d| d.code == "E010"));
+    }
+
+    #[test]
+    fn dataset_actions_and_rules_are_checked() {
+        let t = "id=\"srv_a\"\nname=\"n\"\nport=1\n[[datasets]]\nname=\"o\"\npersist=true\n\
+            [[routes]]\nid=\"rte_1\"\npath=\"/x\"\n[[routes.responses]]\nid=\"rsp_1\"\n\
+            [[routes.responses.actions]]\ndataset=\"nope\"\nop=\"insert\"\n\
+            [[routes.responses.actions]]\ndataset=\"o\"\nop=\"explode\"\n\
+            [[routes.responses.actions]]\ndataset=\"o\"\nop=\"insert\"\n\
+            [[routes.responses.rules]]\ntarget=\"dataset_count\"\nkey=\"zzz?a=1\"\nop=\"gte\"\nvalue=1\n";
+        let d = validate_servers(&[("servers/a.toml".into(), parse_server(t).unwrap())]);
+        let codes: Vec<_> = d.iter().map(|d| d.code.as_str()).collect();
+        for c in ["E086", "E087", "E088", "W072"] {
+            assert!(codes.contains(&c), "{c} in {codes:?}");
+        }
     }
 
     #[test]

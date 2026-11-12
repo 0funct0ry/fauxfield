@@ -166,6 +166,7 @@ impl Shell {
             url: treq.path,
             headers: treq.headers,
             body: treq.body,
+            datasets: None,
         };
         let snap = store.snapshot();
         let found = snap.servers.iter().find_map(|(_, s)| {

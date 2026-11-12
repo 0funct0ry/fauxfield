@@ -277,6 +277,8 @@ struct RenderTemplate {
     body: Option<String>,
     /// Override the Server's `fake_seed` for this render.
     seed: Option<u64>,
+    /// Sample Dataset state for `data.<name>`: an object of Dataset name to rows (M10.06).
+    datasets: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -1028,6 +1030,7 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                     url,
                     headers: a.headers.clone().unwrap_or_default().into_iter().collect(),
                     body: a.body.clone().unwrap_or_default(),
+                    datasets: a.datasets.clone(),
                 };
                 let p = fauxfield_engine::preview(&s.root(), &srv, &route, &resp, &sample, None);
                 Ok(json!({

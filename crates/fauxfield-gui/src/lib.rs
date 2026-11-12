@@ -2,6 +2,7 @@
 //! themes, and the workspace views. Only this crate and the `fauxfield` binary may depend on GPUI.
 
 pub mod actions;
+pub mod actions_ui;
 pub mod assets;
 pub mod bottom_dock;
 pub mod center;

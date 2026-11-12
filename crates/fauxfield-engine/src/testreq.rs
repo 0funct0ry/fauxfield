@@ -24,6 +24,9 @@ pub struct TestResponse {
     pub status: u16,
     pub headers: Vec<(String, String)>,
     pub body: String,
+    /// Dataset changes the Response's actions made (M10.06).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dataset_changes: Vec<crate::actions::DatasetChange>,
 }
 
 /// Minimal HTTP/1.1 client for loopback Send test; one request, `Connection: close`.
@@ -93,5 +96,6 @@ fn parse(buf: &[u8]) -> Result<TestResponse, String> {
         status,
         headers,
         body: String::from_utf8_lossy(body).into_owned(),
+        dataset_changes: vec![],
     })
 }

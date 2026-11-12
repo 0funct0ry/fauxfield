@@ -36,6 +36,14 @@ pub const FUNCTIONS: &[(&str, &str)] = &[
     ("jwt", "jwt(claims=, secret=) HS256 token"),
     ("lorem", "lorem(words=) filler text"),
     ("file", "file(path=) workspace-relative file contents"),
+    (
+        "dataset_rows",
+        "dataset_rows(data=data.orders, filter=\"status=open&total_gte=5\", sort=\"total\", order=\"desc\", page=1, limit=10) filtered, sorted, paged rows of a Dataset",
+    ),
+    (
+        "dataset_count",
+        "dataset_count(data=data.orders, filter=\"status=open\") number of rows matching a filter",
+    ),
 ];
 
 pub const FILTERS: &[(&str, &str)] = &[
@@ -107,6 +115,25 @@ fn b64url(b: &[u8]) -> String {
 }
 
 pub fn register(t: &mut Tera) {
+    t.register_function("dataset_rows", |a: &Args| {
+        let get = |k: &str| a.get(k).and_then(Value::as_u64).unwrap_or(0) as usize;
+        let s = |k: &str| a.get(k).and_then(Value::as_str).unwrap_or("");
+        Ok(Value::Array(crate::data::query(
+            arg(a, "data")?,
+            s("filter"),
+            s("sort"),
+            s("order"),
+            get("page").max(1),
+            get("limit"),
+        )))
+    });
+    t.register_function("dataset_count", |a: &Args| {
+        let f = a.get("filter").and_then(Value::as_str).unwrap_or("");
+        let rows = arg(a, "data")?;
+        Ok(json!(
+            crate::data::matching(rows, &crate::data::parse_filters(f)).len()
+        ))
+    });
     t.register_function("fake", |a: &Args| {
         let kind = str_arg(a, "kind")?;
         if let Some(l) = a.get("locale").and_then(Value::as_str)

@@ -27,6 +27,9 @@ pub struct Timing {
 /// One handled request (SPEC §7.2, mocked traffic only).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Recording {
+    /// Dataset changes made by the chosen Response's actions (M10.06).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dataset_changes: Vec<crate::actions::DatasetChange>,
     pub id: u64,
     pub ts: String,
     pub ts_ms: u64,
@@ -131,6 +134,7 @@ mod tests {
         assert_eq!(h[1].1, "*/*");
         let rec = Recording {
             id: 1,
+            dataset_changes: vec![],
             ts: String::new(),
             ts_ms: 0,
             server_id: "s".into(),

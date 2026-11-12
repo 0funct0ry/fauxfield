@@ -1,0 +1,13 @@
+# M10.06 scenario: the Add Dataset Action command is reachable from the palette.
+# Opening a Response's Actions sub-tab and the Dataset body source needs a selected Response,
+# which the default state does not have, so the editing paths are covered by unit tests.
+name: m10-06-dataset-actions
+size: default
+steps:
+  - state: [reset]
+  - key: secondary-shift-p
+  - type_text: "Response: Add Dataset Action"
+  - wait_for_idle: {}
+  - screenshot: {name: m10-06-palette-add-action}
+  - key: escape
+  - audit: {themes: [one-dark, one-light], sizes: [default, min]}

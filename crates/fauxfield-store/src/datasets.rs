@@ -256,6 +256,26 @@ pub struct RouteRef {
     pub path: String,
 }
 
+/// One Dataset action step of a Response (M10.06).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ActionRef {
+    pub route_id: String,
+    pub response_id: String,
+    /// Index in the Response's `actions` list.
+    pub step: usize,
+    pub op: String,
+}
+
+/// One Rule that reads a Dataset (`dataset` or `dataset_count` target, M10.06).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct RuleRef {
+    pub route_id: String,
+    pub response_id: String,
+    pub rule: usize,
+    pub target: String,
+    pub key: String,
+}
+
 /// A free-text use of `data.<name>` (not rewritten by rename).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct TextRef {
@@ -267,6 +287,10 @@ pub struct TextRef {
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct DatasetRefs {
     pub routes: Vec<RouteRef>,
+    /// Response actions that write the Dataset.
+    pub actions: Vec<ActionRef>,
+    /// Rules that read the Dataset.
+    pub rules: Vec<RuleRef>,
     pub free_text: Vec<TextRef>,
     pub seed_files: Vec<String>,
     pub state_file: Option<String>,
@@ -275,7 +299,10 @@ pub struct DatasetRefs {
 impl DatasetRefs {
     /// Structured consumers (a rename rewrites these; a delete is blocked by them).
     pub fn is_unused(&self) -> bool {
-        self.routes.is_empty() && self.free_text.is_empty()
+        self.routes.is_empty()
+            && self.actions.is_empty()
+            && self.rules.is_empty()
+            && self.free_text.is_empty()
     }
 }
 
@@ -353,6 +380,30 @@ impl Store {
                 hit(format!("route {} header {k}", r.id), v);
             }
             for resp in &r.responses {
+                for (i, a) in resp.actions.iter().enumerate() {
+                    if a.dataset == name {
+                        refs.actions.push(ActionRef {
+                            route_id: r.id.clone(),
+                            response_id: resp.id.clone(),
+                            step: i,
+                            op: a.op.clone(),
+                        });
+                    }
+                }
+                for (i, rule) in resp.rules.iter().enumerate() {
+                    let key = rule.key.as_deref().unwrap_or("");
+                    if matches!(rule.target.as_str(), "dataset" | "dataset_count")
+                        && fauxfield_model::rules::dataset_rule_name(key) == name
+                    {
+                        refs.rules.push(RuleRef {
+                            route_id: r.id.clone(),
+                            response_id: resp.id.clone(),
+                            rule: i,
+                            target: rule.target.clone(),
+                            key: key.to_string(),
+                        });
+                    }
+                }
                 if let Some(b) = &resp.body {
                     hit(format!("route {} response {} body", r.id, resp.id), b);
                 }
@@ -553,6 +604,45 @@ impl Store {
                         rewritten.push(id.to_string());
                     }
                 }
+                let rid = r.get("id").and_then(Item::as_str).unwrap_or("").to_string();
+                let Some(resps) = r
+                    .get_mut("responses")
+                    .and_then(Item::as_array_of_tables_mut)
+                else {
+                    continue;
+                };
+                for resp in resps.iter_mut() {
+                    let mut hit = false;
+                    if let Some(acts) = resp
+                        .get_mut("actions")
+                        .and_then(Item::as_array_of_tables_mut)
+                    {
+                        for a in acts.iter_mut() {
+                            if a.get("dataset").and_then(Item::as_str) == Some(old) {
+                                a["dataset"] = value(new.as_str());
+                                hit = true;
+                            }
+                        }
+                    }
+                    if let Some(rules) =
+                        resp.get_mut("rules").and_then(Item::as_array_of_tables_mut)
+                    {
+                        for rule in rules.iter_mut() {
+                            let tgt = rule.get("target").and_then(Item::as_str).unwrap_or("");
+                            let key = rule.get("key").and_then(Item::as_str).unwrap_or("");
+                            if matches!(tgt, "dataset" | "dataset_count")
+                                && fauxfield_model::rules::dataset_rule_name(key) == old
+                            {
+                                let nk = format!("{new}{}", &key[old.len()..]);
+                                rule["key"] = value(nk);
+                                hit = true;
+                            }
+                        }
+                    }
+                    if hit && !rewritten.contains(&rid) {
+                        rewritten.push(rid.clone());
+                    }
+                }
             }
             Ok(())
         })?;
@@ -571,8 +661,10 @@ impl Store {
         let refs = self.dataset_references(server_id, name)?;
         if !opts.force && !refs.is_unused() {
             return Err(StoreError::Invalid(format!(
-                "Dataset '{name}' is still used by {} Route(s) and {} template reference(s); pass force to delete it anyway.",
+                "Dataset '{name}' is still used by {} Route(s), {} action(s), {} rule(s) and {} template reference(s); pass force to delete it anyway.",
                 refs.routes.len(),
+                refs.actions.len(),
+                refs.rules.len(),
                 refs.free_text.len()
             )));
         }

@@ -1,6 +1,7 @@
 //! Fauxfield engine (SPEC §3.4, §5): one hyper listener per server, exact route matching,
 //! static responses, a recording ring buffer, and an event stream. Must not depend on GPUI.
 
+pub mod actions;
 mod cors;
 mod data;
 mod engine;
@@ -19,6 +20,7 @@ mod time;
 pub mod tls;
 pub mod vars;
 
+pub use actions::DatasetChange;
 pub use data::{DatasetInfo, PLAIN_FIELD_KINDS, crud_seed_template, source_kind};
 pub use engine::{
     Engine, EngineConfig, EngineError, EngineEvent, ServerInfo, ServerStatus, TrafficFilter,

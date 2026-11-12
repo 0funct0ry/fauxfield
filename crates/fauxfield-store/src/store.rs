@@ -926,6 +926,95 @@ impl Store {
         })
     }
 
+    /// Append (or with `index`, replace) a Dataset action step on a Response (M10.06).
+    pub fn set_action(
+        &self,
+        response_id: &str,
+        index: Option<usize>,
+        action: &fauxfield_model::DatasetAction,
+    ) -> Result<usize, StoreError> {
+        let t = Target::Response(response_id.into());
+        let file = self
+            .file_of(&t)
+            .ok_or_else(|| StoreError::NotFound(response_id.into()))?;
+        let mut out = 0;
+        self.edit(&file, |d| {
+            let resp = resolve(d, &t).ok_or_else(|| StoreError::NotFound(response_id.into()))?;
+            let tbl = action_table(action)?;
+            let list = actions_mut(resp)?;
+            match index {
+                Some(i) if i < list.len() => {
+                    let (mut v, pos) = take_all(list);
+                    v[i] = tbl;
+                    put_all(list, v, pos);
+                    out = i;
+                }
+                Some(i) => return Err(StoreError::NotFound(format!("action {i}"))),
+                None => {
+                    out = list.len();
+                    list.push(tbl);
+                }
+            }
+            renumber(d);
+            Ok(())
+        })?;
+        Ok(out)
+    }
+
+    pub fn delete_action(&self, response_id: &str, index: usize) -> Result<(), StoreError> {
+        let t = Target::Response(response_id.into());
+        let file = self
+            .file_of(&t)
+            .ok_or_else(|| StoreError::NotFound(response_id.into()))?;
+        self.edit(&file, |d| {
+            let resp = resolve(d, &t).ok_or_else(|| StoreError::NotFound(response_id.into()))?;
+            let list = actions_mut(resp)?;
+            if index >= list.len() {
+                return Err(StoreError::NotFound(format!("action {index}")));
+            }
+            list.remove(index);
+            if list.is_empty() {
+                resp.remove("actions");
+            }
+            Ok(())
+        })
+    }
+
+    /// Move an action from index `from` to `to` (after removal) within its Response.
+    pub fn move_action(&self, response_id: &str, from: usize, to: usize) -> Result<(), StoreError> {
+        let t = Target::Response(response_id.into());
+        let file = self
+            .file_of(&t)
+            .ok_or_else(|| StoreError::NotFound(response_id.into()))?;
+        self.edit(&file, |d| {
+            let resp = resolve(d, &t).ok_or_else(|| StoreError::NotFound(response_id.into()))?;
+            let list = actions_mut(resp)?;
+            if from >= list.len() || to >= list.len() {
+                return Err(StoreError::NotFound(format!("action {from}/{to}")));
+            }
+            let (mut v, pos) = take_all(list);
+            let a = v.remove(from);
+            v.insert(to, a);
+            put_all(list, v, pos);
+            renumber(d);
+            Ok(())
+        })
+    }
+
+    /// `None` removes the key (default 409).
+    pub fn set_action_error_status(
+        &self,
+        response_id: &str,
+        status: Option<u16>,
+    ) -> Result<(), StoreError> {
+        let t = Target::Response(response_id.into());
+        self.set_item(
+            &t,
+            "action_error_status",
+            status.map(|s| value(i64::from(s))),
+        )
+    }
+
     /// Set `disabled` (the key is removed when false).
     pub fn set_response_disabled(
         &self,
@@ -1682,6 +1771,23 @@ fn rules_mut(resp: &mut Table) -> Result<&mut ArrayOfTables, StoreError> {
     resp["rules"]
         .as_array_of_tables_mut()
         .ok_or_else(|| StoreError::Invalid("rules is not a table array".into()))
+}
+
+fn actions_mut(resp: &mut Table) -> Result<&mut ArrayOfTables, StoreError> {
+    if resp.get("actions").is_none() {
+        resp["actions"] = Item::ArrayOfTables(ArrayOfTables::new());
+    }
+    resp["actions"]
+        .as_array_of_tables_mut()
+        .ok_or_else(|| StoreError::Invalid("actions is not a table array".into()))
+}
+
+fn action_table(a: &fauxfield_model::DatasetAction) -> Result<Table, StoreError> {
+    let text = toml::to_string(a).map_err(|e| StoreError::Invalid(format!("bad action: {e}")))?;
+    let doc: DocumentMut = text
+        .parse()
+        .map_err(|e| StoreError::Invalid(format!("bad action: {e}")))?;
+    Ok(doc.as_table().clone())
 }
 
 fn rule_table(r: &Rule) -> Result<Table, StoreError> {

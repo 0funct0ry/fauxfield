@@ -6,8 +6,10 @@ expression: v
   "deleted": "purchases",
   "live": false,
   "references": {
+    "actions": [],
     "free_text": [],
     "routes": [],
+    "rules": [],
     "seed_files": [],
     "state_file": null
   },

@@ -338,6 +338,18 @@ pub fn data(action: DataAction) -> i32 {
                 for r in &refs.routes {
                     println!("route {} {} {}", r.id, r.method, r.path);
                 }
+                for a in &refs.actions {
+                    println!(
+                        "action {} {} step {} ({})",
+                        a.route_id, a.response_id, a.step, a.op
+                    );
+                }
+                for r in &refs.rules {
+                    println!(
+                        "rule {} {} #{} {} {}",
+                        r.route_id, r.response_id, r.rule, r.target, r.key
+                    );
+                }
                 for t in &refs.free_text {
                     println!("template {}", t.location);
                 }

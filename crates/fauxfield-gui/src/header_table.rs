@@ -562,6 +562,8 @@ mod tests {
             disabled: false,
             rules_logic: "and".into(),
             rules: vec![],
+            actions: vec![],
+            action_error_status: String::new(),
             content_type: "application/json".into(),
             delay: String::new(),
             fault: String::new(),

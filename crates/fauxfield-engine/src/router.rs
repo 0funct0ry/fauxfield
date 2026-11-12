@@ -148,7 +148,9 @@ fn expand(server: &Server) -> Vec<Route> {
             continue;
         }
         let base = r.path.trim_end_matches('/');
-        for (m, suffix) in CRUD_OPS {
+        // PUT and PATCH on the collection path serve singleton (object) Datasets; an array
+        // Dataset answers them with 405 (M10.06).
+        for (m, suffix) in CRUD_OPS.into_iter().chain([("PUT", ""), ("PATCH", "")]) {
             let mut c = r.clone();
             c.method = m.into();
             c.path = format!("{base}{suffix}");

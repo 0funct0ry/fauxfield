@@ -4,8 +4,18 @@ use crate::Rule;
 
 pub const RESPONSE_MODES: &[&str] = &["rules", "sequential", "random", "disabled"];
 pub const TARGETS: &[&str] = &[
-    "header", "query", "cookie", "param", "body", "method", "path", "ip", "variable", "dataset",
+    "header",
+    "query",
+    "cookie",
+    "param",
+    "body",
+    "method",
+    "path",
+    "ip",
+    "variable",
+    "dataset",
     "count",
+    "dataset_count",
 ];
 pub const OPS: &[&str] = &[
     "eq",
@@ -28,7 +38,7 @@ pub const OPS: &[&str] = &[
 pub fn needs_key(target: &str) -> bool {
     matches!(
         target,
-        "header" | "query" | "cookie" | "param" | "variable" | "dataset"
+        "header" | "query" | "cookie" | "param" | "variable" | "dataset" | "dataset_count"
     )
 }
 
@@ -47,6 +57,22 @@ pub fn check_rule(r: &Rule) -> Result<(), (&'static str, String)> {
     if r.target == "body" && key.starts_with('$') && serde_json_path::JsonPath::parse(key).is_err()
     {
         return Err(("E048", format!("invalid JSONPath `{key}`")));
+    }
+    if r.target == "dataset"
+        && key
+            .split_once('.')
+            .is_none_or(|(n, p)| n.is_empty() || p.is_empty())
+    {
+        return Err((
+            "E046",
+            format!("dataset rule key `{key}` must look like `name.$.path` or `name.field`"),
+        ));
+    }
+    if r.target == "dataset_count" && dataset_count_name(key).is_empty() {
+        return Err((
+            "E046",
+            "dataset_count key must start with a Dataset name".into(),
+        ));
     }
     let needs_value = !matches!(r.op.as_str(), "exists" | "absent");
     if needs_value && r.value.is_none() {
@@ -79,4 +105,14 @@ pub fn value_f64(v: &toml::Value) -> Option<f64> {
         toml::Value::String(s) => s.trim().parse().ok(),
         _ => None,
     }
+}
+
+/// Dataset name of a `dataset` rule key (`orders.$.status` -> `orders`).
+pub fn dataset_rule_name(key: &str) -> &str {
+    key.split(['.', '?']).next().unwrap_or("")
+}
+
+/// Dataset name of a `dataset_count` rule key (`orders?status=open&total_gte=5` -> `orders`).
+pub fn dataset_count_name(key: &str) -> &str {
+    dataset_rule_name(key)
 }

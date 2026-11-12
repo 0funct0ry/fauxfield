@@ -274,9 +274,69 @@ pub struct Response {
     #[serde(default)]
     #[schemars(with = "BTreeMap<String, String>")]
     pub headers: indexmap::IndexMap<String, String>,
+    /// Dataset actions (SPEC §6.3): ordered, atomic as a group, run after this Response is
+    /// chosen and before the body renders.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<DatasetAction>,
+    /// Status returned when an action fails and the group is rolled back (default 409).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action_error_status: Option<u16>,
     #[serde(flatten)]
     #[schemars(skip)]
     pub extra: Extra,
+}
+
+/// Operations of a [`DatasetAction`].
+pub const ACTION_OPS: &[&str] = &[
+    "insert",
+    "update",
+    "delete",
+    "delete_where",
+    "set",
+    "increment",
+    "reset",
+];
+
+/// One step of a Response's Dataset actions (SPEC §6.3). Every input is a Tera expression over
+/// the request (`request.params.id`, `request.body.qty`, `action.0.id`, ...).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+pub struct DatasetAction {
+    /// Name of a Dataset of the same Server.
+    pub dataset: String,
+    /// One of [`ACTION_OPS`].
+    pub op: String,
+    /// Row key for `update`, `delete`, `set`, `increment` (array Datasets).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    /// `delete_where`: CRUD-style filters, e.g. `stock_gte = "{{ request.query.min }}"`.
+    #[serde(default, skip_serializing_if = "indexmap::IndexMap::is_empty")]
+    #[schemars(with = "BTreeMap<String, String>")]
+    pub filter: indexmap::IndexMap<String, String>,
+    /// `insert`/`update`: template rendering a JSON object. Default: the request body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub row: Option<String>,
+    /// `insert`/`update`: fields merged over `row`; values are Tera expressions.
+    #[serde(default, skip_serializing_if = "indexmap::IndexMap::is_empty")]
+    #[schemars(with = "BTreeMap<String, String>")]
+    pub fields: indexmap::IndexMap<String, String>,
+    /// `update` on a row or singleton: `merge` (default) or `replace`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    /// `set`/`increment`: dotted field path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+    /// `set`: the new value (Tera expression; JSON when it parses as JSON).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    /// `increment`: amount, default 1; may be negative.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
+    /// Tera expression evaluated after the step with `result` in scope; `true` aborts the group.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fail_if: Option<String>,
+    /// true: step skipped.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub disabled: bool,
 }
 
 /// One condition of a Response (SPEC §5.4). Values are plain strings, numbers or arrays until M6.

@@ -1668,6 +1668,28 @@ fn m5_rules_modes_reorder_presets_and_sample(cx: &mut TestAppContext) {
     view.update(cx, |s, cx| s.edit_rule(&first, 0, cx, |r| r.negate = true));
     assert!(rules(&view, cx)[0].negate);
 
+    // Dataset actions (M10.06): add, edit, reorder-safe delete.
+    let ds = read(&view, cx, |s| s.response_datasets(&first));
+    if let Some(name) = ds.first() {
+        let acts = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
+            read(view, cx, |s| s.find_response(&first).unwrap().2.actions)
+        };
+        view.update(cx, |s, cx| s.add_dataset_action(&first, cx));
+        assert_eq!(acts(&view, cx).len(), 1);
+        assert_eq!(&acts(&view, cx)[0].dataset, name);
+        view.update(cx, |s, cx| {
+            s.edit_action(&first, 0, cx, |a| {
+                a.op = "increment".into();
+                a.field = Some("stock".into());
+            })
+        });
+        assert_eq!(acts(&view, cx)[0].op, "increment");
+        view.update(cx, |s, cx| {
+            s.store_op(cx, |st| st.delete_action(&first, 0));
+        });
+        assert!(acts(&view, cx).is_empty());
+    }
+
     // Response mode, disable, reorder, preset.
     view.update(cx, |s, cx| {
         s.set_response_mode_value("rt_users_get", "sequential", cx)

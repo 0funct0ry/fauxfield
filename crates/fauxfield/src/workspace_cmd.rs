@@ -649,6 +649,7 @@ pub fn render(a: RenderArgs) -> i32 {
         url,
         headers,
         body: a.body.clone(),
+        datasets: None,
     };
     let p = fauxfield_engine::preview(&store.root(), &server, route, resp, &sample, None);
     if a.ws.json {

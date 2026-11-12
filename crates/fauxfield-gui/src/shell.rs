@@ -500,6 +500,8 @@ pub struct Shell {
     pub(crate) body_diag: HashMap<String, (u64, bool)>,
     /// Response pane sub-tab per Response (0 Body, 1 Headers); runtime-only.
     pub(crate) resp_sub: HashMap<String, usize>,
+    /// Dataset body source form per Response; present = the source is shown (M10.06).
+    pub(crate) ds_read: HashMap<String, crate::actions_ui::DsRead>,
     pub(crate) lc: crate::lifecycle::Lifecycle,
     /// M3.2: where the menu is drawn, the last context, the last native model, and the seams.
     pub(crate) menu_style: crate::menu::MenuStyle,
@@ -717,6 +719,7 @@ impl Shell {
             preview_samples: HashMap::new(),
             body_diag: HashMap::new(),
             resp_sub: HashMap::new(),
+            ds_read: HashMap::new(),
             lc: Default::default(),
             menu_style: crate::menu::menu_style(),
             menu_ctx: None,
@@ -3323,6 +3326,10 @@ impl Render for Shell {
                     this.store_op(cx, |s| s.set_default_response(&r));
                 }
                 None => this.notify("Open a route first.".into(), cx),
+            },
+            AddDatasetAction => |this, _w, cx| match this.current_response_id() {
+                Some(r) => this.add_dataset_action(&r, cx),
+                None => this.notify("Open a Response first.".into(), cx),
             },
             SendTest => |this, w, cx| {
                 // Cmd+Enter is also "open pinned" inside Quick Search.

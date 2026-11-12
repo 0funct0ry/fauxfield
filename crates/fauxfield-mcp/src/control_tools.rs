@@ -223,7 +223,7 @@ pub fn register_control_tools(r: &mut Registry, provider: ControlProvider) {
     let p = provider.clone();
     r.register(ToolDef::new::<SendTest>(
         "send_test_request",
-        "Send one HTTP request to a running Server over loopback and return the response.",
+        "Send one HTTP request to a running Server over loopback and return the response and the Dataset changes its actions made.",
         ToolClass::Execute,
         move |m| -> ToolFuture {
             let p = p.clone();
@@ -246,6 +246,7 @@ pub fn register_control_tools(r: &mut Registry, provider: ControlProvider) {
                     "status": resp.status,
                     "headers": resp.headers,
                     "body": resp.body,
+                    "dataset_changes": resp.dataset_changes,
                 }))
             })
         },

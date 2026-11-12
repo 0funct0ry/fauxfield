@@ -935,13 +935,26 @@ impl Engine {
         } else {
             target
         };
-        testreq::send(
+        let before = rt.ring.lock().unwrap().back().map(|r| r.id);
+        let mut res = testreq::send(
             target,
             req,
             https.then(|| crate::tls::client_config(self.inner.cfg.data_dir.as_deref())),
         )
         .await
-        .map_err(EngineError::Request)
+        .map_err(EngineError::Request)?;
+        // The Recording of this request carries the Dataset changes its actions made.
+        res.dataset_changes = rt
+            .ring
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .take_while(|r| Some(r.id) != before)
+            .find(|r| r.source == "test" && r.method == req.method)
+            .map(|r| r.dataset_changes.clone())
+            .unwrap_or_default();
+        Ok(res)
     }
 
     /// Base URL of a running server, for cURL.
@@ -1170,6 +1183,7 @@ async fn handle(
     let mut trace = None;
     let mut chosen: (String, String) = Default::default();
     let mut render_error: Option<String> = None;
+    let mut dataset_changes: Vec<crate::actions::DatasetChange> = vec![];
     let (route_id, (mut status, mut headers, mut bytes)) = match &route {
         _ if preflight => ("cors-preflight".to_string(), (204, vec![], Bytes::new())),
         _ if rate_limited => {
@@ -1376,27 +1390,74 @@ async fn handle(
                 None => (200, vec![], Bytes::new()),
                 Some(resp) => {
                     chosen = (resp.id.clone(), resp.name.clone().unwrap_or_default());
-                    let (lo, hi) = resp
-                        .delay_ms
-                        .as_ref()
-                        .and_then(fauxfield_model::Delay::bounds)
-                        .unwrap_or((0, 0));
-                    delay_ms = sim::sample(lo, hi);
-                    if delay_ms > 0 {
-                        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                    let mut action_failed: Option<(u16, String)> = None;
+                    if resp.actions.iter().any(|a| !a.disabled) {
+                        let env = crate::actions::Env {
+                            root: &engine.inner.cfg.root,
+                            server_id: &id,
+                            server: &server_def,
+                            route_id: &r.id,
+                            counter: call,
+                        };
+                        let res = {
+                            let mut store = rt.data.lock().unwrap();
+                            crate::actions::run(&mut store, &env, &resp.actions, &mut tpl.context)
+                        };
+                        match res {
+                            Ok(ch) => {
+                                for c in &ch {
+                                    let n = rt
+                                        .data
+                                        .lock()
+                                        .unwrap()
+                                        .get(&c.dataset)
+                                        .map_or(0, |s| s.len());
+                                    let _ = engine.inner.events.send(EngineEvent::Dataset {
+                                        server_id: id.clone(),
+                                        name: c.dataset.clone(),
+                                        rows: n,
+                                    });
+                                }
+                                dataset_changes = ch;
+                            }
+                            Err(e) => {
+                                action_failed = Some((
+                                    resp.action_error_status.unwrap_or(409),
+                                    format!("action {} failed: {}", e.step, e.message),
+                                ));
+                            }
+                        }
                     }
-                    if let Some(f) = resp.fault.as_deref().and_then(Fault::parse)
-                        && sim::roll(resp.fault_rate.unwrap_or(1.0))
-                    {
-                        fault = Some((f, ""));
-                    }
-                    {
-                        let t0 = Instant::now();
-                        let out =
-                            crate::render::build(&engine.inner.cfg.root, r, resp, &tpl, &path);
-                        render_us = t0.elapsed().as_micros() as u64;
-                        render_error = out.error;
-                        (out.status, out.headers, out.body)
+                    if let Some((status, msg)) = action_failed {
+                        render_error = Some(msg.clone());
+                        let body = serde_json::json!({
+                            "type": "about:blank", "title": "Dataset action failed",
+                            "status": status, "detail": msg, "instance": path,
+                        });
+                        crate::engine::json_response(status, body, "application/problem+json")
+                    } else {
+                        let (lo, hi) = resp
+                            .delay_ms
+                            .as_ref()
+                            .and_then(fauxfield_model::Delay::bounds)
+                            .unwrap_or((0, 0));
+                        delay_ms = sim::sample(lo, hi);
+                        if delay_ms > 0 {
+                            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                        }
+                        if let Some(f) = resp.fault.as_deref().and_then(Fault::parse)
+                            && sim::roll(resp.fault_rate.unwrap_or(1.0))
+                        {
+                            fault = Some((f, ""));
+                        }
+                        {
+                            let t0 = Instant::now();
+                            let out =
+                                crate::render::build(&engine.inner.cfg.root, r, resp, &tpl, &path);
+                            render_us = t0.elapsed().as_micros() as u64;
+                            render_error = out.error;
+                            (out.status, out.headers, out.body)
+                        }
                     }
                 }
             };
@@ -1503,6 +1564,7 @@ async fn handle(
             truncated: req_cut || resp_cut,
             error: render_error,
             fault: fault_label,
+            dataset_changes,
             source: if is_test { "test" } else { "mock" }.into(),
         },
     );

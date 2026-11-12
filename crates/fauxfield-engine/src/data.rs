@@ -43,7 +43,7 @@ pub(crate) struct DatasetRt {
     /// Definition and seed-file signature at load time (see `sig`).
     sig: String,
     pub rows: Value,
-    counter: u64,
+    pub(crate) counter: u64,
     pub error: Option<String>,
 }
 
@@ -186,7 +186,7 @@ impl DatasetRt {
         }
     }
 
-    fn persist(&self, root: &Path, server_id: &str) {
+    pub(crate) fn persist(&self, root: &Path, server_id: &str) {
         if !self.def.persist {
             return;
         }
@@ -205,7 +205,7 @@ impl DatasetRt {
         }
     }
 
-    fn next_id(&mut self) -> Value {
+    pub(crate) fn next_id(&mut self) -> Value {
         match self.def.id_strategy.as_deref().unwrap_or("uuid") {
             "increment" => {
                 self.counter = self
@@ -451,7 +451,7 @@ fn json_out(status: u16, v: &Value, mut extra: Vec<(String, String)>) -> Out {
     (status, h, Bytes::from(v.to_string()))
 }
 
-fn scalar_text(v: &Value) -> Option<String> {
+pub(crate) fn scalar_text(v: &Value) -> Option<String> {
     match v {
         Value::String(s) => Some(s.clone()),
         Value::Number(n) => Some(n.to_string()),
@@ -460,7 +460,7 @@ fn scalar_text(v: &Value) -> Option<String> {
     }
 }
 
-fn field<'a>(item: &'a Value, path: &str) -> Option<&'a Value> {
+pub(crate) fn field<'a>(item: &'a Value, path: &str) -> Option<&'a Value> {
     let mut cur = item;
     for seg in path.split('.') {
         cur = cur.get(seg)?;
@@ -468,7 +468,7 @@ fn field<'a>(item: &'a Value, path: &str) -> Option<&'a Value> {
     Some(cur)
 }
 
-fn cmp_values(a: Option<&Value>, b: Option<&Value>) -> Ordering {
+pub(crate) fn cmp_values(a: Option<&Value>, b: Option<&Value>) -> Ordering {
     match (a, b) {
         (None | Some(Value::Null), None | Some(Value::Null)) => Ordering::Equal,
         (None | Some(Value::Null), _) => Ordering::Less,
@@ -492,7 +492,7 @@ fn cmp_query(stored: &Value, q: &str) -> Option<Ordering> {
 }
 
 #[derive(Debug)]
-enum Op {
+pub(crate) enum Op {
     Eq,
     Ne,
     Gte,
@@ -500,7 +500,7 @@ enum Op {
     Like,
 }
 
-fn parse_filter(key: &str) -> (&str, Op) {
+pub(crate) fn parse_filter(key: &str) -> (&str, Op) {
     for (suffix, op) in [
         ("_gte", Op::Gte),
         ("_lte", Op::Lte),
@@ -516,7 +516,7 @@ fn parse_filter(key: &str) -> (&str, Op) {
     (key, Op::Eq)
 }
 
-fn matches(item: &Value, key: &str, op: &Op, want: &str) -> bool {
+pub(crate) fn matches(item: &Value, key: &str, op: &Op, want: &str) -> bool {
     let got = field(item, key);
     match op {
         Op::Eq => got.is_some_and(|g| {
@@ -673,7 +673,7 @@ fn list(ds: &DatasetRt, base: &str, query: &[(String, String)], page_size: Optio
     json_out(200, &Value::Array(out), headers)
 }
 
-fn position(rows: &[Value], key: &str, id: &str) -> Option<usize> {
+pub(crate) fn position(rows: &[Value], key: &str, id: &str) -> Option<usize> {
     rows.iter()
         .position(|r| r.get(key).and_then(scalar_text).as_deref() == Some(id))
 }
@@ -746,11 +746,29 @@ pub(crate) fn handle(ds: &mut DatasetRt, c: &Call<'_>) -> (Out, bool) {
     let Value::Array(_) = &ds.rows else {
         return match (c.method, c.id) {
             ("GET", None) => (json_out(200, &ds.rows, vec![]), false),
+            ("PUT" | "PATCH", None) => {
+                let body = match parse() {
+                    Ok(b) => b,
+                    Err(o) => return (o, false),
+                };
+                let mut next = ds.rows.clone();
+                if c.method == "PUT" {
+                    next = body;
+                } else {
+                    merge_patch(&mut next, &body);
+                }
+                if let Some(o) = validate(c.schema.as_ref(), &next, c.path) {
+                    return (o, false);
+                }
+                ds.rows = next;
+                ds.persist(c.root, c.server_id);
+                (json_out(200, &ds.rows, vec![]), true)
+            }
             _ => (
                 problem(
                     405,
                     "Method not allowed",
-                    "This dataset is a singleton object; only GET is supported.",
+                    "This dataset is a singleton object; GET, PUT and PATCH are supported.",
                     c.path,
                 ),
                 false,
@@ -929,6 +947,79 @@ pub fn crud_seed_template(fields: &[(String, String)], rows: usize) -> Result<St
         rows + 1,
         parts.join(", ")
     ))
+}
+
+/// Indices of the rows of an array Dataset matching CRUD-style filters (`stock_gte`, `name_like`).
+pub(crate) fn matching(rows: &Value, filters: &[(String, String)]) -> Vec<usize> {
+    let Value::Array(a) = rows else {
+        return vec![];
+    };
+    a.iter()
+        .enumerate()
+        .filter(|(_, r)| {
+            filters.iter().all(|(k, v)| {
+                let (f, op) = parse_filter(k);
+                matches(r, f, &op, v)
+            })
+        })
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// Parse `a=1&b_gte=2` into filter pairs (values percent-decoded).
+pub(crate) fn parse_filters(q: &str) -> Vec<(String, String)> {
+    form_urlencoded::parse(q.trim_start_matches('?').as_bytes())
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect()
+}
+
+/// Rows of an array Dataset after CRUD-style filters, sort fields (comma separated,
+/// `order` per field `asc`/`desc`) and pagination (`page` from 1, `limit` 0 = all).
+pub(crate) fn query(
+    rows: &Value,
+    filter: &str,
+    sort: &str,
+    order: &str,
+    page: usize,
+    limit: usize,
+) -> Vec<Value> {
+    let Value::Array(a) = rows else {
+        return vec![];
+    };
+    let idx = matching(rows, &parse_filters(filter));
+    let mut items: Vec<&Value> = idx.into_iter().map(|i| &a[i]).collect();
+    let fields: Vec<&str> = sort
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+    let orders: Vec<String> = order.split(',').map(|s| s.trim().to_lowercase()).collect();
+    if !fields.is_empty() {
+        items.sort_by(|x, y| {
+            for (i, f) in fields.iter().enumerate() {
+                let desc = orders
+                    .get(i)
+                    .or(orders.first())
+                    .is_some_and(|o| o == "desc");
+                let mut o = cmp_values(field(x, f), field(y, f));
+                if desc {
+                    o = o.reverse();
+                }
+                if o != Ordering::Equal {
+                    return o;
+                }
+            }
+            Ordering::Equal
+        });
+    }
+    if limit > 0 {
+        items = items
+            .into_iter()
+            .skip((page.max(1) - 1) * limit)
+            .take(limit)
+            .collect();
+    }
+    items.into_iter().cloned().collect()
 }
 
 #[cfg(test)]

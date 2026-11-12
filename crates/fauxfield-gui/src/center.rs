@@ -1636,6 +1636,24 @@ impl Shell {
                 col = col.child(line(format!("{k} ="), v.clone()));
             }
         }
+        if !rec.dataset_changes.is_empty() {
+            col = col.child(
+                div()
+                    .id("traffic-dataset-changes")
+                    .child(section("DATASET CHANGES")),
+            );
+            for c in &rec.dataset_changes {
+                let keys = if c.keys.is_empty() {
+                    String::new()
+                } else {
+                    format!(" [{}]", c.keys.join(", "))
+                };
+                col = col.child(line(
+                    c.op.clone(),
+                    format!("{}: {} row(s){keys}", c.dataset, c.rows),
+                ));
+            }
+        }
         if let Some(tr) = &rec.trace {
             col = col
                 .child(

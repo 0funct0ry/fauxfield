@@ -1,12 +1,15 @@
 ---
 source: crates/fauxfield/tests/cli.rs
+assertion_line: 103
 expression: v
 ---
 {
   "dataset": "orders",
   "references": {
+    "actions": [],
     "free_text": [],
     "routes": [],
+    "rules": [],
     "seed_files": [],
     "state_file": null
   },

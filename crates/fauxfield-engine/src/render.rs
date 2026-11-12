@@ -241,6 +241,9 @@ pub struct SampleRequest {
     pub headers: Vec<(String, String)>,
     #[serde(default)]
     pub body: String,
+    /// Sample Dataset state for `data.<name>` (name -> rows); empty means no Datasets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub datasets: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -308,6 +311,10 @@ pub fn preview_with(
         vc,
         Some(&route.id),
     );
+    let mut ctx = ctx;
+    if let Some(d) = &sample.datasets {
+        ctx["data"] = d.clone();
+    }
     let env = TplEnv {
         context: ctx,
         seed: server.fake_seed,

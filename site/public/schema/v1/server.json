@@ -114,6 +114,91 @@
       ],
       "type": "object"
     },
+    "DatasetAction": {
+      "description": "One step of a Response's Dataset actions (SPEC §6.3). Every input is a Tera expression over\nthe request (`request.params.id`, `request.body.qty`, `action.0.id`, ...).",
+      "properties": {
+        "by": {
+          "description": "`increment`: amount, default 1; may be negative.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dataset": {
+          "description": "Name of a Dataset of the same Server.",
+          "type": "string"
+        },
+        "disabled": {
+          "description": "true: step skipped.",
+          "type": "boolean"
+        },
+        "fail_if": {
+          "description": "Tera expression evaluated after the step with `result` in scope; `true` aborts the group.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "field": {
+          "description": "`set`/`increment`: dotted field path.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fields": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "`insert`/`update`: fields merged over `row`; values are Tera expressions.",
+          "type": "object"
+        },
+        "filter": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "`delete_where`: CRUD-style filters, e.g. `stock_gte = \"{{ request.query.min }}\"`.",
+          "type": "object"
+        },
+        "key": {
+          "description": "Row key for `update`, `delete`, `set`, `increment` (array Datasets).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mode": {
+          "description": "`update` on a row or singleton: `merge` (default) or `replace`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "op": {
+          "description": "One of [`ACTION_OPS`].",
+          "type": "string"
+        },
+        "row": {
+          "description": "`insert`/`update`: template rendering a JSON object. Default: the request body.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "description": "`set`: the new value (Tera expression; JSON when it parses as JSON).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "dataset",
+        "op"
+      ],
+      "type": "object"
+    },
     "DatasetColumn": {
       "description": "One declared column of a Dataset (M10.04).",
       "properties": {
@@ -566,6 +651,23 @@
     },
     "Response": {
       "properties": {
+        "action_error_status": {
+          "description": "Status returned when an action fails and the group is rolled back (default 409).",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "actions": {
+          "description": "Dataset actions (SPEC §6.3): ordered, atomic as a group, run after this Response is\nchosen and before the body renders.",
+          "items": {
+            "$ref": "#/$defs/DatasetAction"
+          },
+          "type": "array"
+        },
         "body": {
           "default": null,
           "type": [
