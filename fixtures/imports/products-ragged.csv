@@ -1,0 +1,5 @@
+id,name,price,in_stock
+1,Widget,9.99,true
+2,Gadget,19.5,false
+3,Gizmo
+4,"Thing, big",4,true

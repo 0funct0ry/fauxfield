@@ -10,6 +10,7 @@ pub mod code_editor;
 pub mod combo_box;
 pub mod data_table;
 pub mod dataset_edit;
+pub mod dataset_import;
 pub mod dataset_ui;
 #[cfg(feature = "dev-mcp")]
 pub mod dev_mcp;

@@ -781,6 +781,7 @@ impl Shell {
             PromptAction::NewDataset { .. }
             | PromptAction::RenameDataset { .. }
             | PromptAction::NewDatasetTableName { .. }
+            | PromptAction::ImportName { .. }
             | PromptAction::NewCrudName { .. } => {
                 let ok = !value.is_empty()
                     && value
@@ -788,6 +789,9 @@ impl Shell {
                         .all(|c| c.is_alphanumeric() || c == '_' || c == '-');
                 ok.then_some(())
                     .ok_or_else(|| "Use letters, digits, `_` and `-`.".to_string())
+            }
+            PromptAction::ImportOptions { .. } => {
+                crate::dataset_import::parse_import_choice(value).map(|_| ())
             }
             PromptAction::NewDatasetColumns { .. } => {
                 crate::dataset_edit::parse_columns(value).map(|_| ())

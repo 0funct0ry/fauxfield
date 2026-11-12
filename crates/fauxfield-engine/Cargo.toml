@@ -44,6 +44,8 @@ rustls-pki-types = "1"
 mime_guess = "2"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 time = "0.3"
+csv = "1"
+parquet = { version = "60", default-features = false, features = ["snap"] }
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -182,6 +182,15 @@ impl Shell {
                 Action("generate_dataset_rows")
             ))
             .child(crate::dev_id!(
+                toolbar_button(t, "ds-import")
+                    .child("Import…")
+                    .on_click(cx.listener(|this, _, w, cx| this.begin_import_existing(w, cx))),
+                "ds-import",
+                Button,
+                "Import",
+                Action("import_into_dataset")
+            ))
+            .child(crate::dev_id!(
                 toolbar_button(t, "ds-export")
                     .child("Export…")
                     .on_click(cx.listener(move |this, _, w, cx| { this.begin_export(&k2, w, cx) })),
@@ -522,11 +531,10 @@ impl Shell {
             .dataset_rows(&d.server_id, &d.name)
             .map_err(|x| x.to_string())
             .and_then(|rows| {
-                std::fs::write(
-                    path,
-                    serde_json::to_string_pretty(&rows).unwrap_or_default(),
-                )
-                .map_err(|x| format!("{path}: {x}"))
+                let fmt = fauxfield_engine::import::Format::detect(std::path::Path::new(path))
+                    .unwrap_or(fauxfield_engine::import::Format::Json);
+                fauxfield_engine::import::export(&rows, fmt)
+                    .and_then(|b| std::fs::write(path, b).map_err(|x| format!("{path}: {x}")))
             });
         match res {
             Ok(()) => self.notify(format!("Exported {} to {path}", d.name), cx),

@@ -119,6 +119,18 @@ pub enum PromptAction {
     GenerateRows {
         key: String,
     },
+    /// Name of the Dataset created from an imported file (M10.05).
+    ImportName {
+        server: String,
+        path: String,
+    },
+    /// `replace|append key=COL delim=X decimal=string COL:TYPE` (M10.05).
+    ImportOptions {
+        server: String,
+        name: String,
+        existing: bool,
+        path: String,
+    },
     NewEnvironment,
     RenameEnvironment {
         name: String,
@@ -222,6 +234,10 @@ impl PromptAction {
             PromptAction::AddColumn { .. } => {
                 "name:type, or name:type=generator (e.g. email:string=fake:internet.email)."
             }
+            PromptAction::ImportOptions { .. } => {
+                "replace or append; key=COL; delim=X; decimal=string; COL:TYPE overrides a CSV column (int, float, bool, string). The preview is in the notice."
+            }
+            PromptAction::ExportDataset { .. } => "Ends in .json, .csv or .parquet.",
             PromptAction::GenerateRows { .. } => {
                 "`bake` appends rows to the seed; `keep` regenerates them at each start (deterministic with fake_seed)."
             }
@@ -248,6 +264,8 @@ impl PromptAction {
             PromptAction::RenameColumn { .. } => "New column name",
             PromptAction::RemoveColumn { .. } => "Column to remove",
             PromptAction::GenerateRows { .. } => "Generate rows (count, bake or keep)",
+            PromptAction::ImportName { .. } => "Import file: new dataset name",
+            PromptAction::ImportOptions { .. } => "Import options",
             PromptAction::NewEnvironment => "New environment name",
             PromptAction::RenameEnvironment { .. } => "Environment name",
             PromptAction::SetVariable { key: None, .. } => "Variable (KEY=value)",
@@ -387,6 +405,8 @@ pub struct Shell {
     pub(crate) ds_gen: u64,
     /// Prompt to open right after the current one is applied (wizard steps).
     pub(crate) next_prompt: Option<(PromptAction, String)>,
+    /// Preview of the file being imported (M10.05), shown while its options prompt is open.
+    pub(crate) import_preview: Option<String>,
     pub(crate) traffic_selected: Option<usize>,
     pub(crate) route_sub: HashMap<String, usize>,
     /// Route Settings "Test a path" input per Route (runtime-only).
@@ -640,6 +660,7 @@ impl Shell {
             ds_row_targets: Default::default(),
             ds_gen: 0,
             next_prompt: None,
+            import_preview: None,
             traffic_selected: None,
             route_sub: HashMap::new(),
             test_path: HashMap::new(),
@@ -2760,6 +2781,38 @@ impl Shell {
             }
             PromptAction::RemoveColumn { key } => self.remove_column_now(&key, v.trim(), cx),
             PromptAction::GenerateRows { key } => self.generate_rows_now(&key, v.trim(), cx),
+            PromptAction::ImportName { server, path } => {
+                self.next_prompt = Some((
+                    PromptAction::ImportOptions {
+                        server,
+                        name: v.trim().to_string(),
+                        existing: false,
+                        path: path.clone(),
+                    },
+                    "replace".into(),
+                ));
+                match fauxfield_engine::import::read(
+                    std::path::Path::new(&path),
+                    &Default::default(),
+                ) {
+                    Ok(r) => {
+                        let t =
+                            crate::dataset_import::preview_text(std::path::Path::new(&path), &r);
+                        self.import_preview = Some(t.clone());
+                        self.notify(t, cx);
+                    }
+                    Err(m) => {
+                        self.next_prompt = None;
+                        self.notify(m, cx);
+                    }
+                }
+            }
+            PromptAction::ImportOptions {
+                server,
+                name,
+                existing,
+                path,
+            } => self.import_commit(&server, &name, existing, &path, v.trim(), cx),
             PromptAction::NewEnvironment => {
                 let n = v.trim().to_string();
                 if self.store_op(cx, |s| s.create_environment(&n)).is_some() {
@@ -3297,6 +3350,8 @@ impl Render for Shell {
             CopyDatasetRow => |this, _w, cx| this.active_dataset_row_action(DsRowAction::CopyRowJson, cx),
             DeleteDatasetRow => |this, _w, cx| this.active_dataset_row_action(DsRowAction::DeleteRow, cx),
             NewDatasetFromTable => |this, w, cx| this.begin_new_dataset_from_table(w, cx),
+            ImportDatasetFile => |this, w, cx| this.begin_import_new(w, cx),
+            ImportIntoDataset => |this, w, cx| this.begin_import_existing(w, cx),
             AddDatasetRow => |this, _w, cx| match this.active_dataset_key() {
                 Some(k) => this.add_dataset_row(&k, cx),
                 None => this.notify("Open a dataset first.".into(), cx),

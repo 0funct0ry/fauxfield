@@ -114,6 +114,37 @@ struct UpsertDataset {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct ImportDataset {
+    /// Server ID, name or file slug.
+    server: String,
+    /// Dataset name (created when missing).
+    name: String,
+    /// Path of the JSON, CSV or Parquet file to import.
+    file: String,
+    /// `json`, `csv` or `parquet` (default: from the extension).
+    #[serde(default)]
+    format: Option<String>,
+    /// Add to the existing seed rows instead of replacing them.
+    #[serde(default)]
+    append: bool,
+    /// Key column (default `id` when present).
+    #[serde(default)]
+    key: Option<String>,
+    /// CSV delimiter, one character (default: detected).
+    #[serde(default)]
+    delimiter: Option<String>,
+    /// CSV column type overrides, name to `int`, `float`, `bool` or `string`.
+    #[serde(default)]
+    column_types: std::collections::BTreeMap<String, String>,
+    /// Parquet decimals as `number` (default) or `string`.
+    #[serde(default)]
+    decimal_as: Option<String>,
+    /// Validate and report without writing.
+    #[serde(default)]
+    dry_run: bool,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct BakeDataset {
     /// Server ID, name or file slug.
     server: String,
@@ -501,6 +532,68 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                 }
                 s.flush().map_err(e)?;
                 Ok(json!({ "server": id, "dataset": a.name, "route": route }))
+            });
+            Box::pin(async move { out })
+        },
+    ));
+    let p = provider.clone();
+    r.register(ToolDef::new::<ImportDataset>(
+        "import_dataset",
+        "Import a JSON, CSV or Parquet file into a Dataset's static seed (data/<name>.json). One-time conversion; the file is not referenced afterwards. Returns row count, inferred columns, key and warnings (ragged rows, duplicate keys, unparseable cells). Rows above the hard limit are refused.",
+        ToolClass::Write,
+        move |m| {
+            let Some(s) = p() else { return no_workspace() };
+            let out = parse::<ImportDataset>(m).and_then(|a| {
+                use fauxfield_engine::import as imp;
+                let id = resolve_server(&s, &a.server)?;
+                let mut opts = imp::ImportOptions {
+                    key: a.key.clone(),
+                    column_types: a.column_types.clone(),
+                    delimiter: a.delimiter.as_deref().and_then(|d| d.bytes().next()),
+                    ..Default::default()
+                };
+                if a.decimal_as.as_deref() == Some("string") {
+                    opts.decimal_as = imp::DecimalAs::String;
+                }
+                if let Some(f) = &a.format {
+                    opts.format = Some(
+                        imp::Format::parse(f).ok_or_else(|| format!("unknown format `{f}`"))?,
+                    );
+                }
+                let r = imp::read(std::path::Path::new(&a.file), &opts)?;
+                let mut rows = r.seed_value();
+                if a.append && !r.singleton {
+                    let snap = s.snapshot();
+                    let existing = snap
+                        .servers
+                        .iter()
+                        .map(|(_, x)| x)
+                        .find(|x| x.id == id)
+                        .and_then(|x| x.datasets.iter().find(|d| d.name == a.name))
+                        .and_then(|d| d.seed.as_ref())
+                        .and_then(|rel| std::fs::read_to_string(s.root().join(rel)).ok())
+                        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+                        .unwrap_or(Value::Null);
+                    rows = imp::append_rows(&existing, &r.rows);
+                }
+                let total = rows.as_array().map_or(1, Vec::len);
+                if !a.dry_run {
+                    let spec = fauxfield_store::DatasetSpec {
+                        name: a.name.clone(),
+                        seed_json: Some(serde_json::to_string_pretty(&rows).unwrap_or_default()),
+                        key: a.key.clone(),
+                        ..Default::default()
+                    };
+                    s.upsert_dataset(&id, &spec).map_err(e)?;
+                    s.flush().map_err(e)?;
+                }
+                Ok(json!({
+                    "server": id, "dataset": a.name, "format": r.format.name(),
+                    "rows": total, "imported": r.row_count(), "key": r.key,
+                    "columns": r.columns.iter().map(|c| json!({"name": c.name, "type": c.ty})).collect::<Vec<_>>(),
+                    "warnings": r.warnings, "written": !a.dry_run,
+                    "seed": format!("data/{}.json", a.name),
+                }))
             });
             Box::pin(async move { out })
         },

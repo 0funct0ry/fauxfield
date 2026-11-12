@@ -49,6 +49,8 @@ actions!(
         CopyDatasetRow,
         DeleteDatasetRow,
         NewDatasetFromTable,
+        ImportDatasetFile,
+        ImportIntoDataset,
         AddDatasetRow,
         AddDatasetColumn,
         RenameDatasetColumn,
@@ -250,6 +252,16 @@ pub static ACTIONS: &[ActionInfo] = &[
         "new_dataset_from_table",
         "Dataset: New From Table…",
         NewDatasetFromTable
+    ),
+    row!(
+        "import_dataset_file",
+        "Dataset: Import File…",
+        ImportDatasetFile
+    ),
+    row!(
+        "import_into_dataset",
+        "Dataset: Import Into…",
+        ImportIntoDataset
     ),
     row!("add_dataset_row", "Dataset: Add Row", AddDatasetRow),
     row!(

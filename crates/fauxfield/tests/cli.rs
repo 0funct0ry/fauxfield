@@ -490,6 +490,71 @@ fn data_commands_are_stable() {
         ]),
     );
     assert_eq!(json(&["data", "list"])["datasets"][0]["rows"], 1);
+    // M10.05: CSV append (ragged row warns), then export to every format and re-import.
+    let csv = dir.path().join("more.csv");
+    std::fs::write(&csv, "id,name\n8,Amy\n9\n").unwrap();
+    let v = json(&[
+        "data",
+        "import",
+        "example-api",
+        "people",
+        csv.to_str().unwrap(),
+        "--append",
+    ]);
+    assert_eq!(v["rows"], 3);
+    assert_eq!(v["format"], "csv");
+    assert!(v["warnings"][0].as_str().unwrap().contains("ragged"));
+    for ext in ["csv", "parquet", "json"] {
+        let f = dir.path().join(format!("rt.{ext}"));
+        let v = json(&[
+            "data",
+            "export",
+            "example-api",
+            "people",
+            "--out",
+            f.to_str().unwrap(),
+        ]);
+        assert_eq!(v["format"], ext);
+        assert_eq!(v["rows"], 3);
+        let v = json(&[
+            "data",
+            "import",
+            "example-api",
+            "people",
+            f.to_str().unwrap(),
+        ]);
+        assert_eq!(v["rows"], 3, "{ext}");
+    }
+    let (code, _, _) = run(&[
+        "data",
+        "export",
+        "example-api",
+        "people",
+        "--format",
+        "parquet",
+        "-w",
+        p,
+    ]);
+    assert_eq!(code, 1);
+    let (code, _, _) = run(&[
+        "data",
+        "import",
+        "example-api",
+        "people",
+        csv.to_str().unwrap(),
+        "--hard-limit",
+        "1",
+        "-w",
+        p,
+    ]);
+    assert_eq!(code, 1);
+    json(&[
+        "data",
+        "import",
+        "example-api",
+        "people",
+        src.to_str().unwrap(),
+    ]);
     snap_json(Some("data_reset"), &json(&["data", "reset"]));
     let (code, _, _) = run(&["data", "show", "example-api", "nope", "-w", p]);
     assert_eq!(code, 1);

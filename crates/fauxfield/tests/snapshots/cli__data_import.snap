@@ -4,6 +4,8 @@ expression: v
 ---
 {
   "dataset": "people",
+  "format": "json",
   "live": false,
-  "rows": 1
+  "rows": 1,
+  "warnings": []
 }

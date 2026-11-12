@@ -41,21 +41,48 @@ pub enum DataAction {
         #[command(flatten)]
         ws: WsArgs,
     },
-    /// Write a Dataset's rows as JSON to stdout or a file.
+    /// Write a Dataset's rows as JSON, CSV or Parquet to stdout (JSON, CSV) or a file.
     Export {
         server: String,
         dataset: String,
+        /// `json` (default), `csv` or `parquet`; inferred from --out's extension when omitted.
+        #[arg(long)]
+        format: Option<String>,
         /// Write to this file instead of stdout.
         #[arg(long, value_name = "FILE")]
         out: Option<PathBuf>,
         #[command(flatten)]
         ws: WsArgs,
     },
-    /// Replace a Dataset's rows from a JSON file: live on a running host, else the seed file.
+    /// Import a JSON, CSV or Parquet file into a Dataset: live on a running host, else the seed file.
     Import {
         server: String,
         dataset: String,
         file: PathBuf,
+        /// `json`, `csv` or `parquet`; inferred from the extension when omitted.
+        #[arg(long)]
+        format: Option<String>,
+        /// Add to the existing rows instead of replacing them.
+        #[arg(long)]
+        append: bool,
+        /// Key column (default `id` when present).
+        #[arg(long)]
+        key: Option<String>,
+        /// CSV delimiter (single character; detected when omitted).
+        #[arg(long)]
+        delimiter: Option<char>,
+        /// CSV column type override `name:type` (repeatable; int, float, bool, string).
+        #[arg(long = "column-type", value_name = "NAME:TYPE")]
+        column_types: Vec<String>,
+        /// Parquet decimals as `number` (default) or `string`.
+        #[arg(long, default_value = "number")]
+        decimal_as: String,
+        /// Warn above this many rows.
+        #[arg(long, default_value_t = fauxfield_engine::import::DEFAULT_SOFT_LIMIT)]
+        soft_limit: usize,
+        /// Refuse above this many rows.
+        #[arg(long, default_value_t = fauxfield_engine::import::DEFAULT_HARD_LIMIT)]
+        hard_limit: usize,
         #[command(flatten)]
         ws: WsArgs,
     },
@@ -350,10 +377,11 @@ pub fn data(action: DataAction) -> i32 {
             server,
             dataset,
             ws,
-        } => show_or_export(server, dataset, ws, None),
+        } => show_or_export(server, dataset, ws, None, None),
         DataAction::Export {
             server,
             dataset,
+            format,
             out,
             ws,
         } => show_or_export(
@@ -361,6 +389,7 @@ pub fn data(action: DataAction) -> i32 {
             dataset,
             ws,
             Some(out.unwrap_or_else(|| PathBuf::from("-"))),
+            format,
         ),
         DataAction::Reset {
             server,
@@ -410,17 +439,62 @@ pub fn data(action: DataAction) -> i32 {
             server,
             dataset,
             file,
+            format,
+            append,
+            key,
+            delimiter,
+            column_types,
+            decimal_as,
+            soft_limit,
+            hard_limit,
             ws,
         } => {
-            let text = match std::fs::read_to_string(&file) {
-                Ok(t) => t,
-                Err(e) => return fail(&format!("{}: {e}", file.display())),
+            use fauxfield_engine::import as imp;
+            let mut opts = imp::ImportOptions {
+                key: key.clone(),
+                delimiter: delimiter.map(|c| c as u8),
+                decimal_as: if decimal_as == "string" {
+                    imp::DecimalAs::String
+                } else {
+                    imp::DecimalAs::Number
+                },
+                soft_limit,
+                hard_limit,
+                ..Default::default()
             };
-            let rows: Value = match serde_json::from_str(&text) {
-                Ok(v @ (Value::Array(_) | Value::Object(_))) => v,
-                Ok(_) => return fail("the file must hold a JSON array or object"),
-                Err(e) => return fail(&format!("{}: not valid JSON: {e}", file.display())),
+            if let Some(f) = &format {
+                match imp::Format::parse(f) {
+                    Some(f) => opts.format = Some(f),
+                    None => {
+                        return fail(&format!("unknown format `{f}`; use json, csv or parquet"));
+                    }
+                }
+            }
+            for ct in &column_types {
+                match ct.split_once(':') {
+                    Some((n, t)) => {
+                        opts.column_types.insert(n.into(), t.into());
+                    }
+                    None => return fail(&format!("--column-type `{ct}` must be NAME:TYPE")),
+                }
+            }
+            let imported = match imp::read(&file, &opts) {
+                Ok(r) => r,
+                Err(e) => return fail(&e),
             };
+            let warnings = imported.warnings.clone();
+            let mut rows = imported.seed_value();
+            if append && !imported.singleton {
+                let existing = match host_api(&ws) {
+                    Some(c) => rt()
+                        .block_on(c.data_show(server.clone(), dataset.clone()))
+                        .ok(),
+                    None => offline(&ws)
+                        .ok()
+                        .and_then(|e| e.dataset_rows(&server, &dataset).ok()),
+                };
+                rows = imp::append_rows(&existing.unwrap_or(Value::Null), &imported.rows);
+            }
             let n = rows_label(&rows);
             let live = match host_api(&ws) {
                 Some(c) => {
@@ -449,6 +523,7 @@ pub fn data(action: DataAction) -> i32 {
                     let spec = fauxfield_store::DatasetSpec {
                         name: dataset.clone(),
                         seed_json: Some(serde_json::to_string_pretty(&rows).unwrap_or_default()),
+                        key: key.clone(),
                         ..Default::default()
                     };
                     if let Err(e) = store
@@ -461,7 +536,9 @@ pub fn data(action: DataAction) -> i32 {
                 }
             };
             if ws.json {
-                print_json(&json!({"dataset": dataset, "rows": n, "live": live}));
+                print_json(
+                    &json!({"dataset": dataset, "rows": n, "live": live, "format": imported.format.name(), "warnings": warnings}),
+                );
             } else {
                 println!(
                     "Imported {n} row(s) into {dataset}{}",
@@ -471,13 +548,33 @@ pub fn data(action: DataAction) -> i32 {
                         " (seed file; no host running)"
                     }
                 );
+                for w in &warnings {
+                    eprintln!("warning: {w}");
+                }
             }
             EXIT_OK
         }
     }
 }
 
-fn show_or_export(server: String, dataset: String, ws: WsArgs, out: Option<PathBuf>) -> i32 {
+fn show_or_export(
+    server: String,
+    dataset: String,
+    ws: WsArgs,
+    out: Option<PathBuf>,
+    format: Option<String>,
+) -> i32 {
+    use fauxfield_engine::import::{Format, export};
+    let fmt = match format.as_deref() {
+        Some(f) => match Format::parse(f) {
+            Some(f) => f,
+            None => return fail(&format!("unknown format `{f}`; use json, csv or parquet")),
+        },
+        None => out
+            .as_deref()
+            .and_then(Format::detect)
+            .unwrap_or(Format::Json),
+    };
     let rows = match host_api(&ws) {
         Some(c) => match rt().block_on(c.data_show(server, dataset)) {
             Ok(r) => r,
@@ -494,14 +591,24 @@ fn show_or_export(server: String, dataset: String, ws: WsArgs, out: Option<PathB
             }
         }
     };
-    let text = serde_json::to_string_pretty(&rows).unwrap_or_default();
-    match out.filter(|p| p.as_os_str() != "-") {
+    let bytes = match export(&rows, fmt) {
+        Ok(b) => b,
+        Err(e) => return fail(&e),
+    };
+    let target = out.filter(|p| p.as_os_str() != "-");
+    if fmt == Format::Parquet && target.is_none() {
+        return fail("Parquet is binary; pass --out FILE");
+    }
+    let text = String::from_utf8_lossy(&bytes).into_owned();
+    match target {
         Some(p) => {
-            if let Err(e) = std::fs::write(&p, &text) {
+            if let Err(e) = std::fs::write(&p, &bytes) {
                 return fail(&format!("{}: {e}", p.display()));
             }
             if ws.json {
-                print_json(&json!({"file": p.display().to_string(), "rows": rows_label(&rows)}));
+                print_json(
+                    &json!({"file": p.display().to_string(), "format": fmt.name(), "rows": rows_label(&rows)}),
+                );
             } else {
                 println!("Wrote {} row(s) to {}", rows_label(&rows), p.display());
             }

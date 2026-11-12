@@ -39,6 +39,9 @@ impl Shell {
         };
         div()
             .id("left-dock")
+            .on_drop(cx.listener(|this, p: &gpui::ExternalPaths, w, cx| {
+                this.import_dropped(p.paths().to_vec(), w, cx)
+            }))
             .w(px(self.layout.left_width))
             .h_full()
             .flex_none()

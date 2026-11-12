@@ -1,0 +1,14 @@
+# M10.05 scenario: the import actions are reachable and the Dataset toolbar offers Import.
+# The OS file picker cannot be driven, so the commit path is covered by unit and CLI tests.
+name: m10-05-dataset-import
+size: default
+steps:
+  - state: [reset]
+  - click_element: {id: sidebar-tab-datasets}
+  - wait_for_idle: {}
+  - key: secondary-shift-p
+  - type_text: "Dataset: Import"
+  - wait_for_idle: {}
+  - screenshot: {name: m10-05-palette-import}
+  - key: escape
+  - audit: {themes: [one-dark, one-light], sizes: [default, min]}

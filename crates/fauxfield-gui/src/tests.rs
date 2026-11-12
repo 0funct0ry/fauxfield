@@ -2039,6 +2039,46 @@ fn dataset_is_built_from_the_table_without_a_route(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn import_creates_then_appends_with_preview_and_warnings(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    let dir = tempfile::tempdir().unwrap();
+    let csv = dir.path().join("items.csv");
+    std::fs::write(&csv, "id,name\n1,a\n2,b\n3\n").unwrap();
+    let path = csv.to_string_lossy().to_string();
+    let rows = |cx: &mut gpui::VisualTestContext| {
+        read(&view, cx, |s| s.engine().unwrap())
+            .dataset_rows("srv_users", "items")
+            .unwrap()
+    };
+    view.update_in(cx, |s, w, cx| {
+        s.show_import_options("srv_users", "items", false, &path, w, cx)
+    });
+    cx.run_until_parked();
+    let pv = read(&view, cx, |s| s.import_preview.clone()).unwrap();
+    assert!(
+        pv.contains("csv") && pv.contains("3 row(s)") && pv.contains("ragged"),
+        "{pv}"
+    );
+    view.update(cx, |s, cx| {
+        s.import_commit("srv_users", "items", false, &path, "replace", cx)
+    });
+    cx.run_until_parked();
+    assert_eq!(rows(cx).as_array().unwrap().len(), 3);
+    assert_eq!(rows(cx)[0]["id"], 1);
+    view.update(cx, |s, cx| {
+        s.import_commit("srv_users", "items", true, &path, "append", cx)
+    });
+    cx.run_until_parked();
+    assert_eq!(rows(cx).as_array().unwrap().len(), 6);
+    // A bad option leaves the rows alone.
+    view.update(cx, |s, cx| {
+        s.import_commit("srv_users", "items", true, &path, "bogus", cx)
+    });
+    cx.run_until_parked();
+    assert_eq!(rows(cx).as_array().unwrap().len(), 6);
+}
+
+#[gpui::test]
 fn crud_wizard_prompts_chain_and_create_the_resource(cx: &mut TestAppContext) {
     use crate::shell::PromptAction as P;
     let (view, cx) = setup(cx, None);

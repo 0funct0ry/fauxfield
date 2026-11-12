@@ -92,6 +92,8 @@ pub struct DatasetViewState {
     pub source: String,
     /// The seed editor has unsaved edits (M10.04).
     pub dirty_seed: bool,
+    /// Preview of a file being imported, while its options prompt is open (M10.05).
+    pub import_preview: Option<String>,
     /// The cell being edited, `(row, column)`.
     pub editing: Option<(usize, usize)>,
     /// The DataTable view model (M10.03): order, widths, sort, selection, visible range.
@@ -823,6 +825,7 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
                     declared_columns: d.columns.clone(),
                     source: d.source.clone(),
                     dirty_seed: shell.seed_dirty(&d.key(), cx),
+                    import_preview: shell.import_preview.clone(),
                     editing: shell.ds_tables.borrow().get(&d.key()).and_then(|e| {
                         e.read(cx)
                             .delegate()

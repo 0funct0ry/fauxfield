@@ -136,4 +136,14 @@ name = "id"
 type = "int"
 ```
 
+## Importing and exporting files
+
+Fill a Dataset from a JSON, CSV or Parquet file. Import is a one-time conversion: the rows are written to `data/<name>.json` and the original file is not referenced again.
+
+- **GUI:** *Dataset: Import File…* creates a new Dataset (also: drop a file on the sidebar); **Import…** in a Dataset tab replaces or appends. A notice previews the format, row count, inferred column types, key and warnings; the options prompt takes `replace|append`, `key=COL`, `delim=X` (or `tab`), `decimal=string` and `COL:TYPE` overrides (`int`, `float`, `bool`, `string`). **Export…** picks the format from the extension (`.json`, `.csv`, `.parquet`).
+- **CLI:** `fauxfield data import <server> <dataset> <file> [--format json|csv|parquet] [--append] [--key col] [--delimiter ,] [--column-type zip:string]` and `fauxfield data export <server> <dataset> --format csv --out rows.csv`. `--json` reports the row count and warnings.
+- **MCP:** `import_dataset` (with `dry_run` to preview).
+
+CSV cells are typed by inference (int, float, bool, null, string; `007` stays a string). Warnings cover ragged rows, duplicate keys and cells that fail an overridden type. Above 100 000 rows you get a warning; above 1 000 000 the import is refused (`--soft-limit`, `--hard-limit`). Parquet and CSV exports are flat: nested values are written as JSON text.
+
 From the command line: `fauxfield data create <server> products --column id:int --column name:string`. MCP: `upsert_dataset` accepts `columns` and `generator`, and `bake_dataset` writes generated rows to the seed.

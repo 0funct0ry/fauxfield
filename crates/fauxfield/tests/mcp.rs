@@ -778,6 +778,30 @@ async fn upsert_dataset_and_reset_state() {
         t.contains("[[datasets]]") && t.contains("kind = \"crud\""),
         "{t}"
     );
+    // M10.05: import a CSV (append) and dry-run
+    let csv = dir.path().join("in.csv");
+    std::fs::write(&csv, "id,name\n2,a\n3\n").unwrap();
+    let r = call(
+        "import_dataset",
+        json!({"server": "example-api", "name": "products", "file": csv.to_str().unwrap(), "append": true}),
+    )
+    .await
+    .unwrap()
+    .structured_content
+    .unwrap();
+    assert_eq!(
+        (r["rows"].as_u64(), r["imported"].as_u64()),
+        (Some(3), Some(2))
+    );
+    assert!(r["warnings"][0].as_str().unwrap().contains("ragged"));
+    let seed = std::fs::read_to_string(dir.path().join("data/products.json")).unwrap();
+    assert!(seed.contains("\"name\": \"a\""), "{seed}");
+    let r = call(
+        "import_dataset",
+        json!({"server": "example-api", "name": "products", "file": csv.to_str().unwrap(), "dry_run": true, "format": "nope"}),
+    )
+    .await;
+    assert!(r.is_err() || r.unwrap().is_error == Some(true));
     // M10.02: generator preview needs no Dataset and is deterministic with a seed
     let preview = |seed: u64| {
         call(
