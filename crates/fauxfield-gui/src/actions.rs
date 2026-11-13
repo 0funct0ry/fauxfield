@@ -63,6 +63,21 @@ actions!(
         ReloadDatasetFromSeed,
         SaveRowsToSeed,
         NewCrudResource,
+        EditDatasetSchema,
+        CopyCrudOpCurl,
+        ApplyDatasetJson,
+        RevertDatasetJson,
+        ToggleDatasetJsonFormat,
+        UndoDatasetEdit,
+        RedoDatasetEdit,
+        DuplicateDatasetRows,
+        SelectAllDatasetRows,
+        ClearDatasetSelection,
+        CreateCrudRoutes,
+        ExportDataset,
+        ClearDatasetData,
+        ToggleDatasetView,
+        OpenDatasetSeed,
         NewDataset,
         NewStaticRoute,
         TrustDevCa,
@@ -266,7 +281,7 @@ pub static ACTIONS: &[ActionInfo] = &[
     ),
     row!(
         "delete_dataset_row",
-        "Dataset: Delete Row",
+        "Dataset: Delete Selected Rows",
         DeleteDatasetRow
     ),
     row!("new_dataset", "Dataset: New…", NewDataset),
@@ -303,7 +318,7 @@ pub static ACTIONS: &[ActionInfo] = &[
     ),
     row!(
         "generate_dataset_rows",
-        "Dataset: Generate Rows…",
+        "Dataset: Seed Data…",
         GenerateDatasetRows
     ),
     row!(
@@ -323,6 +338,73 @@ pub static ACTIONS: &[ActionInfo] = &[
         "Dataset: Save Rows to Seed",
         SaveRowsToSeed
     ),
+    row!(
+        "duplicate_dataset_rows",
+        "Dataset: Duplicate Selected Rows",
+        DuplicateDatasetRows
+    ),
+    row!(
+        "select_all_dataset_rows",
+        "Dataset: Select All Rows",
+        SelectAllDatasetRows
+    ),
+    row!(
+        "clear_dataset_selection",
+        "Dataset: Clear Row Selection",
+        ClearDatasetSelection
+    ),
+    row!(
+        "undo_dataset_edit",
+        "Dataset: Undo Cell Edit",
+        UndoDatasetEdit
+    ),
+    row!(
+        "redo_dataset_edit",
+        "Dataset: Redo Cell Edit",
+        RedoDatasetEdit
+    ),
+    row!(
+        "apply_dataset_json",
+        "Dataset: Apply JSON Edits",
+        ApplyDatasetJson
+    ),
+    row!(
+        "revert_dataset_json",
+        "Dataset: Revert JSON Edits",
+        RevertDatasetJson
+    ),
+    row!(
+        "toggle_dataset_json_format",
+        "Dataset: Toggle Pretty/Compact JSON",
+        ToggleDatasetJsonFormat
+    ),
+    row!(
+        "copy_crud_op_curl",
+        "Route: Copy CRUD Operation as cURL",
+        CopyCrudOpCurl
+    ),
+    row!(
+        "edit_dataset_schema",
+        "Dataset: Edit Schema…",
+        EditDatasetSchema
+    ),
+    row!(
+        "create_crud_routes",
+        "Dataset: Create CRUD Routes…",
+        CreateCrudRoutes
+    ),
+    row!("export_dataset", "Dataset: Export…", ExportDataset),
+    row!(
+        "clear_dataset_data",
+        "Dataset: Clear Data…",
+        ClearDatasetData
+    ),
+    row!(
+        "toggle_dataset_view",
+        "Dataset: Switch Table/JSON View",
+        ToggleDatasetView
+    ),
+    row!("open_dataset_seed", "Dataset: Open Seed", OpenDatasetSeed),
     row!(
         "new_crud_resource",
         "Dataset: New CRUD Resource…",

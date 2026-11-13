@@ -1953,7 +1953,9 @@ fn dataset_tab_opens_edits_live_rows_and_resets(cx: &mut TestAppContext) {
             .rows),
         4
     );
-    view.update(cx, |s, cx| s.delete_dataset_row("srv_users:users", 0, cx));
+    view.update(cx, |s, cx| {
+        s.delete_dataset_rows("srv_users:users", &[0], cx)
+    });
     assert_eq!(
         read(&view, cx, |s| s
             .ws
@@ -2570,4 +2572,497 @@ fn route_tab_panes_resize_by_drag_and_clamp(cx: &mut TestAppContext) {
         s.on_resize_move(&mv(500., 650.), w, cx);
     });
     assert_eq!(read(&view, cx, |s| s.layout.preview_height), h0 + 50.);
+}
+
+#[gpui::test]
+fn schema_designer_creates_a_dataset_with_constraints_and_no_route(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    let routes_before = read(&view, cx, |s| {
+        s.ws.servers.iter().map(|x| x.routes.len()).sum::<usize>()
+    });
+    view.update_in(cx, |s, w, cx| s.begin_new_dataset(w, cx));
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s.schema_dialog.is_some()));
+    // An empty name keeps the dialog open.
+    view.update_in(cx, |s, w, cx| s.submit_schema_dialog(w, cx));
+    assert!(read(&view, cx, |s| s.schema_dialog.is_some()));
+    view.update_in(cx, |s, w, cx| {
+        let d = s.schema_dialog.as_ref().unwrap();
+        d.name
+            .clone()
+            .update(cx, |t, cx| t.set_value("widgets", cx));
+        s.schema_op("starter", "Products", w, cx);
+        s.schema_op("required", "2", w, cx);
+    });
+    view.update_in(cx, |s, w, cx| s.submit_schema_dialog(w, cx));
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s.schema_dialog.is_none()));
+    let (cols, routes) = read(&view, cx, |s| {
+        let d = s.ws.datasets.iter().find(|d| d.name == "widgets").unwrap();
+        (
+            d.column_defs.clone(),
+            s.ws.servers.iter().map(|x| x.routes.len()).sum::<usize>(),
+        )
+    });
+    assert_eq!(cols.len(), 5);
+    assert!(cols[0].primary_key && cols[2].unique && cols[2].required);
+    assert_eq!(routes, routes_before, "creating a Dataset adds no Route");
+}
+
+#[gpui::test]
+fn selection_actions_duplicate_copy_delete_with_confirm_and_undo(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    view.update(cx, |s, cx| s.click_row("ds:srv_users:users", 2, cx));
+    cx.run_until_parked();
+    let key = "srv_users:users";
+    let table = read(&view, cx, |s| s.ds_tables.borrow().get(key).cloned()).expect("table drawn");
+    let rows = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
+        read(view, cx, |s| {
+            s.engine()
+                .unwrap()
+                .dataset_rows("srv_users", "users")
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len()
+        })
+    };
+    assert_eq!(rows(&view, cx), 3);
+    table.update(cx, |t, _| {
+        let d = t.delegate_mut();
+        d.selection.set = [0usize, 1].into_iter().collect();
+    });
+    view.update(cx, |s, cx| s.duplicate_selected_rows(cx));
+    cx.run_until_parked();
+    assert_eq!(rows(&view, cx), 5);
+    // The copies are selected; deleting two rows asks first.
+    assert_eq!(table.read_with(cx, |t, _| t.delegate().selected_count()), 2);
+    view.update(cx, |s, cx| s.delete_selected_rows(cx));
+    assert_eq!(read(&view, cx, |s| s.dialog_name()), Some("data_confirm"));
+    view.update(cx, |s, cx| s.confirm_dialog(cx));
+    cx.run_until_parked();
+    assert_eq!(rows(&view, cx), 3);
+    // Undo restores them.
+    view.update(cx, |s, cx| s.undo_row_delete(cx));
+    cx.run_until_parked();
+    assert_eq!(rows(&view, cx), 5);
+    // Clear data asks, empties the live rows and leaves the seed alone.
+    view.update(cx, |s, cx| s.begin_clear_data(cx));
+    assert_eq!(read(&view, cx, |s| s.dialog_name()), Some("data_confirm"));
+    view.update(cx, |s, cx| s.confirm_dialog(cx));
+    cx.run_until_parked();
+    assert_eq!(rows(&view, cx), 0);
+}
+
+#[gpui::test]
+fn export_modal_writes_selected_columns_and_seed_modal_generates(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    view.update(cx, |s, cx| s.click_row("ds:srv_users:users", 2, cx));
+    cx.run_until_parked();
+    let key = "srv_users:users";
+    view.update_in(cx, |s, w, cx| s.begin_export(key, w, cx));
+    cx.run_until_parked();
+    assert_eq!(read(&view, cx, |s| s.dialog_name()), Some("export_dataset"));
+    let root = read(&view, cx, |s| s.ws.root.clone());
+    let out = root.join("picked.csv");
+    view.update_in(cx, |s, w, cx| {
+        s.export_op("format", "csv", w, cx);
+        let d = s.export_dialog.as_mut().unwrap();
+        d.path
+            .update(cx, |t, cx| t.set_value(&out.to_string_lossy(), cx));
+        // Keep only the first column.
+        for c in d.cols.iter_mut().skip(1) {
+            c.1 = false;
+        }
+        d.scope = crate::dataset_dialogs::Scope::First;
+        d.first_n.update(cx, |t, cx| t.set_value("2", cx));
+    });
+    view.update_in(cx, |s, w, cx| s.export_op("go", "", w, cx));
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s.export_dialog.is_none()));
+    let text = std::fs::read_to_string(&out).unwrap();
+    assert_eq!(text.lines().count(), 3, "header plus two rows: {text}");
+
+    // Seed data: replace the rows with 7 generated ones.
+    view.update_in(cx, |s, w, cx| s.begin_generate_rows(w, cx));
+    cx.run_until_parked();
+    assert_eq!(read(&view, cx, |s| s.dialog_name()), Some("seed_data"));
+    view.update_in(cx, |s, w, cx| {
+        let d = s.seed_dialog.as_mut().unwrap();
+        d.rows.update(cx, |t, cx| t.set_value("7", cx));
+        d.replace = true;
+        s.seed_op("go", "", w, cx);
+    });
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s.seed_dialog.is_none()));
+}
+
+#[gpui::test]
+fn cell_edits_enforce_constraints_move_with_tab_and_undo(cx: &mut TestAppContext) {
+    use crate::dataset_ui::EditMove;
+    let (view, cx) = setup(cx, None);
+    view.update_in(cx, |s, w, cx| s.begin_new_dataset(w, cx));
+    cx.run_until_parked();
+    view.update_in(cx, |s, w, cx| {
+        let d = s.schema_dialog.as_ref().unwrap();
+        d.name
+            .clone()
+            .update(cx, |t, cx| t.set_value("gadgets", cx));
+        s.schema_op("starter", "Products", w, cx);
+        s.schema_op("required", "1", w, cx); // name
+        s.schema_op("unique", "1", w, cx);
+        s.submit_schema_dialog(w, cx);
+    });
+    cx.run_until_parked();
+    let key = "srv_users:gadgets";
+    view.update(cx, |s, cx| s.click_row(&format!("ds:{key}"), 2, cx));
+    cx.run_until_parked();
+    // Two rows: the first named, the second empty.
+    view.update(cx, |s, cx| s.add_dataset_row(key, cx));
+    view.update(cx, |s, cx| s.add_dataset_row(key, cx));
+    cx.run_until_parked();
+    let table = read(&view, cx, |s| s.ds_tables.borrow().get(key).cloned()).expect("table");
+    // Row 0, column 2 is `name`; set it, Tab moves on.
+    let edit = |cx: &mut VisualTestContext, row: usize, col: usize, text: &str, mv: EditMove| {
+        table.update(cx, |t, cx| {
+            t.delegate_mut().begin_edit(row, col, cx);
+            let input = t.delegate().editing.as_ref().unwrap().input.clone();
+            input.update(cx, |i, cx| i.set_value(text, cx));
+            crate::dataset_ui::DatasetTable::finish_edit(t, true, false, mv, cx);
+        });
+    };
+    edit(cx, 0, 2, "Widget", EditMove::Next);
+    assert!(
+        table.read_with(cx, |t, _| t.delegate().editing.is_some()),
+        "Tab opened the next cell"
+    );
+    table.update(cx, |t, cx| {
+        crate::dataset_ui::DatasetTable::finish_edit(t, false, false, EditMove::Stay, cx)
+    });
+    // A duplicate name on row 1 is refused with a reason and the editor stays open.
+    edit(cx, 1, 2, "Widget", EditMove::Stay);
+    assert!(table.read_with(cx, |t, _| t.delegate().editing.is_some()));
+    let err = table.read_with(cx, |t, _| t.delegate().shared.edit_error.borrow().clone());
+    assert!(err.is_some_and(|e| e.contains("unique")), "reason is shown");
+    table.update(cx, |t, cx| {
+        crate::dataset_ui::DatasetTable::finish_edit(t, false, false, EditMove::Stay, cx)
+    });
+    // Undo and redo the accepted edit.
+    let name_of = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
+        read(view, cx, |s| {
+            s.engine()
+                .unwrap()
+                .dataset_rows("srv_users", "gadgets")
+                .unwrap()[0]["name"]
+                .clone()
+        })
+    };
+    assert_eq!(name_of(&view, cx), "Widget");
+    view.update(cx, |s, cx| s.step_cell_history(false, cx));
+    assert_ne!(name_of(&view, cx), "Widget");
+    view.update(cx, |s, cx| s.step_cell_history(true, cx));
+    assert_eq!(name_of(&view, cx), "Widget");
+}
+
+#[gpui::test]
+fn add_column_modal_validates_and_adds_a_constrained_column(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    view.update(cx, |s, cx| s.click_row("ds:srv_users:users", 2, cx));
+    cx.run_until_parked();
+    view.update_in(cx, |s, w, cx| s.begin_add_column(w, cx));
+    cx.run_until_parked();
+    assert_eq!(read(&view, cx, |s| s.dialog_name()), Some("add_column"));
+    // An empty name keeps the modal open.
+    view.update_in(cx, |s, w, cx| s.column_op("add", w, cx));
+    assert!(read(&view, cx, |s| s.column_dialog.is_some()));
+    // A default that does not fit the type is refused.
+    view.update_in(cx, |s, w, cx| {
+        let d = s.column_dialog.as_mut().unwrap();
+        d.name.update(cx, |t, cx| t.set_value("visits", cx));
+        d.default.update(cx, |t, cx| t.set_value("abc", cx));
+        d.ty = "int".into();
+        s.column_op("add", w, cx);
+    });
+    assert!(read(&view, cx, |s| s.column_dialog.is_some()));
+    view.update_in(cx, |s, w, cx| {
+        let d = s.column_dialog.as_mut().unwrap();
+        d.default.update(cx, |t, cx| t.set_value("18", cx));
+        s.column_op("required", w, cx);
+        s.column_op("add", w, cx);
+    });
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s.column_dialog.is_none()));
+    let col = read(&view, cx, |s| {
+        s.ws.find_dataset("srv_users:users")
+            .unwrap()
+            .column_defs
+            .iter()
+            .find(|c| c.name == "visits")
+            .cloned()
+    })
+    .unwrap_or_else(|| panic!("column added: {:?}", read(&view, cx, |s| s.notice.clone())));
+    assert!(col.required && col.ty == "int");
+    assert_eq!(col.default, Some(toml::Value::Integer(18)));
+}
+
+#[gpui::test]
+fn seed_dialog_takes_generator_options(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    view.update(cx, |s, cx| s.click_row("ds:srv_users:users", 2, cx));
+    cx.run_until_parked();
+    view.update_in(cx, |s, w, cx| s.begin_generate_rows(w, cx));
+    cx.run_until_parked();
+    let i = read(&view, cx, |s| {
+        s.seed_dialog
+            .as_ref()
+            .unwrap()
+            .cols
+            .iter()
+            .position(|c| c.name == "name")
+            .unwrap()
+    });
+    // one_of with no values is refused, with the reason on the column.
+    view.update(cx, |s, cx| s.set_seed_generator(i, "one_of", cx));
+    view.update_in(cx, |s, w, cx| {
+        let d = s.seed_dialog.as_mut().unwrap();
+        assert!(d.cols[i].spec(cx).is_err(), "values are required");
+        let input = d.cols[i]
+            .args
+            .iter()
+            .find(|(k, _)| k == "values")
+            .unwrap()
+            .1
+            .clone();
+        input.update(cx, |t, cx| t.set_value("Ann, Bob", cx));
+        assert!(d.cols[i].spec(cx).is_ok());
+        d.rows.update(cx, |t, cx| t.set_value("6", cx));
+        d.replace = true;
+        s.seed_op("go", "", w, cx);
+    });
+    cx.run_until_parked();
+    let rows = read(&view, cx, |s| {
+        s.engine()
+            .unwrap()
+            .dataset_rows("srv_users", "users")
+            .unwrap()
+    });
+    let names: Vec<_> = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["name"].clone())
+        .collect();
+    assert_eq!(names.len(), 6);
+    assert!(names.iter().all(|n| n == "Ann" || n == "Bob"), "{names:?}");
+}
+
+#[gpui::test]
+fn seed_dialog_date_pickers_bound_datetime_and_preview_is_a_table(cx: &mut TestAppContext) {
+    use chrono::NaiveDate;
+    let (view, cx) = setup(cx, None);
+    view.update(cx, |s, cx| s.click_row("ds:srv_users:users", 2, cx));
+    cx.run_until_parked();
+    view.update_in(cx, |s, w, cx| s.begin_generate_rows(w, cx));
+    cx.run_until_parked();
+    let i = read(&view, cx, |s| {
+        s.seed_dialog
+            .as_ref()
+            .unwrap()
+            .cols
+            .iter()
+            .position(|c| c.name == "name")
+            .unwrap()
+    });
+    view.update(cx, |s, cx| s.set_seed_generator(i, "datetime", cx));
+    let pickers = read(&view, cx, |s| {
+        s.seed_dialog.as_ref().unwrap().cols[i].dates.clone()
+    });
+    assert_eq!(pickers.len(), 2, "from and to are DatePickers");
+    let day = |d: u32| NaiveDate::from_ymd_opt(2026, 3, d).unwrap();
+    pickers[0].1.update(cx, |p, cx| p.pick(day(10), cx));
+    pickers[1].1.update(cx, |p, cx| p.pick(day(12), cx));
+    let rows = view
+        .update(cx, |s, cx| s.seed_preview(cx))
+        .expect("preview");
+    assert_eq!(rows.len(), 5);
+    for r in &rows {
+        let at = r["name"].as_str().unwrap();
+        assert!(("2026-03-10".."2026-03-13").contains(&&at[..10]), "{at}");
+    }
+    // A reversed range is refused.
+    pickers[0].1.update(cx, |p, cx| p.pick(day(20), cx));
+    assert!(view.update(cx, |s, cx| s.seed_preview(cx)).is_err());
+}
+
+#[gpui::test]
+fn export_file_starts_empty_and_browse_fills_it(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    view.update(cx, |s, cx| s.click_row("ds:srv_users:users", 2, cx));
+    cx.run_until_parked();
+    view.update_in(cx, |s, w, cx| s.begin_export("srv_users:users", w, cx));
+    cx.run_until_parked();
+    let path = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
+        view.update(cx, |s, cx| {
+            s.export_dialog
+                .as_ref()
+                .unwrap()
+                .path
+                .read(cx)
+                .value()
+                .to_string()
+        })
+    };
+    assert_eq!(path(&view, cx), "");
+    // Export with no destination is refused and keeps the modal open.
+    view.update_in(cx, |s, w, cx| s.export_op("go", "", w, cx));
+    assert!(read(&view, cx, |s| s
+        .export_dialog
+        .as_ref()
+        .unwrap()
+        .error
+        .is_some()));
+    // The folder dialog's answer fills the field; the extension follows the format.
+    let dir = read(&view, cx, |s| s.ws.root.clone());
+    view.update(cx, |s, cx| {
+        s.set_export_folder(&dir, "users.export.json", cx)
+    });
+    assert_eq!(
+        path(&view, cx),
+        dir.join("users.export.json").to_string_lossy()
+    );
+    view.update_in(cx, |s, w, cx| s.export_op("format", "csv", w, cx));
+    assert!(path(&view, cx).ends_with("users.export.csv"));
+    view.update_in(cx, |s, w, cx| s.export_op("go", "", w, cx));
+    cx.run_until_parked();
+    assert!(dir.join("users.export.csv").is_file());
+}
+
+#[gpui::test]
+fn hamburger_is_a_dropdown_menu_that_runs_actions(cx: &mut TestAppContext) {
+    use crate::dropdown_menu::MenuItem;
+    let (view, cx) = setup(cx, None);
+    view.update(cx, |s, cx| s.click_row("ds:srv_users:users", 2, cx));
+    cx.run_until_parked();
+    let menu = read(&view, cx, |s| s.dropdowns.borrow().get("ds-menu").cloned()).expect("drawn");
+    let (labels, seps) = menu.read_with(cx, |m, _| {
+        let it = m.items();
+        (
+            it.iter()
+                .filter_map(|i| match i {
+                    MenuItem::Item { label, icon, .. } => {
+                        assert!(icon.is_some(), "every entry has an icon");
+                        Some(label.to_string())
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            it.iter().filter(|i| **i == MenuItem::Separator).count(),
+        )
+    });
+    assert_eq!(labels[0], "Switch to JSON view");
+    assert_eq!(seps, 3);
+    view.update_in(cx, |s, w, cx| {
+        s.dropdown_press("dropdown", "ds-menu", None, w, cx)
+    })
+    .unwrap();
+    assert!(read(&view, cx, |s| s.any_dropdown_open()));
+    assert_eq!(menu.read_with(cx, |m, _| m.highlighted()), Some(0));
+    view.update_in(cx, |s, w, cx| {
+        s.dropdown_press("dropdown-item", "ds-menu", Some(0), w, cx)
+    })
+    .unwrap();
+    cx.run_until_parked();
+    assert!(!read(&view, cx, |s| s.any_dropdown_open()));
+    assert!(read(&view, cx, |s| s.ds_json_mode), "the action ran");
+}
+
+#[gpui::test]
+fn json_view_edits_apply_to_the_table_and_switch_compact(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    let key = "srv_users:users";
+    view.update(cx, |s, cx| s.click_row("ds:srv_users:users", 2, cx));
+    cx.run_until_parked();
+    view.update_in(cx, |s, w, cx| s.run_action_id("toggle_dataset_view", w, cx));
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s.ds_json_mode));
+    let ed = read(&view, cx, |s| {
+        s.json_eds.borrow().get(key).map(|e| e.editor.clone())
+    })
+    .expect("the JSON view uses the code editor");
+    let rows = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
+        read(view, cx, |s| {
+            s.engine()
+                .unwrap()
+                .dataset_rows("srv_users", "users")
+                .unwrap()
+        })
+    };
+    // Compact puts one row per line.
+    view.update(cx, |s, cx| s.set_json_pretty(key, false, cx));
+    cx.run_until_parked();
+    let text = ed.read_with(cx, |e, _| e.text().to_string());
+    assert_eq!(text.lines().count(), 3 + 2, "{text}");
+    // Invalid JSON is not applied; leaving the view is refused.
+    ed.update(cx, |e, cx| e.set_text("[{\"id\": 1,", cx));
+    view.update(cx, |s, cx| s.json_changed_for_test(key, cx));
+    assert!(read(&view, cx, |s| s
+        .json_eds
+        .borrow()
+        .get(key)
+        .unwrap()
+        .problem
+        .is_some()));
+    view.update(cx, |s, cx| s.toggle_dataset_view(cx));
+    assert!(
+        read(&view, cx, |s| s.ds_json_mode),
+        "stays in the JSON view"
+    );
+    // A valid edit applies when leaving the view, and the table rows follow.
+    let mut v = rows(&view, cx);
+    v[0]["name"] = serde_json::json!("Edited in JSON");
+    ed.update(cx, |e, cx| {
+        e.set_text(&serde_json::to_string(&v).unwrap(), cx)
+    });
+    view.update(cx, |s, cx| s.toggle_dataset_view(cx));
+    cx.run_until_parked();
+    assert!(!read(&view, cx, |s| s.ds_json_mode));
+    assert_eq!(rows(&view, cx)[0]["name"], "Edited in JSON");
+}
+
+#[gpui::test]
+fn crud_operation_rows_copy_their_request_as_curl(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    let route = read(&view, cx, |s| {
+        s.ws.servers
+            .iter()
+            .flat_map(|x| x.all_routes())
+            .find(|r| r.is_crud())
+            .map(|r| r.id.clone())
+    })
+    .expect("the fixture has a crud Route");
+    // Row 3 is PUT <path>/:id: a body from the first live row, `:id` filled in.
+    view.update(cx, |s, cx| s.copy_crud_op_curl(&format!("{route}#3"), cx));
+    let clip = cx.read_from_clipboard().and_then(|c| c.text()).unwrap();
+    assert!(clip.starts_with("curl -X PUT 'http://"), "{clip}");
+    assert!(
+        clip.contains("/1'") && clip.contains("--data-raw"),
+        "{clip}"
+    );
+    view.update(cx, |s, cx| s.copy_crud_op_curl(&format!("{route}#0"), cx));
+    let clip = cx.read_from_clipboard().and_then(|c| c.text()).unwrap();
+    assert!(
+        clip.starts_with("curl -X GET") && !clip.contains("--data-raw"),
+        "{clip}"
+    );
+    // The row menu offers it.
+    let labels: Vec<_> = crate::tree::menu_items(
+        &crate::tree::RowKind::CrudOp {
+            method: "PUT".into(),
+        },
+        false,
+    )
+    .into_iter()
+    .map(|(l, _)| l)
+    .collect();
+    assert!(labels.contains(&"Copy as cURL"), "{labels:?}");
 }

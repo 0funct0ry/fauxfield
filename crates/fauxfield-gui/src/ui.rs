@@ -3,7 +3,7 @@
 
 use gpui::{
     AppContext, Context, Div, Hsla, InteractiveElement, IntoElement, ParentElement, Render,
-    SharedString, Styled, Window, div, px, svg,
+    SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px, svg,
 };
 
 use crate::assets::BUFFER_FONT;
@@ -202,3 +202,81 @@ pub use crate::data_table::{
     Align, Column, ColumnFixed, ColumnGroup, ColumnSort, DataTable, Size, TableDelegate,
     TableEvent, TableLook, TableOptions, TableSelection, TableState, TableViewModel, VisibleRange,
 };
+
+/// The checkbox of the app (the Dataset table selection column and dialog options): a 14 px
+/// box, filled with the focus colour and a check mark when on.
+pub fn checkbox(t: &Theme, on: bool) -> Div {
+    div()
+        .size(px(14.))
+        .flex_none()
+        .rounded(px(3.))
+        .border_1()
+        .border_color(if on { t.border_focused } else { t.border })
+        .bg(if on {
+            t.border_focused
+        } else {
+            gpui::transparent_black()
+        })
+        .flex()
+        .items_center()
+        .justify_center()
+        .when(on, |d| d.child(icon("check", 10., t.background)))
+}
+
+/// A checkbox with a label: one clickable row (the caller adds `on_click` and the dev id).
+pub fn checkbox_row(
+    t: &Theme,
+    id: impl Into<gpui::ElementId>,
+    on: bool,
+    label: impl Into<SharedString>,
+) -> gpui::Stateful<Div> {
+    div()
+        .id(id)
+        .h(px(22.))
+        .px(px(4.))
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(6.))
+        .rounded(px(4.))
+        .cursor_pointer()
+        .text_size(px(12.))
+        .text_color(t.text)
+        .hover(|d| d.bg(t.element_hover))
+        .child(checkbox(t, on))
+        .child(div().min_w(px(0.)).truncate().child(label.into()))
+}
+
+/// An icon-only toolbar button with a tooltip (the caller adds `on_click` and the dev id).
+/// `active` draws the selected background (a segment that is on); `enabled` false dims it.
+pub fn icon_button(
+    t: &Theme,
+    id: impl Into<gpui::ElementId>,
+    name: &str,
+    tip: &str,
+    active: bool,
+    enabled: bool,
+) -> gpui::Stateful<Div> {
+    let color = if active { t.text } else { t.icon_muted };
+    icon_button_tinted(t, id, name, tip, color, active, enabled)
+}
+
+/// [`icon_button`] with the icon drawn in `color` (e.g. `t.deleted` for a destructive action).
+pub fn icon_button_tinted(
+    t: &Theme,
+    id: impl Into<gpui::ElementId>,
+    name: &str,
+    tip: &str,
+    color: Hsla,
+    active: bool,
+    enabled: bool,
+) -> gpui::Stateful<Div> {
+    toolbar_button(t, id)
+        .h(px(22.))
+        .w(px(24.))
+        .justify_center()
+        .when(active, |d| d.bg(t.element_selected))
+        .when(!enabled, |d| d.opacity(0.4))
+        .tooltip(tooltip(tip.to_string()))
+        .child(icon(name, 14., color).into_any_element())
+}

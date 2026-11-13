@@ -22,6 +22,7 @@ gpui.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+chrono = "0.4"
 toml.workspace = true
 indexmap.workspace = true
 fauxfield-model.workspace = true

@@ -33,6 +33,9 @@ pub struct DatasetInfo {
     pub source: String,
     /// Declared columns (name, type), M10.04.
     pub columns: Vec<(String, String)>,
+    /// Declared columns with their constraints (M10.07).
+    #[serde(default)]
+    pub column_defs: Vec<fauxfield_model::DatasetColumn>,
     /// Seed loading problem (the Dataset then starts empty).
     pub error: Option<String>,
 }
@@ -65,8 +68,8 @@ fn sig(root: &Path, d: &Dataset) -> String {
         .map(|b| format!("{:x}", Sha256::digest(&b)))
         .unwrap_or_default();
     format!(
-        "{:?}|{:?}|{:?}|{:?}|{}|{:?}|{file}",
-        d.seed, d.seed_template, d.key, d.id_strategy, d.persist, d.generator
+        "{:?}|{:?}|{:?}|{:?}|{}|{:?}|{:?}|{file}",
+        d.seed, d.seed_template, d.key, d.id_strategy, d.persist, d.generator, d.columns
     )
 }
 
@@ -340,6 +343,7 @@ impl DataStore {
                     .iter()
                     .map(|c| (c.name.clone(), c.ty.clone()))
                     .collect(),
+                column_defs: s.def.columns.clone(),
                 error: s.error.clone(),
             })
             .collect()
@@ -356,6 +360,9 @@ impl DataStore {
         val: Value,
     ) -> Result<(), String> {
         let s = self.get_mut(name).ok_or("unknown dataset")?;
+        if let Value::Array(a) = &s.rows {
+            fauxfield_model::columns::check_cell(&s.def.columns, column, &val, a, Some(index))?;
+        }
         let row = match &mut s.rows {
             Value::Array(a) => a.get_mut(index),
             _ => None,
@@ -385,11 +392,98 @@ impl DataStore {
             return Err("only array Datasets take rows".into());
         };
         let at = at.unwrap_or(a.len()).min(a.len());
+        let mut new = new;
+        // Defaults fill missing columns; set values are checked for type and uniqueness.
+        // `required` is left to the cell editor so an empty row can be added and then filled.
+        let mut seen: Vec<Value> = a.clone();
+        for r in new.iter_mut() {
+            fauxfield_model::columns::apply_defaults(&s.def.columns, r);
+            for c in &s.def.columns {
+                if let Some(v) = r.get(&c.name).filter(|v| !v.is_null()) {
+                    fauxfield_model::columns::check_cell(&s.def.columns, &c.name, v, &seen, None)?;
+                }
+            }
+            seen.push(r.clone());
+        }
         a.splice(at..at, new);
         let key = s.def.key_name().to_string();
         s.counter = max_numeric_id(&s.rows, &key);
         s.persist(root, server_id);
         Ok(at)
+    }
+
+    /// Append copies of the rows at `indices` with fresh primary key and unique values (M10.07).
+    /// Returns the indices of the new rows.
+    pub fn duplicate_rows(
+        &mut self,
+        root: &Path,
+        server_id: &str,
+        name: &str,
+        indices: &[usize],
+    ) -> Result<Vec<usize>, String> {
+        let s = self.get_mut(name).ok_or("unknown dataset")?;
+        let Value::Array(a) = &s.rows else {
+            return Err("only array Datasets take rows".into());
+        };
+        let mut src: Vec<usize> = indices.iter().copied().filter(|i| *i < a.len()).collect();
+        src.sort_unstable();
+        src.dedup();
+        let key = s.def.key_name().to_string();
+        let cols = s.def.columns.clone();
+        let mut out = vec![];
+        for i in src {
+            let mut row = match &s.rows {
+                Value::Array(a) => a[i].clone(),
+                _ => unreachable!(),
+            };
+            let fresh_id = s.next_id();
+            let others: Vec<Value> = s.rows.as_array().cloned().unwrap_or_default();
+            if let Some(o) = row.as_object_mut() {
+                o.insert(key.clone(), fresh_id);
+                for c in cols
+                    .iter()
+                    .filter(|c| c.unique && !c.primary_key && c.name != key)
+                {
+                    let Some(v) = o.get(&c.name).filter(|v| !v.is_null()).cloned() else {
+                        continue;
+                    };
+                    let taken = |cand: &Value| others.iter().any(|r| r.get(&c.name) == Some(cand));
+                    let fresh = match &v {
+                        Value::Number(n) if n.is_i64() => {
+                            let max = others
+                                .iter()
+                                .filter_map(|r| r.get(&c.name).and_then(Value::as_i64))
+                                .max()
+                                .unwrap_or(0);
+                            json!(max + 1)
+                        }
+                        Value::String(t) => {
+                            let mut n = 1;
+                            loop {
+                                let cand = json!(if n == 1 {
+                                    format!("{t}-copy")
+                                } else {
+                                    format!("{t}-copy-{n}")
+                                });
+                                if !taken(&cand) {
+                                    break cand;
+                                }
+                                n += 1;
+                            }
+                        }
+                        _ => Value::Null,
+                    };
+                    o.insert(c.name.clone(), fresh);
+                }
+            }
+            if let Value::Array(a) = &mut s.rows {
+                a.push(row);
+                out.push(a.len() - 1);
+            }
+        }
+        s.counter = max_numeric_id(&s.rows, &key);
+        s.persist(root, server_id);
+        Ok(out)
     }
 
     /// Delete the rows at `indices` (duplicates and out-of-range ignored). Returns the count.
@@ -678,6 +772,41 @@ pub(crate) fn position(rows: &[Value], key: &str, id: &str) -> Option<usize> {
         .position(|r| r.get(key).and_then(scalar_text).as_deref() == Some(id))
 }
 
+/// 422 problem when a body breaks a declared column constraint (M10.07).
+fn column_problem(
+    cols: &[fauxfield_model::DatasetColumn],
+    body: &Value,
+    rows: &[Value],
+    index: Option<usize>,
+    path: &str,
+) -> Option<Out> {
+    if cols.is_empty() {
+        return None;
+    }
+    let errors: Vec<Value> = cols
+        .iter()
+        .filter_map(|c| {
+            let v = body.get(&c.name).unwrap_or(&Value::Null);
+            fauxfield_model::columns::check_cell(cols, &c.name, v, rows, index)
+                .err()
+                .map(|m| json!({"path": format!("/{}", c.name), "message": m}))
+        })
+        .collect();
+    if errors.is_empty() {
+        return None;
+    }
+    let p = json!({
+        "type": "about:blank", "title": "Validation failed", "status": 422,
+        "detail": format!("{} column constraint(s) violated.", errors.len()),
+        "instance": path, "errors": errors,
+    });
+    Some((
+        422,
+        vec![("content-type".into(), PROBLEM.into())],
+        Bytes::from(p.to_string()),
+    ))
+}
+
 fn validate(schema: Option<&Arc<jsonschema::Validator>>, body: &Value, path: &str) -> Option<Out> {
     let v = schema?;
     let errors: Vec<Value> = v
@@ -713,11 +842,35 @@ pub(crate) struct Call<'a> {
     pub schema: Option<Arc<jsonschema::Validator>>,
     pub root: &'a Path,
     pub server_id: &'a str,
+    /// Operations the Route serves (empty: all), M10.07.
+    pub ops: &'a [String],
 }
 
 /// Serve one CRUD operation. Returns the response and whether the Dataset changed.
 pub(crate) fn handle(ds: &mut DatasetRt, c: &Call<'_>) -> (Out, bool) {
     let key = ds.def.key_name().to_string();
+    if !c.ops.is_empty() {
+        let op = match (c.method, c.id) {
+            ("GET" | "HEAD", None) => "list",
+            ("GET" | "HEAD", Some(_)) => "get",
+            ("POST", _) => "create",
+            ("PUT", _) => "update",
+            ("PATCH", _) => "patch",
+            ("DELETE", _) => "delete",
+            _ => "",
+        };
+        if !op.is_empty() && !c.ops.iter().any(|o| o == op) {
+            return (
+                problem(
+                    405,
+                    "Method not allowed",
+                    &format!("This Route does not serve `{op}`."),
+                    c.path,
+                ),
+                false,
+            );
+        }
+    }
     let trimmed = c.path.trim_end_matches('/');
     let base = match c.id {
         Some(_) => trimmed
@@ -816,6 +969,16 @@ pub(crate) fn handle(ds: &mut DatasetRt, c: &Call<'_>) -> (Out, bool) {
                     false,
                 );
             }
+            fauxfield_model::columns::apply_defaults(&ds.def.columns, &mut body);
+            if let Some(o) = column_problem(
+                &ds.def.columns,
+                &body,
+                ds.rows.as_array().unwrap(),
+                None,
+                c.path,
+            ) {
+                return (o, false);
+            }
             let id = body.get(&key).and_then(scalar_text).unwrap_or_default();
             ds.rows.as_array_mut().unwrap().push(body.clone());
             ds.persist(c.root, c.server_id);
@@ -852,6 +1015,10 @@ pub(crate) fn handle(ds: &mut DatasetRt, c: &Call<'_>) -> (Out, bool) {
                 );
             };
             body[&key] = rows[i].get(&key).cloned().unwrap_or_else(|| json!(id));
+            fauxfield_model::columns::apply_defaults(&ds.def.columns, &mut body);
+            if let Some(o) = column_problem(&ds.def.columns, &body, rows, Some(i), c.path) {
+                return (o, false);
+            }
             rows[i] = body.clone();
             ds.persist(c.root, c.server_id);
             (json_out(200, &body, vec![]), true)
@@ -877,6 +1044,9 @@ pub(crate) fn handle(ds: &mut DatasetRt, c: &Call<'_>) -> (Out, bool) {
             merge_patch(&mut merged, &patch);
             merged[&key] = rows[i].get(&key).cloned().unwrap_or_else(|| json!(id));
             if let Some(o) = validate(c.schema.as_ref(), &merged, c.path) {
+                return (o, false);
+            }
+            if let Some(o) = column_problem(&ds.def.columns, &merged, rows, Some(i), c.path) {
                 return (o, false);
             }
             rows[i] = merged.clone();

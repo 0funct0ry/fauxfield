@@ -56,6 +56,13 @@
           },
           "type": "array"
         },
+        "description": {
+          "description": "Free-text description (M10.07).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "generator": {
           "anyOf": [
             {
@@ -202,13 +209,35 @@
     "DatasetColumn": {
       "description": "One declared column of a Dataset (M10.04).",
       "properties": {
+        "default": {
+          "description": "Value given to a new row that does not set the column (M10.07)."
+        },
+        "description": {
+          "description": "Free-text description shown in the schema designer (M10.07).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "name": {
           "type": "string"
+        },
+        "primary_key": {
+          "description": "Identifies the row (M10.07); at most one column, and it must match the Dataset `key`.",
+          "type": "boolean"
+        },
+        "required": {
+          "description": "The value may not be null or empty (M10.07).",
+          "type": "boolean"
         },
         "type": {
           "default": "",
           "description": "One of [`COLUMN_TYPES`] (default `string`).",
           "type": "string"
+        },
+        "unique": {
+          "description": "No two rows may hold the same non-null value (M10.07).",
+          "type": "boolean"
         }
       },
       "required": [
@@ -861,6 +890,13 @@
     },
     "Route": {
       "properties": {
+        "crud_ops": {
+          "description": "`crud` routes: the operations served (subset of [`CRUD_OPS`]); empty serves all (M10.07).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "dataset": {
           "default": null,
           "description": "`crud` routes: the Dataset this Route serves.",

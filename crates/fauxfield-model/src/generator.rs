@@ -35,7 +35,7 @@ pub const GENERATORS: &[(&str, &str)] = &[
     ),
     (
         "datetime",
-        "RFC 3339 / `format` timestamp between `min` and `max` (RFC 3339, default last 365 days)",
+        "RFC 3339 / `format` timestamp between `min` and `max` (RFC 3339, default last 365 days; one bound alone spans 365 days from it)",
     ),
     ("date", "Date (`YYYY-MM-DD`) between `min` and `max`"),
     ("const", "The fixed `value`"),

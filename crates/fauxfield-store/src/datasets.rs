@@ -23,6 +23,8 @@ pub struct DatasetSpec {
     /// When set, a `kind = "crud"` Route for this path is added if none serves the Dataset.
     pub crud_path: Option<String>,
     pub crud_folder: Option<String>,
+    /// Operations the crud Route serves (empty: all), M10.07.
+    pub crud_ops: Vec<String>,
     pub validate: Option<String>,
 }
 
@@ -172,6 +174,15 @@ impl Store {
                     r["kind"] = value("crud");
                     r["path"] = value(path.as_str());
                     r["dataset"] = value(name.as_str());
+                    if !spec.crud_ops.is_empty()
+                        && spec.crud_ops.len() < fauxfield_model::CRUD_OPS.len()
+                    {
+                        let mut a = toml_edit::Array::new();
+                        for o in &spec.crud_ops {
+                            a.push(o.as_str());
+                        }
+                        r["crud_ops"] = value(a);
+                    }
                     if let Some(v) = &spec.validate {
                         r["validate"] = value(v.as_str());
                     }
@@ -221,8 +232,8 @@ impl Store {
                 }
                 value(v)
             }
-            ("key", Some(v)) => value(v),
-            ("persist" | "id_strategy" | "key", None) => Item::None,
+            ("key" | "description", Some(v)) => value(v),
+            ("persist" | "id_strategy" | "key" | "description", None) => Item::None,
             _ => {
                 return Err(StoreError::Invalid(format!(
                     "Unknown dataset field '{field}'."
@@ -747,6 +758,20 @@ impl Store {
                 )));
             }
         }
+        if columns.iter().filter(|c| c.primary_key).count() > 1 {
+            return Err(StoreError::Invalid(
+                "At most one column may be the primary key.".into(),
+            ));
+        }
+        if let Some(c) = columns
+            .iter()
+            .find(|c| !fauxfield_model::columns::default_fits(c))
+        {
+            return Err(StoreError::Invalid(format!(
+                "Default of column '{}' does not fit type '{}'.",
+                c.name, c.ty
+            )));
+        }
         let file = self
             .server_file(server_id)
             .ok_or_else(|| StoreError::NotFound(server_id.into()))?;
@@ -758,11 +783,54 @@ impl Store {
             if columns.is_empty() {
                 t.remove("columns");
             } else {
+                // Edit in place: existing column tables keep their comments and key order.
+                let mut existing: Vec<Table> = match t.remove("columns") {
+                    Some(Item::ArrayOfTables(a)) => a.into_iter().collect(),
+                    _ => vec![],
+                };
                 let mut arr = toml_edit::ArrayOfTables::new();
                 for c in columns {
-                    let mut ct = Table::new();
+                    let at = existing.iter().position(|e| {
+                        e.get("name").and_then(Item::as_str) == Some(c.name.as_str())
+                    });
+                    let mut ct = at.map_or_else(Table::new, |i| existing.remove(i));
                     ct["name"] = value(c.name.as_str());
                     ct["type"] = value(if c.ty.is_empty() { "string" } else { &c.ty });
+                    for (k, on) in [
+                        ("primary_key", c.primary_key),
+                        ("unique", c.unique),
+                        ("required", c.required),
+                    ] {
+                        if on {
+                            ct[k] = value(true);
+                        } else {
+                            ct.remove(k);
+                        }
+                    }
+                    match c.description.as_deref().filter(|s| !s.is_empty()) {
+                        Some(d) => ct["description"] = value(d),
+                        None => {
+                            ct.remove("description");
+                        }
+                    }
+                    match &c.default {
+                        Some(v) => {
+                            let mut wrap = toml::Table::new();
+                            wrap.insert("default".into(), v.clone());
+                            let doc = toml::to_string(&wrap)
+                                .ok()
+                                .and_then(|s| s.parse::<toml_edit::DocumentMut>().ok())
+                                .ok_or_else(|| {
+                                    StoreError::Invalid(
+                                        "Column default is not a TOML value.".into(),
+                                    )
+                                })?;
+                            ct["default"] = doc["default"].clone();
+                        }
+                        None => {
+                            ct.remove("default");
+                        }
+                    }
                     arr.push(ct);
                 }
                 t["columns"] = Item::ArrayOfTables(arr);

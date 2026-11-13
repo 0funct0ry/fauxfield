@@ -61,6 +61,84 @@ pub struct UiState {
     pub datasets: Vec<DatasetState>,
     /// The open Dataset tab (M8); `None` without one.
     pub dataset: Option<DatasetViewState>,
+    /// The schema designer modal (M10.07), when open.
+    pub schema_dialog: Option<SchemaDialogState>,
+    /// The Create CRUD Routes modal (M10.07), when open.
+    pub crud_dialog: Option<CrudDialogState>,
+    /// The Export modal (M10.07), when open.
+    pub export_dialog: Option<ExportDialogState>,
+    /// The Seed data modal (M10.07), when open.
+    pub seed_dialog: Option<SeedDialogState>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct SchemaColumnState {
+    pub name: String,
+    pub ty: String,
+    pub primary_key: bool,
+    pub unique: bool,
+    pub required: bool,
+    pub default: String,
+    pub generator: String,
+    pub description: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct SchemaDialogState {
+    /// `server:name` when editing a schema, `None` for a new Dataset.
+    pub editing: Option<String>,
+    pub name: String,
+    pub server: String,
+    pub description: String,
+    pub source: &'static str,
+    pub rows: String,
+    pub create_crud: bool,
+    pub columns: Vec<SchemaColumnState>,
+    /// Live validation messages (`code: message`); Create is disabled while any exists.
+    pub issues: Vec<String>,
+    pub create_enabled: bool,
+    pub preview: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct CrudDialogState {
+    pub server: String,
+    pub dataset: String,
+    pub folder: String,
+    pub path: String,
+    pub ops: Vec<String>,
+    pub preview: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ExportDialogState {
+    pub format: &'static str,
+    pub scope: &'static str,
+    pub columns: Vec<(String, bool)>,
+    pub rows: usize,
+    pub estimate_bytes: usize,
+    pub clipboard: bool,
+    pub path: String,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct SeedDialogState {
+    pub rows: String,
+    pub fake_seed: String,
+    pub replace: bool,
+    pub keep: bool,
+    /// Column, type, generator.
+    pub columns: Vec<(String, String, String)>,
+    /// Per column: why its generator options are not usable, if they are not.
+    pub errors: Vec<Option<String>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct HamburgerItemState {
+    pub action: &'static str,
+    pub label: String,
+    pub disabled: Option<&'static str>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -96,6 +174,26 @@ pub struct DatasetViewState {
     pub import_preview: Option<String>,
     /// The cell being edited, `(row, column)`.
     pub editing: Option<(usize, usize)>,
+    /// Why the open cell edit was refused, if it was (M10.07).
+    pub edit_error: Option<String>,
+    /// Selected live row indices (M10.07).
+    pub selection: Vec<usize>,
+    /// The single status chip row, `N rows · M columns · source` plus the used-by chip.
+    pub chip: String,
+    pub used_by_chip: String,
+    /// Seed problem banner showing (not dismissed).
+    pub banner: bool,
+    /// The details popover is open.
+    pub popover: bool,
+    /// The hamburger entries in order, with disabled reasons.
+    pub hamburger: Vec<HamburgerItemState>,
+    /// JSON view: pretty (else compact), unapplied edits, and why they cannot be applied.
+    pub json_pretty: bool,
+    pub json_dirty: bool,
+    pub json_problem: Option<String>,
+    /// Cell edits that can be undone and redone.
+    pub undo_depth: usize,
+    pub redo_depth: usize,
     /// The DataTable view model (M10.03): order, widths, sort, selection, visible range.
     pub table: Option<crate::data_table::TableViewModel>,
 }
@@ -682,6 +780,8 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
             Some("quit_confirm".to_string())
         } else if shell.any_combo_open() {
             Some("combo_menu".to_string())
+        } else if shell.any_dropdown_open() {
+            Some("dropdown_menu".to_string())
         } else if let Some(d) = shell.dialog_name() {
             Some(d.to_string())
         } else {
@@ -912,8 +1012,66 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
                             .map(|x| (x.row, x.col))
                     }),
                     table: shell.dataset_table_view(&d.key(), cx),
+                    edit_error: shell
+                        .ds_tables
+                        .borrow()
+                        .get(&d.key())
+                        .and_then(|e| e.read(cx).delegate().shared.edit_error.borrow().clone()),
+                    selection: shell
+                        .ds_tables
+                        .borrow()
+                        .get(&d.key())
+                        .map(|e| e.read(cx).delegate().selection.indices())
+                        .unwrap_or_default(),
+                    chip: crate::dataset_chrome::chip_text(d, d.rows),
+                    used_by_chip: crate::dataset_chrome::used_by_text(d),
+                    banner: d.error.is_some() && !shell.ds_banner_dismissed.contains(&d.key()),
+                    popover: shell.ds_popover,
+                    hamburger: crate::dataset_chrome::hamburger_items(
+                        d,
+                        d.rows,
+                        shell.host.is_some(),
+                        shell.ds_json_mode,
+                        shell.ds_seed_mode,
+                    )
+                    .into_iter()
+                    .map(|i| HamburgerItemState {
+                        action: i.action,
+                        label: i.label,
+                        disabled: i.disabled,
+                    })
+                    .collect(),
+                    json_pretty: shell
+                        .json_eds
+                        .borrow()
+                        .get(&d.key())
+                        .is_none_or(|e| e.pretty),
+                    json_dirty: shell
+                        .json_eds
+                        .borrow()
+                        .get(&d.key())
+                        .is_some_and(|e| e.dirty(cx)),
+                    json_problem: shell
+                        .json_eds
+                        .borrow()
+                        .get(&d.key())
+                        .and_then(|e| e.problem.clone()),
+                    undo_depth: shell
+                        .ds_tables
+                        .borrow()
+                        .get(&d.key())
+                        .map_or(0, |e| e.read(cx).delegate().shared.undo.borrow().len()),
+                    redo_depth: shell
+                        .ds_tables
+                        .borrow()
+                        .get(&d.key())
+                        .map_or(0, |e| e.read(cx).delegate().shared.redo.borrow().len()),
                 }
             }),
+        schema_dialog: shell.schema_dialog_state(cx),
+        crud_dialog: shell.crud_dialog_state(cx),
+        export_dialog: shell.export_dialog_state(cx),
+        seed_dialog: shell.seed_dialog_state(cx),
     }
 }
 

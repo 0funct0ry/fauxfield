@@ -783,6 +783,33 @@ impl Engine {
         Ok(n)
     }
 
+    /// Append copies of live rows with fresh key and unique values; returns the new indices.
+    pub fn dataset_duplicate(
+        &self,
+        server: &str,
+        name: &str,
+        indices: &[usize],
+    ) -> Result<Vec<usize>, EngineError> {
+        let (id, rt) = self.find(server)?;
+        let out = rt
+            .data
+            .lock()
+            .unwrap()
+            .duplicate_rows(&self.inner.cfg.root, &id, name, indices)
+            .map_err(|e| self.data_err(name, e))?;
+        self.dataset_event(id, name, &rt);
+        Ok(out)
+    }
+
+    /// Empty a Dataset's live rows (the seed file is untouched; Reset restores it).
+    pub fn dataset_clear(&self, server: &str, name: &str) -> Result<(), EngineError> {
+        let empty = match self.dataset_rows(server, name)? {
+            serde_json::Value::Object(_) => serde_json::json!({}),
+            _ => serde_json::json!([]),
+        };
+        self.dataset_set(server, name, empty)
+    }
+
     fn data_err(&self, name: &str, e: String) -> EngineError {
         if e == "unknown dataset" {
             EngineError::UnknownDataset(name.into())
@@ -1372,6 +1399,7 @@ async fn handle(
                             schema,
                             root: &engine.inner.cfg.root,
                             server_id: &id,
+                            ops: &r.crud_ops,
                         };
                         let (out, changed) = crate::data::handle(ds, &c);
                         (out, changed, ds.len())

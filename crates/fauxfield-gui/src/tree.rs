@@ -381,6 +381,9 @@ pub enum MenuAct {
     CopyCell,
     CopyRowJson,
     DeleteDatasetRow,
+    DuplicateDatasetRows,
+    /// crud operation row: copy its request as `curl`.
+    CopyCrudCurl,
     // Server menu (M3.1).
     Restart,
     ToggleEnabled,
@@ -430,6 +433,8 @@ impl MenuAct {
             CopyCell => "copy-cell".into(),
             CopyRowJson => "copy-row-json".into(),
             DeleteDatasetRow => "delete-row".into(),
+            CopyCrudCurl => "copy-curl".into(),
+            DuplicateDatasetRows => "duplicate-rows".into(),
             Restart => "restart".into(),
             ToggleEnabled => "toggle-enabled".into(),
             ChangePort => "change-port".into(),
@@ -592,9 +597,10 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
         RowKind::DatasetRow => vec![
             ("Copy cell", CopyCell),
             ("Copy row as JSON", CopyRowJson),
+            ("Duplicate row", DuplicateDatasetRows),
             ("Delete row", DeleteDatasetRow),
         ],
-        RowKind::CrudOp { .. } => vec![("Open route", Open)],
+        RowKind::CrudOp { .. } => vec![("Open route", Open), ("Copy as cURL", CopyCrudCurl)],
         RowKind::Response { default, disabled } => {
             let mut v = Vec::new();
             if !default {

@@ -180,6 +180,10 @@ pub struct Dataset {
     pub error: Option<String>,
     /// Declared columns `(name, type)` (M10.04).
     pub columns: Vec<(String, String)>,
+    /// Declared columns with their constraints (M10.07).
+    pub column_defs: Vec<fauxfield_model::DatasetColumn>,
+    /// Free-text description (M10.07).
+    pub description: String,
     /// Active seed source: `static`, `template`, `generator` or `none` (M10.04).
     pub source: String,
     /// Generator seed summary lines `name: kind` (M10.02), empty when the seed is not a generator.
@@ -450,6 +454,8 @@ impl Workspace {
                         seed: d.seed.clone(),
                         seed_template: d.seed_template.clone(),
                         error: None,
+                        column_defs: d.columns.clone(),
+                        description: d.description.clone().unwrap_or_default(),
                         columns: d
                             .columns
                             .iter()

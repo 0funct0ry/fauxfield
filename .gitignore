@@ -63,3 +63,5 @@ internal-docs/
 /environments/
 /fauxfield.toml
 /servers/
+/data/
+/files/

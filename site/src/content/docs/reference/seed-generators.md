@@ -22,7 +22,7 @@ A Dataset may declare `[datasets.generator]` with a row count and a field list i
 | `string` | Random string of `length` (default 8) from `charset` (default alphanumeric) |
 | `lorem` | `words` (default 5) lorem ipsum words |
 | `fake` | Any `fake` kind named by `fake`, e.g. `internet.email` |
-| `datetime` | RFC 3339 / `format` timestamp between `min` and `max` (RFC 3339, default last 365 days) |
+| `datetime` | RFC 3339 / `format` timestamp between `min` and `max` (RFC 3339, default last 365 days; one bound alone spans 365 days from it) |
 | `date` | Date (`YYYY-MM-DD`) between `min` and `max` |
 | `const` | The fixed `value` |
 | `ref` | Key (`field`, default `id`) of a row in another Dataset of the same Server (`dataset`) |

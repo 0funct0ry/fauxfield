@@ -678,3 +678,65 @@ context = "DataTable"
 action = "dt_escape"
 keys = "escape"
 context = "DataTable"
+
+# Dataset rows (M10.07): selection actions of the Dataset table.
+[[binding]]
+action = "select_all_dataset_rows"
+keys = "secondary-a"
+context = "DataTable && !TextInput"
+
+[[binding]]
+action = "duplicate_dataset_rows"
+keys = "secondary-d"
+context = "DataTable && !TextInput"
+
+[[binding]]
+action = "delete_dataset_row"
+keys = "delete"
+context = "DataTable && !TextInput"
+
+[[binding]]
+action = "copy_dataset_row"
+keys = "secondary-shift-c"
+context = "DataTable && !TextInput"
+
+[[binding]]
+action = "clear_dataset_selection"
+keys = "secondary-shift-a"
+context = "DataTable && !TextInput"
+
+[[binding]]
+action = "edit_dataset_cell"
+keys = "enter"
+context = "DataTable && !TextInput"
+
+[[binding]]
+action = "undo_dataset_edit"
+keys = "secondary-z"
+context = "DataTable && !TextInput"
+
+[[binding]]
+action = "redo_dataset_edit"
+keys = "secondary-shift-z"
+context = "DataTable && !TextInput"
+
+# Dataset tab menu (M10.07): shown as shortcuts in the hamburger.
+[[binding]]
+action = "toggle_dataset_view"
+keys = "secondary-alt-j"
+
+[[binding]]
+action = "export_dataset"
+keys = "secondary-shift-e"
+
+[[binding]]
+action = "generate_dataset_rows"
+keys = "secondary-shift-g"
+
+[[binding]]
+action = "add_dataset_column"
+keys = "secondary-alt-c"
+
+[[binding]]
+action = "edit_dataset_schema"
+keys = "secondary-alt-s"

@@ -888,3 +888,69 @@ fn dataset_row_apis_edit_insert_delete() {
             .is_err()
     );
 }
+
+#[test]
+fn dataset_column_constraints_are_enforced_and_rows_duplicate() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let cols = r#"
+[[datasets.columns]]
+name = "id"
+type = "int"
+primary_key = true
+[[datasets.columns]]
+name = "name"
+type = "string"
+required = true
+unique = true
+[[datasets.columns]]
+name = "age"
+type = "int"
+default = 18
+"#;
+    let e = crud_engine(&rt, &dir, cols, "", "");
+    // Type, required and unique on cell edits.
+    assert!(
+        e.dataset_update_cell("srv_d", "people", 0, "age", serde_json::json!("x"))
+            .is_err()
+    );
+    assert!(
+        e.dataset_update_cell("srv_d", "people", 0, "name", serde_json::json!(""))
+            .is_err()
+    );
+    assert!(
+        e.dataset_update_cell("srv_d", "people", 0, "name", serde_json::json!("Bob"))
+            .is_err()
+    );
+    // Insert applies the default and rejects a taken unique value.
+    let at = e
+        .dataset_insert("srv_d", "people", None, vec![serde_json::json!({"id": 50})])
+        .unwrap();
+    assert_eq!(e.dataset_rows("srv_d", "people").unwrap()[at]["age"], 18);
+    assert!(
+        e.dataset_insert(
+            "srv_d",
+            "people",
+            None,
+            vec![serde_json::json!({"id": 51, "name": "Ann"})]
+        )
+        .is_err()
+    );
+    // HTTP writes answer 422.
+    let (st, _, _) = call(&rt, &e, "POST", "/people", r#"{"name":"Ann"}"#);
+    assert_eq!(st, 422);
+    // Duplicate gives fresh key and unique values.
+    let new = e.dataset_duplicate("srv_d", "people", &[0]).unwrap();
+    let rows = e.dataset_rows("srv_d", "people").unwrap();
+    assert_ne!(rows[new[0]]["id"], rows[0]["id"]);
+    assert_eq!(rows[new[0]]["name"], "Ann-copy");
+    e.dataset_clear("srv_d", "people").unwrap();
+    assert_eq!(
+        e.dataset_rows("srv_d", "people")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+}

@@ -549,6 +549,7 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                     persist: a.persist,
                     crud_path: a.crud_path,
                     crud_folder: None,
+                    crud_ops: vec![],
                     validate: a.validate,
                 };
                 let route = s.upsert_dataset(&id, &spec).map_err(e)?;

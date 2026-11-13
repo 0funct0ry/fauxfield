@@ -572,10 +572,7 @@ fn dataset_columns_generator_and_seed_round_trip() {
     use fauxfield_model::{DatasetColumn, GeneratorField, GeneratorSeed, GeneratorSpec};
     let (_d, s) = ws();
     let srv = s.create_server("Shop", 3010).unwrap();
-    let col = |n: &str, t: &str| DatasetColumn {
-        name: n.into(),
-        ty: t.into(),
-    };
+    let col = |n: &str, t: &str| DatasetColumn::new(n, t);
     s.create_dataset_with_columns(
         &srv,
         "products",
@@ -779,4 +776,56 @@ fn create_route_from_recording_uses_the_recorded_response() {
     assert_eq!(r.method, "GET");
     assert_eq!(r.responses[0].status, 404);
     assert_eq!(r.responses[0].body.as_deref(), Some("{\"e\":1}"));
+}
+
+#[test]
+fn dataset_column_constraints_round_trip_and_keep_comments() {
+    use fauxfield_model::DatasetColumn;
+    let (dir, s) = ws();
+    let srv = s.create_server("Shop", 3011).unwrap();
+    s.create_dataset_with_columns(
+        &srv,
+        "products",
+        None,
+        None,
+        None,
+        &[
+            DatasetColumn::new("id", "int"),
+            DatasetColumn::new("sku", "string"),
+        ],
+    )
+    .unwrap();
+    let file_id = s.server_file(&srv).unwrap();
+    let file = dir.path().join(&file_id);
+    let text = s
+        .text(&file_id)
+        .unwrap()
+        .replace("name = \"sku\"", "# keep me\nname = \"sku\"");
+    s.set_raw(&file_id, &text).unwrap();
+    let mut id = DatasetColumn::new("id", "int");
+    id.primary_key = true;
+    let mut sku = DatasetColumn::new("sku", "string");
+    sku.unique = true;
+    sku.required = true;
+    sku.description = Some("Stock code".into());
+    sku.default = Some(toml::Value::String("n/a".into()));
+    s.set_dataset_columns(&srv, "products", &[id.clone(), sku.clone()])
+        .unwrap();
+    s.flush().unwrap();
+    let out = std::fs::read_to_string(&file).unwrap();
+    assert!(out.contains("# keep me"), "{out}");
+    assert!(out.contains("primary_key = true") && out.contains("unique = true"));
+    let d = s
+        .snapshot()
+        .servers
+        .iter()
+        .find(|(_, x)| x.id == srv)
+        .unwrap()
+        .1
+        .datasets[0]
+        .clone();
+    assert_eq!(d.columns, vec![id, sku]);
+    let mut bad = DatasetColumn::new("n", "int");
+    bad.default = Some(toml::Value::String("x".into()));
+    assert!(s.set_dataset_columns(&srv, "products", &[bad]).is_err());
 }

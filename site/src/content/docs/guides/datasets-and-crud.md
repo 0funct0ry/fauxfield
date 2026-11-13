@@ -193,3 +193,15 @@ Ops: `insert`, `update` (`mode = "merge"` or `"replace"`), `delete`, `delete_whe
 ### Rules and singletons
 
 Rule targets `dataset` (`name.$.path`) and `dataset_count` (`name?field=value`) branch on Dataset data. A Dataset seeded with an object accepts `PUT` (replace) and `PATCH` (merge) on its CRUD path, and `update`/`set` actions.
+
+## Schema designer and table workflow
+
+**New Dataset…** (the Datasets tab `+` or the palette) opens the schema designer. Give the Dataset a name, pick the Server and a source (static seed file, seed template or generator), then design the columns: type, primary key, unique, required, default, generator and description. Starter templates (*id + name*, *Users*, *Products*) fill the grid. Problems show inline and the **Create dataset** button stays disabled until there are none. Creating a Dataset never adds a Route; tick *Also create CRUD Routes* or use **Create CRUD Routes…** later.
+
+Column constraints are enforced on cell edits, inserted rows and HTTP writes (a violation answers 422 with an `errors` list). `default` fills a missing value in a new row.
+
+The Dataset tab keeps one status line (`N rows · M columns · source · used by K Routes`; click it for details). The hamburger menu holds the view switch, **Export…**, **Seed data…**, **Import…**, **Add column…**, **Edit schema…**, **Create CRUD Routes…**, **Reset** and **Clear data…** (empties the live rows; Reset restores them from the seed).
+
+Select rows with the checkboxes, Shift-click for a range and Cmd/Ctrl-click to toggle. The selection bar offers **Copy as JSON**, **Duplicate** and **Delete** (several rows ask first; the toast has **Undo**). Type, press Enter or double-click a cell to edit it; Tab and Shift-Tab move between cells, Enter commits and moves down, Esc cancels, and Cmd/Ctrl-Z undoes the last cell edit.
+
+**Add column…** opens a dialog with the name, type, constraints (primary key, unique, required), default, the generator that fills existing rows, and a description. Table columns grow evenly to fill the width.

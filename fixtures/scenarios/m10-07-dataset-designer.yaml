@@ -1,0 +1,96 @@
+# M10.07 scenario: design `catalog` in the schema designer, land on an empty table, edit rows
+# in place, select and act on rows, seed 50 rows, export columns to CSV, clear data, and create
+# CRUD Routes only on request. Needs the example workspace as the launch workspace.
+name: m10-07-dataset-designer
+size: default
+steps:
+  - state: [reset]
+  - click_element: {id: sidebar-tab-datasets}
+  - wait_for_idle: {}
+  - key: secondary-shift-p
+  - type_text: "Dataset: New…"
+  - key: enter
+  - wait_for_idle: {}
+  - assert: {pointer: /modal, equals: schema_designer}
+  # No name yet: Create is disabled.
+  - assert: {pointer: /schema_dialog/create_enabled, equals: false}
+  - type_text: catalog
+  - click_element: {id: schema-starter-Products}
+  - assert: {pointer: /schema_dialog/create_enabled, equals: true}
+  - assert: {pointer: /schema_dialog/columns/0/primary_key, equals: true}
+  - screenshot: {name: m10-07-designer-one-dark}
+  - click_element: {id: schema-create}
+  - wait_for_idle: {}
+  # An empty table, one status chip row, and no Route was created.
+  - assert: {pointer: /dataset/rows, equals: 0}
+  - assert: {pointer: /dataset/used_by_chip, equals: "used by 0 Routes"}
+  - assert: {pointer: /dataset/chip, contains: "0 rows"}
+  - click_element: {id: ds-add-row-inline}
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/rows, equals: 1}
+  - assert: {pointer: /dataset/editing/0, equals: 0}
+  - type_text: Widget
+  - key: enter
+  - wait_for_idle: {}
+  - click_element: {id: ds-add-row}
+  - wait_for_idle: {}
+  - key: escape
+  - assert: {pointer: /dataset/rows, equals: 2}
+  # Select both rows, duplicate them, then delete the copies with a confirmation.
+  - click_element: {id: ds-select-all}
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/selection/1, equals: 1}
+  - click_element: {id: ds-sel-dup-srv_users:catalog}
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/rows, equals: 4}
+  - click_element: {id: ds-sel-delete-srv_users:catalog}
+  - assert: {pointer: /modal, equals: data_confirm}
+  - wait_for_idle: {}
+  - click_element: {id: data-confirm-yes}
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/rows, equals: 2}
+  # Seed 50 rows with generators.
+  - key: secondary-shift-p
+  - type_text: "Dataset: Seed Data"
+  - key: enter
+  - wait_for_idle: {}
+  - assert: {pointer: /modal, equals: seed_data}
+  - key: secondary-a
+  - type_text: "50"
+  - click_element: {id: seed-go}
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/rows, equals: 52}
+  # Export two columns of the first 10 rows to CSV.
+  - key: secondary-shift-p
+  - type_text: "Dataset: Export"
+  - key: enter
+  - wait_for_idle: {}
+  - assert: {pointer: /modal, equals: export_dataset}
+  - assert: {pointer: /export_dialog/rows, equals: 52}
+  - screenshot: {name: m10-07-export-one-dark}
+  - click_element: {id: export-cancel}
+  - wait_for_idle: {}
+  # Clear data keeps the seed; Reset restores it.
+  - key: secondary-shift-p
+  - type_text: "Dataset: Clear Data…"
+  - wait_for_idle: {}
+  - key: enter
+  - wait_for_idle: {}
+  - assert: {pointer: /modal, equals: data_confirm}
+  - wait_for_idle: {}
+  - click_element: {id: data-confirm-yes}
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/rows, equals: 0}
+  # CRUD Routes only on request.
+  - click_element: {id: ds-used-by-chip-srv_users:catalog}
+  - wait_for_idle: {}
+  - assert: {pointer: /modal, equals: crud_routes}
+  - assert: {pointer: /crud_dialog/path, equals: /catalog}
+  - screenshot: {name: m10-07-crud-one-dark}
+  - click_element: {id: crud-create}
+  - wait_for_idle: {}
+  - assert: {pointer: /dataset/used_by_chip, equals: "used by 1 Route"}
+  - set_theme: One Light
+  - wait_for_idle: {}
+  - screenshot: {name: m10-07-table-one-light}
+  - audit: {themes: [one-dark, one-light], sizes: [default, min]}

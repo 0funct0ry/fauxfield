@@ -26,6 +26,8 @@ pub enum ToastAction {
     CreateWorkspaceAt(std::path::PathBuf),
     OpenWorkspaceAt(std::path::PathBuf),
     EnableAndStart(String),
+    /// Put back the rows of the last Dataset delete (M10.07).
+    UndoRowDelete,
 }
 
 /// A button shown beside the status-bar message.
@@ -488,8 +490,16 @@ impl Shell {
         } else {
             response.rules.iter().collect()
         };
-        let base = self
-            .host
+        let base = self.server_base_url(server);
+        let curl =
+            crate::rule_curl::build(&base, &server.prefix, &route.method, &route.path, &rules);
+        cx.write_to_clipboard(ClipboardItem::new_string(curl));
+        self.notify("Copied cURL command".into(), cx);
+    }
+
+    /// `scheme://host:port` of a Server: the running address, else the configured one.
+    pub(crate) fn server_base_url(&self, server: &crate::view::Server) -> String {
+        self.host
             .as_ref()
             .and_then(|h| h.engine().base_url(&server.id))
             .unwrap_or_else(|| {
@@ -499,11 +509,52 @@ impl Shell {
                 };
                 let scheme = if server.https() { "https" } else { "http" };
                 format!("{scheme}://{host}:{}", server.port)
+            })
+    }
+
+    /// `...` menu of a crud operation row (`<route>#<n>`): its request as a `curl` command.
+    /// POST, PUT and PATCH carry a sample body: the first live row without its key, else the
+    /// declared columns with type defaults.
+    pub(crate) fn copy_crud_op_curl(&mut self, row_id: &str, cx: &mut Context<Self>) {
+        let Some((route_id, n)) = row_id
+            .split_once('#')
+            .and_then(|(r, n)| n.parse::<usize>().ok().map(|n| (r.to_string(), n)))
+        else {
+            return self.notify("Select a CRUD operation first.".into(), cx);
+        };
+        let Some((server, route)) = self.ws.find_route(&route_id) else {
+            return;
+        };
+        let Some((method, suffix)) = crate::tree::CRUD_OPS.get(n).copied() else {
+            return;
+        };
+        let base = self.server_base_url(server);
+        let path = format!("{}{suffix}", route.path.trim_end_matches('/'));
+        let body = matches!(method, "POST" | "PUT" | "PATCH").then(|| {
+            let ds = route
+                .dataset
+                .as_deref()
+                .and_then(|name| {
+                    self.ws
+                        .datasets
+                        .iter()
+                        .find(|d| d.server_id == server.id && d.name == name)
+                })
+                .cloned();
+            let live = ds.as_ref().and_then(|d| {
+                self.engine()
+                    .and_then(|e| e.dataset_page(&d.server_id, &d.name, 0, 1).ok())
+                    .and_then(|(_, mut r)| r.pop())
             });
-        let curl =
-            crate::rule_curl::build(&base, &server.prefix, &route.method, &route.path, &rules);
+            crate::rule_curl::crud_sample_body(
+                live,
+                ds.as_ref().map(|d| d.key.as_str()).unwrap_or("id"),
+                ds.as_ref().map(|d| d.columns.as_slice()).unwrap_or(&[]),
+            )
+        });
+        let curl = crate::rule_curl::crud_curl(&base, &server.prefix, method, &path, body.as_ref());
         cx.write_to_clipboard(ClipboardItem::new_string(curl));
-        self.notify("Copied cURL command".into(), cx);
+        self.notify(format!("Copied cURL for {method} {path}"), cx);
     }
 
     pub fn clear_traffic(&mut self, cx: &mut Context<Self>) {

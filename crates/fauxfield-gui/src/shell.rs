@@ -388,8 +388,21 @@ pub struct Shell {
     pub(crate) traffic_scroll: UniformListScrollHandle,
     pub(crate) ds_scroll: UniformListScrollHandle,
     pub(crate) ds_json_mode: bool,
+    /// The Dataset tab details popover is open (M10.07).
+    pub(crate) ds_popover: bool,
+    /// Rows removed by the last Dataset delete, for the toast Undo (M10.07).
+    pub(crate) ds_undo_delete: Option<(String, Vec<(usize, serde_json::Value)>)>,
+    /// Datasets whose seed problem banner was dismissed.
+    pub(crate) ds_banner_dismissed: std::collections::HashSet<String>,
+    pub(crate) ds_filters: std::cell::RefCell<
+        std::collections::HashMap<String, gpui::Entity<crate::text_input::TextInput>>,
+    >,
+    pub(crate) ds_filter_subs: std::cell::RefCell<Vec<gpui::Subscription>>,
     /// The Dataset tab shows the Seed section (M10.04).
     pub(crate) ds_seed_mode: bool,
+    /// Editors of the Dataset JSON views (M10.07).
+    pub(crate) json_eds:
+        std::cell::RefCell<std::collections::HashMap<String, crate::dataset_json::JsonEd>>,
     pub(crate) seed_eds:
         std::cell::RefCell<std::collections::HashMap<String, crate::dataset_edit::SeedEd>>,
     /// One DataTable per open Dataset (key `server:name`), created lazily at render.
@@ -431,6 +444,11 @@ pub struct Shell {
     pub(crate) combo_subs: std::cell::RefCell<Vec<gpui::Subscription>>,
     /// Keys of the ComboBoxes whose list is open.
     pub(crate) open_combos: std::collections::HashSet<String>,
+    pub(crate) dropdowns: std::cell::RefCell<
+        std::collections::HashMap<String, gpui::Entity<crate::dropdown_menu::DropdownMenu>>,
+    >,
+    pub(crate) dropdown_subs: std::cell::RefCell<Vec<gpui::Subscription>>,
+    pub(crate) open_dropdowns: std::collections::HashSet<String>,
     /// A palette action requested by a ComboBox entry, run on the next render.
     pub(crate) pending_action: Option<String>,
     pub(crate) problems: Vec<Problem>,
@@ -460,6 +478,16 @@ pub struct Shell {
     /// The New Server dialog (Name, Host, Port), when open.
     pub(crate) server_dialog: Option<crate::server_dialog::ServerDialog>,
     pub(crate) server_dialog_focus: FocusHandle,
+    pub(crate) export_dialog: Option<crate::dataset_dialogs::ExportDialog>,
+    pub(crate) export_dialog_focus: FocusHandle,
+    pub(crate) seed_dialog: Option<crate::dataset_dialogs::SeedDialog>,
+    pub(crate) seed_dialog_focus: FocusHandle,
+    pub(crate) schema_dialog: Option<crate::schema_dialog::SchemaDialog>,
+    pub(crate) schema_dialog_focus: FocusHandle,
+    pub(crate) column_dialog: Option<crate::column_dialog::ColumnDialog>,
+    pub(crate) column_dialog_focus: FocusHandle,
+    pub(crate) crud_dialog: Option<crate::crud_dialog::CrudDialog>,
+    pub(crate) crud_dialog_focus: FocusHandle,
     /// The Response body being edited inline (committed on blur or Cmd/Ctrl+S).
     pub(crate) body_edit: Option<BodyEdit>,
     /// One CodeEditor per Response (`<id>` for the body, `<id>#file` for the file preview).
@@ -655,7 +683,13 @@ impl Shell {
             traffic_scroll: UniformListScrollHandle::new(),
             ds_scroll: UniformListScrollHandle::new(),
             ds_json_mode: false,
+            ds_popover: false,
+            ds_undo_delete: None,
+            ds_banner_dismissed: Default::default(),
+            ds_filters: Default::default(),
+            ds_filter_subs: Default::default(),
             ds_seed_mode: false,
+            json_eds: Default::default(),
             seed_eds: Default::default(),
             ds_tables: Default::default(),
             ds_table_subs: Default::default(),
@@ -679,6 +713,9 @@ impl Shell {
             combos: Default::default(),
             combo_subs: Default::default(),
             open_combos: Default::default(),
+            dropdowns: Default::default(),
+            dropdown_subs: Default::default(),
+            open_dropdowns: Default::default(),
             pending_action: None,
             problems: store_problems,
             logs: Vec::new(),
@@ -699,6 +736,16 @@ impl Shell {
             picker_focus: cx.focus_handle(),
             server_dialog: None,
             server_dialog_focus: cx.focus_handle(),
+            export_dialog: None,
+            export_dialog_focus: cx.focus_handle(),
+            seed_dialog: None,
+            seed_dialog_focus: cx.focus_handle(),
+            schema_dialog: None,
+            schema_dialog_focus: cx.focus_handle(),
+            column_dialog: None,
+            column_dialog_focus: cx.focus_handle(),
+            crud_dialog: None,
+            crud_dialog_focus: cx.focus_handle(),
             body_edit: None,
             editor_settings,
             body_editors: Default::default(),
@@ -1478,9 +1525,13 @@ impl Shell {
                     self.reset_dataset(k, cx);
                 }
             }
+            MenuAct::CopyCrudCurl => self.copy_crud_op_curl(&m.row_id, cx),
             MenuAct::CopyCell => self.dataset_row_action(&m.row_id, DsRowAction::CopyCell, cx),
             MenuAct::CopyRowJson => {
                 self.dataset_row_action(&m.row_id, DsRowAction::CopyRowJson, cx)
+            }
+            MenuAct::DuplicateDatasetRows => {
+                self.dataset_row_action(&m.row_id, DsRowAction::DuplicateRows, cx)
             }
             MenuAct::DeleteDatasetRow => {
                 self.dataset_row_action(&m.row_id, DsRowAction::DeleteRow, cx)
@@ -2014,7 +2065,13 @@ impl Shell {
 
     fn on_capture_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         // The New Server dialog is modal: its inputs own every key (no chords).
-        if self.server_dialog.is_some() {
+        if self.server_dialog.is_some()
+            || self.schema_dialog.is_some()
+            || self.crud_dialog.is_some()
+            || self.column_dialog.is_some()
+            || self.export_dialog.is_some()
+            || self.seed_dialog.is_some()
+        {
             return;
         }
         if self.menu.is_some() && self.menu_key(ev, window, cx) {
@@ -2041,6 +2098,19 @@ impl Shell {
         }
         if self.any_dialog_open() && ev.keystroke.key == "escape" {
             self.cancel_dialog(cx);
+            cx.stop_propagation();
+            return;
+        }
+        // Typing with the Dataset table focused starts editing the selected cell.
+        let m = ev.keystroke.modifiers;
+        if !m.control
+            && !m.platform
+            && !m.alt
+            && let Some(ch) = ev.keystroke.key_char.as_deref()
+            && ch.chars().count() == 1
+            && !ch.chars().all(char::is_control)
+            && self.type_to_edit(ch, window, cx)
+        {
             cx.stop_propagation();
             return;
         }
@@ -3101,6 +3171,14 @@ impl Render for Shell {
         if let Some(id) = self.pending_action.take() {
             self.run_action_id_next_frame(&id, window, cx);
         }
+        // A Dataset cell editor that just closed leaves focus on a removed input.
+        if let Some(key) = self.active_dataset_key()
+            && let Some(t) = self.ds_tables.borrow().get(&key).cloned()
+            && t.read(cx).delegate().shared.refocus.replace(false)
+        {
+            use gpui::Focusable;
+            window.focus(&t.focus_handle(cx));
+        }
         // A field or the body editor that just closed leaves focus on an element that is no
         // longer drawn; give it back to the shell so keys and actions keep working.
         if self.inline.is_none() {
@@ -3356,8 +3434,20 @@ impl Render for Shell {
             EditSampleRequest => |this, _w, cx| this.open_sample_dialog(cx),
             ResetState => |this, _w, cx| this.reset_state_action(cx),
             CopyDatasetCell => |this, _w, cx| this.active_dataset_row_action(DsRowAction::CopyCell, cx),
-            CopyDatasetRow => |this, _w, cx| this.active_dataset_row_action(DsRowAction::CopyRowJson, cx),
-            DeleteDatasetRow => |this, _w, cx| this.active_dataset_row_action(DsRowAction::DeleteRow, cx),
+            CopyDatasetRow => |this, _w, cx| {
+                if this.selected_rows(cx).len() > 1 {
+                    this.copy_selected_rows(cx)
+                } else {
+                    this.active_dataset_row_action(DsRowAction::CopyRowJson, cx)
+                }
+            },
+            DeleteDatasetRow => |this, _w, cx| {
+                if this.selected_rows(cx).len() > 1 {
+                    this.delete_selected_rows(cx)
+                } else {
+                    this.active_dataset_row_action(DsRowAction::DeleteRow, cx)
+                }
+            },
             NewDatasetFromTable => |this, w, cx| this.begin_new_dataset_from_table(w, cx),
             ImportDatasetFile => |this, w, cx| this.begin_import_new(w, cx),
             ImportIntoDataset => |this, w, cx| this.begin_import_existing(w, cx),
@@ -3387,6 +3477,38 @@ impl Render for Shell {
                 None => this.notify("Open a dataset first.".into(), cx),
             },
             NewCrudResource => |this, w, cx| this.begin_new_crud(w, cx),
+            EditDatasetSchema => |this, w, cx| this.edit_schema_action(w, cx),
+            CopyCrudOpCurl => |this, _w, cx| {
+                let row = this.selected.clone().unwrap_or_default();
+                this.copy_crud_op_curl(&row, cx)
+            },
+            ApplyDatasetJson => |this, _w, cx| {
+                if let Some(k) = this.active_dataset_key() {
+                    this.apply_json(&k, cx);
+                }
+            },
+            RevertDatasetJson => |this, _w, cx| {
+                if let Some(k) = this.active_dataset_key() {
+                    this.revert_json(&k, cx);
+                }
+            },
+            ToggleDatasetJsonFormat => |this, _w, cx| this.toggle_json_format(cx),
+            UndoDatasetEdit => |this, _w, cx| this.step_cell_history(false, cx),
+            RedoDatasetEdit => |this, _w, cx| this.step_cell_history(true, cx),
+            DuplicateDatasetRows => |this, _w, cx| this.duplicate_selected_rows(cx),
+            SelectAllDatasetRows => |this, _w, cx| this.select_all_rows(cx),
+            ClearDatasetSelection => |this, _w, cx| this.clear_row_selection(cx),
+            CreateCrudRoutes => |this, w, cx| match this.active_dataset_key() {
+                Some(_) => this.begin_crud_routes(w, cx),
+                None => this.notify("Open a dataset first.".into(), cx),
+            },
+            ExportDataset => |this, w, cx| match this.active_dataset_key() {
+                Some(k) => this.begin_export(&k, w, cx),
+                None => this.notify("Open a dataset first.".into(), cx),
+            },
+            ClearDatasetData => |this, _w, cx| this.begin_clear_data(cx),
+            ToggleDatasetView => |this, _w, cx| this.toggle_dataset_view(cx),
+            OpenDatasetSeed => |this, _w, cx| this.open_dataset_seed(cx),
             NewDataset => |this, w, cx| this.begin_new_dataset(w, cx),
             NewStaticRoute => |this, w, cx| this.begin_new_static(w, cx),
             TrustDevCa => |this, _w, cx| match this.current_server_id() {
@@ -3520,6 +3642,21 @@ impl Render for Shell {
                 self.picker_ids().1,
                 None
             ))
+        })
+        .when(self.export_dialog.is_some(), |d| {
+            d.child(self.render_export_dialog(&t, cx))
+        })
+        .when(self.seed_dialog.is_some(), |d| {
+            d.child(self.render_seed_dialog(&t, cx))
+        })
+        .when(self.schema_dialog.is_some(), |d| {
+            d.child(self.render_schema_dialog(&t, cx))
+        })
+        .when(self.column_dialog.is_some(), |d| {
+            d.child(self.render_column_dialog(&t, cx))
+        })
+        .when(self.crud_dialog.is_some(), |d| {
+            d.child(self.render_crud_dialog(&t, cx))
         })
         .when(self.server_dialog.is_some(), |d| {
             d.child(self.render_server_dialog(&t, cx))

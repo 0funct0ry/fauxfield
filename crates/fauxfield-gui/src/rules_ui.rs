@@ -527,6 +527,9 @@ impl Shell {
             }
             "rules-add" => self.add_rule(&id, cx),
             "ds-view" => {
+                if self.ds_json_mode && id != "json" && !self.leave_json_view(cx) {
+                    return Ok(());
+                }
                 self.ds_json_mode = id == "json";
                 self.ds_seed_mode = id == "seed";
                 cx.notify();
@@ -579,7 +582,89 @@ impl Shell {
                     );
                 }
             }
+            "ds-select" => {
+                if let Some(r) = id.parse::<usize>().ok().or(idx)
+                    && let Some(key) = self.active_dataset_key()
+                    && let Some(t) = self.ds_tables.borrow().get(&key).cloned()
+                {
+                    t.update(cx, |s, cx| {
+                        let d = s.delegate_mut();
+                        let live = d.actual_index(r);
+                        d.selection.toggle(live);
+                        s.refresh(cx);
+                    });
+                    cx.notify();
+                }
+            }
+            "date" | "date-step" | "date-view" | "date-m" | "date-y" | "date-day" => {
+                let picker = self
+                    .seed_dialog
+                    .as_ref()
+                    .and_then(|d| {
+                        d.cols
+                            .iter()
+                            .flat_map(|c| c.dates.iter())
+                            .find(|(_, p)| p.read(cx).id().as_ref() == id)
+                    })
+                    .map(|(_, p)| p.clone())
+                    .ok_or_else(|| format!("no date picker {id:?}"))?;
+                let n = idx.unwrap_or(0);
+                picker.update(cx, |p, cx| match name {
+                    "date" => p.toggle(window, cx),
+                    "date-step" => p.step(if n == 0 { -1 } else { 1 }, cx),
+                    "date-view" => p.toggle_view(
+                        if n == 0 {
+                            crate::date_picker::CalendarView::Month
+                        } else {
+                            crate::date_picker::CalendarView::Year
+                        },
+                        cx,
+                    ),
+                    "date-m" => p.choose_month(n as u32, cx),
+                    "date-y" => p.choose_year(n as i32, cx),
+                    _ => {
+                        let (y, m, d) = (n / 10000, (n / 100) % 100, n % 100);
+                        if let Some(day) =
+                            chrono::NaiveDate::from_ymd_opt(y as i32, m as u32, d as u32)
+                        {
+                            p.pick(day, cx);
+                        }
+                    }
+                });
+                cx.notify();
+            }
+            "dropdown" | "dropdown-item" | "dropdown-sub" => {
+                self.dropdown_press(name, &id, idx, window, cx)?
+            }
+            "ds-popover" => {
+                self.ds_popover = !self.ds_popover;
+                cx.notify();
+            }
+            "ds-banner-dismiss" => {
+                self.ds_banner_dismissed.insert(id.replace('|', ":"));
+                cx.notify();
+            }
             "sample-cancel" => self.close_sample_dialog(cx),
+            other if other.starts_with("schema-") => {
+                let arg = if id.is_empty() {
+                    String::new()
+                } else {
+                    id.clone()
+                };
+                self.schema_op(&other["schema-".len()..], &arg, window, cx)
+            }
+            other if other.starts_with("export-") => {
+                self.export_op(&other["export-".len()..], &id, window, cx)
+            }
+            other if other.starts_with("seed-") => {
+                self.seed_op(&other["seed-".len()..], &id, window, cx)
+            }
+            other if other.starts_with("column-") => {
+                self.column_op(&other["column-".len()..], window, cx)
+            }
+            other if other.starts_with("crud-") => {
+                self.crud_op(&other["crud-".len()..], &id, window, cx)
+            }
             "sample-save" => self.save_sample(false, window, cx),
             "sample-send" => self.save_sample(true, window, cx),
             other

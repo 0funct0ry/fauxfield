@@ -54,6 +54,14 @@ struct ResetState {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct ClearDataset {
+    /// Server ID, name or file slug.
+    server: String,
+    /// Dataset name.
+    dataset: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct SetNetwork {
     /// `none`, `fast-3g`, `slow-3g`, `flaky-wifi` or `offline`. Omit to read the current profile.
     profile: Option<String>,
@@ -172,6 +180,32 @@ pub fn register_control_tools(r: &mut Registry, provider: ControlProvider) {
                     .await
                     .map_err(fail)?;
                 Ok(json!({ "reset": true, "server": a.server, "dataset": a.dataset }))
+            })
+        },
+    ));
+
+    let p = provider.clone();
+    r.register(ToolDef::new::<ClearDataset>(
+        "clear_dataset",
+        "Empty a Dataset's live rows (runtime only; the seed file is untouched and `reset_state` restores the rows from it).",
+        ToolClass::Execute,
+        move |m| -> ToolFuture {
+            let p = p.clone();
+            Box::pin(async move {
+                let a = parse::<ClearDataset>(m)?;
+                let c = host(&p)?;
+                let empty = match c
+                    .data_show(a.server.clone(), a.dataset.clone())
+                    .await
+                    .map_err(fail)?
+                {
+                    serde_json::Value::Object(_) => json!({}),
+                    _ => json!([]),
+                };
+                c.data_set(a.server.clone(), a.dataset.clone(), empty)
+                    .await
+                    .map_err(fail)?;
+                Ok(json!({ "cleared": true, "server": a.server, "dataset": a.dataset }))
             })
         },
     ));

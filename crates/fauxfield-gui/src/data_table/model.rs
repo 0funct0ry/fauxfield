@@ -19,6 +19,8 @@ pub struct TableOptions {
     pub col_resizable: bool,
     pub col_movable: bool,
     pub col_fixed: bool,
+    /// Grow the scrollable columns evenly to fill the viewport when they are narrower.
+    pub stretch: bool,
 }
 
 impl Default for TableOptions {
@@ -34,6 +36,7 @@ impl Default for TableOptions {
             col_resizable: true,
             col_movable: true,
             col_fixed: true,
+            stretch: false,
         }
     }
 }

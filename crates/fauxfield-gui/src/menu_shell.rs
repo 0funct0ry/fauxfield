@@ -124,6 +124,11 @@ impl Shell {
         c.modal_open = self.any_modal_open();
         c.text_input_focused = self.picker.is_some()
             || self.server_dialog.is_some()
+            || self.schema_dialog.is_some()
+            || self.crud_dialog.is_some()
+            || self.column_dialog.is_some()
+            || self.export_dialog.is_some()
+            || self.seed_dialog.is_some()
             || self.body_edit.is_some()
             || self.inline.is_some();
         let sidx = self.current_server();
@@ -183,11 +188,17 @@ impl Shell {
     pub(crate) fn any_modal_open(&self) -> bool {
         self.picker.is_some()
             || self.server_dialog.is_some()
+            || self.schema_dialog.is_some()
+            || self.crud_dialog.is_some()
+            || self.column_dialog.is_some()
+            || self.export_dialog.is_some()
+            || self.seed_dialog.is_some()
             || self.any_dialog_open()
             || self.quit_confirm
             || self.about_open
             || self.sample_dialog.is_some()
             || self.any_combo_open()
+            || self.any_dropdown_open()
     }
 
     /// Whether the handler of the action type `ty` (e.g. "QuickSearch") is currently enabled.
@@ -261,6 +272,21 @@ impl Shell {
     fn focused_input(&self) -> Option<gpui::Entity<crate::text_input::TextInput>> {
         if let Some(d) = &self.server_dialog {
             return d.inputs.get(d.focus).cloned();
+        }
+        if let Some(d) = &self.schema_dialog {
+            return d.focused.clone();
+        }
+        if let Some(d) = &self.crud_dialog {
+            return Some(d.path.clone());
+        }
+        if let Some(d) = &self.column_dialog {
+            return d.focused.clone();
+        }
+        if let Some(d) = &self.export_dialog {
+            return Some(d.path.clone());
+        }
+        if let Some(d) = &self.seed_dialog {
+            return Some(d.rows.clone());
         }
         if let Some(p) = &self.picker {
             return Some(p.input.clone());

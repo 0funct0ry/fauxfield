@@ -589,6 +589,87 @@ pub fn export(value: &Value, format: Format) -> Result<Vec<u8>, String> {
     }
 }
 
+/// Options of the GUI export modal (M10.07). Row scope is applied by the caller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportOptions {
+    pub format: Format,
+    /// Columns to write, in order; empty means every column.
+    pub columns: Vec<String>,
+    /// JSON: pretty (default) or compact.
+    pub pretty: bool,
+    /// CSV: write the header row.
+    pub csv_header: bool,
+    /// CSV delimiter byte.
+    pub delimiter: u8,
+}
+
+impl ExportOptions {
+    pub fn new(format: Format) -> Self {
+        Self {
+            format,
+            columns: vec![],
+            pretty: true,
+            csv_header: true,
+            delimiter: b',',
+        }
+    }
+}
+
+/// Serialise `rows` with the modal's options: column subset and order, JSON style, CSV header
+/// and delimiter.
+pub fn export_with(rows: &[Value], o: &ExportOptions) -> Result<Vec<u8>, String> {
+    let names: Vec<String> = if o.columns.is_empty() {
+        infer_columns(rows).into_iter().map(|c| c.name).collect()
+    } else {
+        o.columns.clone()
+    };
+    let project = |r: &Value| -> Value {
+        let mut m = serde_json::Map::new();
+        for n in &names {
+            if let Some(v) = r.get(n) {
+                m.insert(n.clone(), v.clone());
+            }
+        }
+        Value::Object(m)
+    };
+    match o.format {
+        Format::Json => {
+            let v = Value::Array(rows.iter().map(project).collect());
+            let s = if o.pretty {
+                serde_json::to_string_pretty(&v)
+            } else {
+                serde_json::to_string(&v)
+            };
+            Ok(s.map_err(|e| e.to_string())?.into_bytes())
+        }
+        Format::Csv => {
+            let mut w = csv::WriterBuilder::new()
+                .delimiter(o.delimiter)
+                .from_writer(Vec::new());
+            if o.csv_header {
+                w.write_record(names.iter().map(String::as_str))
+                    .map_err(|e| e.to_string())?;
+            }
+            for r in rows {
+                w.write_record(names.iter().map(|n| cell_text(r.get(n))))
+                    .map_err(|e| e.to_string())?;
+            }
+            w.into_inner().map_err(|e| e.to_string())
+        }
+        Format::Parquet => to_parquet(&rows.iter().map(project).collect::<Vec<_>>()),
+    }
+}
+
+/// Estimated output size: exports up to 500 rows and scales to `rows.len()`.
+pub fn estimate_export_size(rows: &[Value], o: &ExportOptions) -> usize {
+    let n = rows.len().min(500);
+    if n == 0 {
+        return 0;
+    }
+    let sample = export_with(&rows[..n], o).map_or(0, |b| b.len());
+    sample * rows.len() / n
+}
+
 fn cell_text(v: Option<&Value>) -> String {
     match v {
         None | Some(Value::Null) => String::new(),
@@ -715,6 +796,33 @@ pub fn append_rows(existing: &Value, imported: &[Value]) -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn export_with_projects_columns_and_honours_csv_options() {
+        let rows = vec![
+            json!({"id":1,"name":"a","x":true}),
+            json!({"id":2,"name":"b;c","x":false}),
+        ];
+        let mut o = ExportOptions::new(Format::Csv);
+        o.columns = vec!["name".into(), "id".into()];
+        o.delimiter = b';';
+        let out = String::from_utf8(export_with(&rows, &o).unwrap()).unwrap();
+        assert_eq!(out, "name;id\na;1\n\"b;c\";2\n");
+        o.csv_header = false;
+        assert!(
+            !String::from_utf8(export_with(&rows, &o).unwrap())
+                .unwrap()
+                .contains("name;id")
+        );
+        let mut j = ExportOptions::new(Format::Json);
+        j.pretty = false;
+        j.columns = vec!["id".into()];
+        assert_eq!(
+            String::from_utf8(export_with(&rows, &j).unwrap()).unwrap(),
+            r#"[{"id":1},{"id":2}]"#
+        );
+        assert!(estimate_export_size(&rows, &j) > 0);
+    }
 
     fn tmp(name: &str, body: &[u8]) -> (tempfile::TempDir, std::path::PathBuf) {
         let d = tempfile::tempdir().unwrap();

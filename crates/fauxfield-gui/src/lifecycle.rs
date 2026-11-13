@@ -50,6 +50,24 @@ pub struct DatasetDelete {
     pub remove_state: bool,
 }
 
+/// What a [`DataConfirm`] will do once confirmed (M10.07).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DataConfirmKind {
+    ClearData,
+    DeleteRows,
+}
+
+/// A destructive Dataset row operation waiting on the confirmation modal.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DataConfirm {
+    pub kind: DataConfirmKind,
+    pub key: String,
+    pub name: String,
+    pub server_id: String,
+    /// Live row indices for `DeleteRows`.
+    pub indices: Vec<usize>,
+}
+
 /// State added to [`Shell`] by M3.1.
 #[derive(Default)]
 pub struct Lifecycle {
@@ -58,6 +76,8 @@ pub struct Lifecycle {
     pub delete_confirm: Option<String>,
     /// Dataset delete awaiting confirmation (M10.01).
     pub dataset_delete: Option<DatasetDelete>,
+    /// Clear data or bulk row delete awaiting confirmation (M10.07).
+    pub data_confirm: Option<DataConfirm>,
     /// Folder (and its item count) awaiting a "create in a non-empty folder" confirmation.
     pub create_confirm: Option<(PathBuf, usize)>,
     /// Inline message shown in the open prompt instead of a toast.
@@ -314,6 +334,7 @@ impl Shell {
         self.lc.close_confirm = None;
         self.lc.delete_confirm = None;
         self.lc.dataset_delete = None;
+        self.lc.data_confirm = None;
         self.lc.create_confirm = None;
         self.lc.prompt_error = None;
         self.lc.undo_file = None;
@@ -329,6 +350,11 @@ impl Shell {
             self.delete_server_now(&id, cx);
         } else if let Some(dd) = self.lc.dataset_delete.take() {
             self.delete_dataset_now(&dd, cx);
+        } else if let Some(dc) = self.lc.data_confirm.take() {
+            match dc.kind {
+                DataConfirmKind::ClearData => self.clear_dataset_now(&dc.key, cx),
+                DataConfirmKind::DeleteRows => self.delete_rows_now(&dc.key, &dc.indices, cx),
+            }
         } else if let Some((path, _)) = self.lc.create_confirm.take() {
             self.guard(Intent::Switch { path, create: true }, cx);
         }
@@ -339,6 +365,7 @@ impl Shell {
         self.lc.close_confirm = None;
         self.lc.delete_confirm = None;
         self.lc.dataset_delete = None;
+        self.lc.data_confirm = None;
         self.lc.create_confirm = None;
         cx.notify();
     }
@@ -347,6 +374,7 @@ impl Shell {
         self.lc.close_confirm.is_some()
             || self.lc.delete_confirm.is_some()
             || self.lc.dataset_delete.is_some()
+            || self.lc.data_confirm.is_some()
             || self.lc.create_confirm.is_some()
     }
 
@@ -358,8 +386,20 @@ impl Shell {
             Some("delete_confirm")
         } else if self.lc.dataset_delete.is_some() {
             Some("delete_dataset_confirm")
+        } else if self.lc.data_confirm.is_some() {
+            Some("data_confirm")
         } else if self.lc.create_confirm.is_some() {
             Some("create_confirm")
+        } else if self.schema_dialog.is_some() {
+            Some("schema_designer")
+        } else if self.column_dialog.is_some() {
+            Some("add_column")
+        } else if self.crud_dialog.is_some() {
+            Some("crud_routes")
+        } else if self.export_dialog.is_some() {
+            Some("export_dataset")
+        } else if self.seed_dialog.is_some() {
+            Some("seed_data")
         } else if self.about_open {
             Some("about")
         } else if self.sample_dialog.is_some() {
@@ -480,6 +520,26 @@ impl Shell {
                     "Delete",
                     cx,
                 )
+                .into_any_element();
+        }
+        if let Some(dc) = &self.lc.data_confirm {
+            let (title, body, yes) = match dc.kind {
+                DataConfirmKind::ClearData => (
+                    format!("Clear all rows of {}?", dc.name),
+                    vec![
+                        "The live rows are emptied. The seed file is untouched.".to_string(),
+                        "Reset restores the rows from the seed.".into(),
+                    ],
+                    "Clear",
+                ),
+                DataConfirmKind::DeleteRows => (
+                    format!("Delete {} rows of {}?", dc.indices.len(), dc.name),
+                    vec!["You can undo this from the toast right after.".to_string()],
+                    "Delete",
+                ),
+            };
+            return self
+                .confirm_modal(t, "data-confirm", title, body, yes, cx)
                 .into_any_element();
         }
         if let Some((path, n)) = &self.lc.create_confirm {
@@ -609,6 +669,7 @@ impl Shell {
             ToastAction::ChangePort(id) => self.change_port(&id, window, cx),
             ToastAction::CreateWorkspaceAt(p) => self.create_folder_chosen(p, cx),
             ToastAction::OpenWorkspaceAt(p) => self.open_folder_chosen(p, cx),
+            ToastAction::UndoRowDelete => self.undo_row_delete(cx),
             ToastAction::EnableAndStart(id) => {
                 use fauxfield_store::Target as T;
                 if self

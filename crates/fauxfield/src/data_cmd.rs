@@ -222,10 +222,7 @@ pub fn data(action: DataAction) -> i32 {
                 .iter()
                 .map(|c| {
                     let (n, t) = c.split_once(':').unwrap_or((c.as_str(), "string"));
-                    fauxfield_model::DatasetColumn {
-                        name: n.trim().into(),
-                        ty: t.trim().into(),
-                    }
+                    fauxfield_model::DatasetColumn::new(n.trim(), t.trim())
                 })
                 .collect();
             if let Err(c) = with_server(&ws, &server, |st, sid| {

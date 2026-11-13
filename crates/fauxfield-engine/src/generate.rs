@@ -138,8 +138,14 @@ fn time_range(
     } else {
         (Utc::now() - Duration::days(365), Utc::now())
     };
-    let lo = parse_time(&g.min, p)?.unwrap_or(dmin);
-    let hi = parse_time(&g.max, p)?.unwrap_or(dmax);
+    // With only one bound given, the other is 365 days from it (not the default range, which
+    // may lie entirely before or after it).
+    let (lo, hi) = match (parse_time(&g.min, p)?, parse_time(&g.max, p)?) {
+        (Some(a), Some(b)) => (a, b),
+        (Some(a), None) => (a, a + Duration::days(365)),
+        (None, Some(b)) => (b - Duration::days(365), b),
+        (None, None) => (dmin, dmax),
+    };
     if lo > hi {
         return err(p, "`min` is after `max`");
     }

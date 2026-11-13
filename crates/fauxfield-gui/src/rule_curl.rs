@@ -190,9 +190,69 @@ pub fn build(base: &str, prefix: &str, method: &str, path: &str, rules: &[&Rule]
     out
 }
 
+/// `curl` for one operation of a crud Route: `:id` becomes `1`; a body is sent as JSON.
+pub fn crud_curl(
+    base: &str,
+    prefix: &str,
+    method: &str,
+    path: &str,
+    body: Option<&serde_json::Value>,
+) -> String {
+    let prefix = prefix.trim_end_matches('/');
+    let path = path.replace(":id", "1");
+    let mut out = format!(
+        "curl -X {method} {}",
+        shell_quote(&format!("{}{prefix}{path}", base.trim_end_matches('/')))
+    );
+    if let Some(b) = body {
+        out.push_str(" -H 'content-type: application/json'");
+        out.push_str(&format!(" --data-raw {}", shell_quote(&b.to_string())));
+    }
+    out
+}
+
+/// A sample body for a crud write: `live` (a real row) without its `key`, else one field per
+/// declared column with a value of its type, else `{}`.
+pub fn crud_sample_body(
+    live: Option<serde_json::Value>,
+    key: &str,
+    columns: &[(String, String)],
+) -> serde_json::Value {
+    use serde_json::Value;
+    if let Some(Value::Object(mut o)) = live {
+        o.remove(key);
+        return Value::Object(o);
+    }
+    let mut o = serde_json::Map::new();
+    for (name, ty) in columns.iter().filter(|(n, _)| n != key) {
+        o.insert(name.clone(), crate::dataset_edit::default_value(ty));
+    }
+    Value::Object(o)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn crud_operations_become_curl_commands() {
+        let b = crud_sample_body(Some(serde_json::json!({"id": 3, "name": "Ann"})), "id", &[]);
+        assert_eq!(b, serde_json::json!({"name": "Ann"}));
+        assert_eq!(
+            crud_curl("http://h:1", "/api", "PUT", "/users/:id", Some(&b)),
+            "curl -X PUT 'http://h:1/api/users/1' -H 'content-type: application/json' --data-raw '{\"name\":\"Ann\"}'"
+        );
+        assert_eq!(
+            crud_curl("http://h:1/", "", "GET", "/users", None),
+            "curl -X GET 'http://h:1/users'"
+        );
+        let d = crud_sample_body(
+            None,
+            "id",
+            &[("id".into(), "int".into()), ("n".into(), "int".into())],
+        );
+        assert_eq!(d, serde_json::json!({"n": 0}));
+    }
 
     fn rule(target: &str, key: &str, op: &str, value: Option<toml::Value>, negate: bool) -> Rule {
         Rule {

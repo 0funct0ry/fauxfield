@@ -136,6 +136,9 @@ pub struct Dataset {
     /// Optional column list (M10.04): drives the Data Table's cell editors and validation.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub columns: Vec<DatasetColumn>,
+    /// Free-text description (M10.07).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     #[serde(flatten)]
     #[schemars(skip)]
     pub extra: Extra,
@@ -148,6 +151,36 @@ pub struct DatasetColumn {
     /// One of [`COLUMN_TYPES`] (default `string`).
     #[serde(default, rename = "type")]
     pub ty: String,
+    /// Identifies the row (M10.07); at most one column, and it must match the Dataset `key`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub primary_key: bool,
+    /// No two rows may hold the same non-null value (M10.07).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub unique: bool,
+    /// The value may not be null or empty (M10.07).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub required: bool,
+    /// Value given to a new row that does not set the column (M10.07).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<serde_json::Value>")]
+    pub default: Option<toml::Value>,
+    /// Free-text description shown in the schema designer (M10.07).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+impl DatasetColumn {
+    pub fn new(name: impl Into<String>, ty: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            ty: ty.into(),
+            ..Default::default()
+        }
+    }
 }
 
 /// Column types a Dataset column may declare.
@@ -164,6 +197,8 @@ impl Dataset {
 
 /// Id strategies for new dataset items (SPEC §4.4).
 pub const ID_STRATEGIES: &[&str] = &["uuid", "increment", "ulid"];
+/// Operations of a `crud` Route (M10.07).
+pub const CRUD_OPS: &[&str] = &["list", "get", "create", "update", "patch", "delete"];
 /// Known Route kinds.
 pub const ROUTE_KINDS: &[&str] = &["http", "crud", "static", "websocket"];
 
@@ -218,6 +253,9 @@ pub struct Route {
     /// `crud` routes: the Dataset this Route serves.
     #[serde(default)]
     pub dataset: Option<String>,
+    /// `crud` routes: the operations served (subset of [`CRUD_OPS`]); empty serves all (M10.07).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub crud_ops: Vec<String>,
     /// `crud` routes: JSON Schema file (workspace-relative) checked on POST/PUT/PATCH.
     #[serde(default)]
     pub validate: Option<String>,

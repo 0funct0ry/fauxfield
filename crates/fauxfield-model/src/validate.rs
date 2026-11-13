@@ -134,6 +134,21 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                 ));
             }
             if r.kind == "crud" {
+                if let Some(bad) = r
+                    .crud_ops
+                    .iter()
+                    .find(|o| !crate::CRUD_OPS.contains(&o.as_str()))
+                {
+                    out.push(Diagnostic::error(
+                        file,
+                        format!("{rp}.crud_ops"),
+                        "E101",
+                        format!(
+                            "crud_ops entries must be one of {}, got `{bad}`",
+                            crate::CRUD_OPS.join(", ")
+                        ),
+                    ));
+                }
                 if !r.path.starts_with('/') {
                     out.push(Diagnostic::error(
                         file,
@@ -514,6 +529,42 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                         ),
                     ));
                 }
+                if !crate::columns::default_fits(c) {
+                    out.push(Diagnostic::error(
+                        file,
+                        format!("{dp}.columns[{ci}].default"),
+                        "E099",
+                        format!(
+                            "default of column `{}` does not fit type `{}`",
+                            c.name, c.ty
+                        ),
+                    ));
+                }
+            }
+            let pks: Vec<&crate::DatasetColumn> =
+                d.columns.iter().filter(|c| c.primary_key).collect();
+            if pks.len() > 1 {
+                out.push(Diagnostic::error(
+                    file,
+                    format!("{dp}.columns"),
+                    "E098",
+                    "at most one column may be `primary_key`",
+                ));
+            } else if let Some(pk) = pks.first()
+                && d.key
+                    .as_deref()
+                    .is_some_and(|k| !k.is_empty() && k != pk.name)
+            {
+                out.push(Diagnostic::error(
+                    file,
+                    format!("{dp}.columns"),
+                    "E100",
+                    format!(
+                        "primary key column `{}` does not match the Dataset `key` `{}`",
+                        pk.name,
+                        d.key_name()
+                    ),
+                ));
             }
             if let Some(g) = &d.generator {
                 let names: Vec<&str> = s.datasets.iter().map(|x| x.name.as_str()).collect();
@@ -759,6 +810,24 @@ mod tests {
         )
         .unwrap();
         assert!(s.extra.contains_key("future") && s.extra.contains_key("future_table"));
+    }
+
+    #[test]
+    fn column_constraint_checks() {
+        let t = "id=\"srv_a\"\nname=\"n\"\nport=1\n\
+            [[datasets]]\nname=\"u\"\nkey=\"id\"\n\
+            [[datasets.columns]]\nname=\"a\"\ntype=\"int\"\nprimary_key=true\ndefault=\"x\"\n\
+            [[datasets.columns]]\nname=\"b\"\nprimary_key=true\n";
+        let d = validate_servers(&[("servers/a.toml".into(), parse_server(t).unwrap())]);
+        let codes: Vec<_> = d.iter().map(|d| d.code.as_str()).collect();
+        for c in ["E098", "E099"] {
+            assert!(codes.contains(&c), "{c} in {codes:?}");
+        }
+        let t = "id=\"srv_a\"\nname=\"n\"\nport=1\n\
+            [[datasets]]\nname=\"u\"\nkey=\"id\"\n\
+            [[datasets.columns]]\nname=\"sku\"\nprimary_key=true\n";
+        let d = validate_servers(&[("servers/a.toml".into(), parse_server(t).unwrap())]);
+        assert!(d.iter().any(|d| d.code == "E100"));
     }
 
     #[test]

@@ -1325,6 +1325,18 @@ impl<D: TableDelegate> TableState<D> {
         let (l, r) = self.region_bounds();
         let n = self.model.widths.len();
         let g = self.geo.get();
+        if self.model.opts.stretch && self.resize.is_none() && g.mid_w > 1.0 && l < n - r.min(n) {
+            let hi = n - r.min(n);
+            let sum: f32 = self.model.widths[l..hi].iter().sum();
+            let extra = g.mid_w - sum;
+            if extra > 0.5 {
+                let each = extra / (hi - l) as f32;
+                for w in &mut self.model.widths[l..hi] {
+                    *w += each;
+                }
+                cx.notify();
+            }
+        }
         self.scroll_x = self.scroll_x.clamp(0.0, self.max_scroll_x());
         self.model.page_rows = ((g.body_h / rh).floor() as usize).max(1);
         let (l_w, r_w) = self.fixed_widths(l, r);

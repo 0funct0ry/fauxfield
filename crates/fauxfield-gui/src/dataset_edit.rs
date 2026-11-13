@@ -54,10 +54,7 @@ pub fn parse_columns(text: &str) -> Result<Vec<DatasetColumn>, String> {
         if out.iter().any(|c| c.name == n) {
             return Err(format!("Column `{n}` is listed twice."));
         }
-        out.push(DatasetColumn {
-            name: n.into(),
-            ty: t.into(),
-        });
+        out.push(DatasetColumn::new(n, t));
     }
     if out.is_empty() {
         return Err("Name at least one column (name:type, ...).".into());
@@ -141,7 +138,7 @@ impl Shell {
     }
 
     /// Columns to build rows from: the declared ones, else those the table shows.
-    fn dataset_columns_now(&self, d: &Dataset, cx: &gpui::App) -> Vec<(String, String)> {
+    pub(crate) fn dataset_columns_now(&self, d: &Dataset, cx: &gpui::App) -> Vec<(String, String)> {
         if !d.columns.is_empty() {
             return d.columns.clone();
         }
@@ -159,7 +156,7 @@ impl Shell {
     /// Persist the live rows as the static seed for a Dataset built in the table: no seed yet, or
     /// a static seed with declared columns. Other Datasets keep live edits runtime-only (Reset
     /// restores their seed); `Save Rows to Seed` writes them explicitly.
-    fn write_through(&mut self, d: &Dataset, cx: &mut Context<Self>) {
+    pub(crate) fn write_through(&mut self, d: &Dataset, cx: &mut Context<Self>) {
         let built_here = d.source == "none" || (d.source == "static" && !d.columns.is_empty());
         if !built_here {
             return;
@@ -215,7 +212,18 @@ impl Shell {
         let cols = self.dataset_columns_now(&d, cx);
         let mut row = Map::new();
         for (n, t) in &cols {
-            row.insert(n.clone(), default_value(t));
+            // A declared default is applied by the engine; constrained columns stay empty
+            // (null) so a fresh row never collides; the cell editor fills them in.
+            let decl = d.column_defs.iter().find(|c| &c.name == n);
+            match decl {
+                Some(c) if c.default.is_some() => continue,
+                Some(c) if c.unique || c.required || c.primary_key => {
+                    row.insert(n.clone(), Value::Null);
+                }
+                _ => {
+                    row.insert(n.clone(), default_value(t));
+                }
+            }
         }
         let keyf = d.key.clone();
         let key_ty = cols
@@ -243,11 +251,30 @@ impl Shell {
             Ok(_) => {
                 self.ds_gen += 1;
                 self.write_through(&d, cx);
+                self.edit_new_row(key, cx);
             }
             Err(err) => self.notify(err.to_string(), cx),
         }
         self.sync_running();
         cx.notify();
+    }
+
+    /// Show the last row and start editing its first cell (after Add row).
+    fn edit_new_row(&mut self, key: &str, cx: &mut Context<Self>) {
+        let Some(ent) = self.ds_tables.borrow().get(key).cloned() else {
+            return;
+        };
+        let generation = self.ds_gen;
+        self.set_dataset_filter(key, "", cx);
+        if let Some(f) = self.ds_filters.borrow().get(key).cloned() {
+            f.update(cx, |t, cx| t.set_value("", cx));
+        }
+        ent.update(cx, |s, cx| {
+            s.delegate_mut().invalidate(generation);
+            s.refresh(cx);
+            let last = s.delegate().shown().saturating_sub(1);
+            s.delegate_mut().begin_edit(last, 1, cx);
+        });
     }
 
     /// Paste tab-separated rows (clipboard) into the table; a first line naming the columns is
@@ -320,7 +347,7 @@ impl Shell {
             .shared
             .cell
             .get()
-            .map_or(0, |(_, c)| c);
+            .map_or(1, |(_, c)| c.max(1));
         ent.update(cx, |s, cx| s.delegate_mut().begin_edit(r, col, cx));
     }
 
@@ -330,13 +357,10 @@ impl Shell {
         let ent = self.ds_tables.borrow().get(key).cloned()?;
         let st = ent.read(cx);
         let col = st.delegate().shared.cell.get().map(|(_, c)| c)?;
-        st.delegate().column_keys().get(col).cloned()
-    }
-
-    pub(crate) fn begin_add_column(&mut self, w: &mut Window, cx: &mut Context<Self>) {
-        if let Some(key) = self.active_dataset_key() {
-            self.begin_prompt(PromptAction::AddColumn { key }, "", w, cx);
-        }
+        st.delegate()
+            .column_keys()
+            .get(col.checked_sub(1)?)
+            .cloned()
     }
 
     pub(crate) fn begin_rename_column(&mut self, w: &mut Window, cx: &mut Context<Self>) {
@@ -363,9 +387,6 @@ impl Shell {
 
     /// `name:type` or `name:type=generator` (e.g. `email:string=fake:internet.email`).
     pub(crate) fn add_column_now(&mut self, key: &str, text: &str, cx: &mut Context<Self>) {
-        let Some(d) = self.ws.find_dataset(key).cloned() else {
-            return;
-        };
         let (decl, gen_text) = match text.split_once('=') {
             Some((a, b)) => (a, Some(b)),
             None => (text, None),
@@ -375,30 +396,39 @@ impl Shell {
             Ok(_) => return self.notify("Add one column at a time.".into(), cx),
             Err(m) => return self.notify(m, cx),
         };
+        let spec = match gen_text {
+            Some(g) => match spec_from_text(g) {
+                Ok(s) => Some(s),
+                Err(m) => return self.notify(m, cx),
+            },
+            None => None,
+        };
+        self.add_column_with(key, new, spec, cx);
+    }
+
+    /// Add a fully described column. `spec` fills existing rows (inferred when `None`).
+    pub(crate) fn add_column_with(
+        &mut self,
+        key: &str,
+        new: DatasetColumn,
+        spec: Option<GeneratorSpec>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(d) = self.ws.find_dataset(key).cloned() else {
+            return;
+        };
         let mut cols: Vec<DatasetColumn> = if d.columns.is_empty() {
             self.dataset_columns_now(&d, cx)
                 .into_iter()
-                .map(|(name, ty)| DatasetColumn { name, ty })
+                .map(|(name, ty)| DatasetColumn::new(name, ty))
                 .collect()
         } else {
-            d.columns
-                .iter()
-                .map(|(n, t)| DatasetColumn {
-                    name: n.clone(),
-                    ty: t.clone(),
-                })
-                .collect()
+            d.column_defs.clone()
         };
         if cols.iter().any(|c| c.name == new.name) {
             return self.notify(format!("Column `{}` already exists.", new.name), cx);
         }
-        let spec = match gen_text {
-            Some(g) => match spec_from_text(g) {
-                Ok(s) => s,
-                Err(m) => return self.notify(m, cx),
-            },
-            None => infer_generator(&new.name, &new.ty, false),
-        };
+        let spec = spec.unwrap_or_else(|| infer_generator(&new.name, &new.ty, false));
         cols.push(new.clone());
         let (sid, name) = (d.server_id.clone(), d.name.clone());
         let root = self.ws.root.clone();
@@ -476,7 +506,7 @@ impl Shell {
             let cols: Vec<DatasetColumn> = self
                 .dataset_columns_now(&d, cx)
                 .into_iter()
-                .map(|(name, ty)| DatasetColumn { name, ty })
+                .map(|(name, ty)| DatasetColumn::new(name, ty))
                 .collect();
             let (sid, name) = (d.server_id.clone(), d.name.clone());
             self.store_op(cx, |s| s.set_dataset_columns(&sid, &name, &cols));
@@ -556,15 +586,7 @@ impl Shell {
     // ---- New Dataset… from table ----------------------------------------------------------
 
     pub(crate) fn begin_new_dataset_from_table(&mut self, w: &mut Window, cx: &mut Context<Self>) {
-        let server = self
-            .current_server_id()
-            .or_else(|| self.ws.servers.first().map(|s| s.id.clone()));
-        match server {
-            Some(server) => {
-                self.begin_prompt(PromptAction::NewDatasetTableName { server }, "", w, cx)
-            }
-            None => self.notify("Create a server first.".into(), cx),
-        }
+        self.begin_new_dataset(w, cx);
     }
 
     pub(crate) fn create_dataset_from_table(
@@ -604,48 +626,72 @@ impl Shell {
 
     // ---- Generate rows… ------------------------------------------------------------------
 
-    pub(crate) fn begin_generate_rows(&mut self, w: &mut Window, cx: &mut Context<Self>) {
-        if let Some(key) = self.active_dataset_key() {
-            self.begin_prompt(PromptAction::GenerateRows { key }, "200 bake", w, cx);
-        }
-    }
-
     /// `N bake` (append rows to the static seed) or `N keep` (write a generator block).
     pub(crate) fn generate_rows_now(&mut self, key: &str, text: &str, cx: &mut Context<Self>) {
-        let Some(d) = self.ws.find_dataset(key).cloned() else {
-            return;
-        };
         let (n, keep) = match parse_generate(text) {
             Ok(x) => x,
             Err(m) => return self.notify(m, cx),
+        };
+        self.generate_rows_apply(key, n, keep, false, None, None, cx);
+    }
+
+    /// Generate `n` rows: `keep` writes a generator block, otherwise the rows are baked into the
+    /// static seed (`replace` drops the existing rows first). `fields` overrides the inferred
+    /// generators; `fake_seed` overrides the Server's.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn generate_rows_apply(
+        &mut self,
+        key: &str,
+        n: u32,
+        keep: bool,
+        replace: bool,
+        fields: Option<Vec<GeneratorField>>,
+        fake_seed: Option<u64>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(d) = self.ws.find_dataset(key).cloned() else {
+            return;
         };
         let cols = self.dataset_columns_now(&d, cx);
         if cols.is_empty() {
             return self.notify("Add a column first.".into(), cx);
         }
-        let existing = self
-            .engine()
-            .and_then(|e| e.dataset_rows(&d.server_id, &d.name).ok())
-            .and_then(|v| v.as_array().cloned())
-            .unwrap_or_default();
+        let existing = if replace {
+            vec![]
+        } else {
+            self.engine()
+                .and_then(|e| e.dataset_rows(&d.server_id, &d.name).ok())
+                .and_then(|v| v.as_array().cloned())
+                .unwrap_or_default()
+        };
         let start = existing
             .iter()
             .filter_map(|r| r.get(&d.key).and_then(Value::as_i64))
             .max()
             .map_or(1, |m| m + 1);
-        let fields: Vec<GeneratorField> = cols
-            .iter()
-            .map(|(name, ty)| {
-                let mut spec = infer_generator(name, ty, *name == d.key);
-                if spec.kind == "sequence" && !keep {
-                    spec.start = Some(start as f64);
-                }
-                GeneratorField {
-                    name: name.clone(),
-                    spec,
-                }
-            })
-            .collect();
+        let fields: Vec<GeneratorField> = fields.unwrap_or_else(|| {
+            cols.iter()
+                .map(|(name, ty)| {
+                    let mut spec = infer_generator(name, ty, *name == d.key);
+                    if spec.kind == "sequence" && !keep {
+                        spec.start = Some(start as f64);
+                    }
+                    GeneratorField {
+                        name: name.clone(),
+                        spec,
+                    }
+                })
+                .collect()
+        });
+        let mut fields = fields;
+        if !keep {
+            for f in fields
+                .iter_mut()
+                .filter(|f| f.spec.kind == "sequence" && f.spec.start.is_none())
+            {
+                f.spec.start = Some(start as f64);
+            }
+        }
         let g = GeneratorSeed { rows: n, fields };
         let names: Vec<&str> = self.ws.datasets.iter().map(|x| x.name.as_str()).collect();
         let (mut refs, mut problems) = (Vec::new(), Vec::new());
@@ -665,9 +711,12 @@ impl Shell {
                 // The columns stay declared so the empty table keeps its shape.
                 let decl: Vec<DatasetColumn> = cols
                     .iter()
-                    .map(|(n, t)| DatasetColumn {
-                        name: n.clone(),
-                        ty: t.clone(),
+                    .map(|(n, t)| {
+                        d.column_defs
+                            .iter()
+                            .find(|c| &c.name == n)
+                            .cloned()
+                            .unwrap_or_else(|| DatasetColumn::new(n.clone(), t.clone()))
                     })
                     .collect();
                 s.set_dataset_columns(&sid, &name, &decl)?;
@@ -697,7 +746,7 @@ impl Shell {
             &datasets,
             &name,
             None,
-            srv.fake_seed,
+            fake_seed.or(srv.fake_seed),
             &self.ws.root,
         ) {
             Ok(v) => v,
