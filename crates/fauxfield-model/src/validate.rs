@@ -248,6 +248,113 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                     ));
                 }
             }
+            if r.kind == "websocket" {
+                if !r.path.starts_with('/') {
+                    out.push(Diagnostic::error(
+                        file,
+                        format!("{rp}.path"),
+                        "E031",
+                        "path must start with `/`",
+                    ));
+                }
+                if let Some(m) = r.mode.as_deref()
+                    && !crate::WS_MODES.contains(&m)
+                {
+                    out.push(Diagnostic::error(
+                        file,
+                        format!("{rp}.mode"),
+                        "E102",
+                        format!("mode must be echo, script or broadcast, got `{m}`"),
+                    ));
+                }
+                for (k, m) in r.messages.iter().enumerate() {
+                    let mp = format!("{rp}.messages[{k}]");
+                    if !crate::WS_TRIGGERS.contains(&m.trigger.as_str()) {
+                        out.push(Diagnostic::error(
+                            file,
+                            format!("{mp}.trigger"),
+                            "E103",
+                            format!(
+                                "trigger must be connect, interval or message, got `{}`",
+                                m.trigger
+                            ),
+                        ));
+                    }
+                    if m.trigger == "interval" {
+                        match m.every.as_deref() {
+                            None => out.push(Diagnostic::error(
+                                file,
+                                format!("{mp}.every"),
+                                "E104",
+                                "an interval message needs `every`, e.g. \"5s\"",
+                            )),
+                            Some(e) if crate::parse_duration_ms(e).is_none() => {
+                                out.push(Diagnostic::error(
+                                    file,
+                                    format!("{mp}.every"),
+                                    "E104",
+                                    format!("`every` must look like 500ms, 5s or 1m (min 10ms), got `{e}`"),
+                                ))
+                            }
+                            _ => {}
+                        }
+                    }
+                    if let Some(w) = &m.when {
+                        if m.trigger != "message" {
+                            out.push(Diagnostic::warning(
+                                file,
+                                format!("{mp}.when"),
+                                "W093",
+                                "`when` only applies to message triggers",
+                            ));
+                        }
+                        if let Err((code, msg)) = crate::rules::check_rule(w) {
+                            out.push(Diagnostic::error(file, format!("{mp}.when"), code, msg));
+                        }
+                    }
+                    if m.binary
+                        && !m.body.bytes().all(|b| {
+                            b.is_ascii_alphanumeric()
+                                || matches!(b, b'+' | b'/' | b'=' | b'\n' | b'\r' | b' ')
+                        })
+                    {
+                        out.push(Diagnostic::error(
+                            file,
+                            format!("{mp}.body"),
+                            "E105",
+                            "binary message body must be base64",
+                        ));
+                    }
+                    if let Some(f) = m.format.as_deref()
+                        && !crate::WS_FORMATS.contains(&f)
+                    {
+                        out.push(Diagnostic::error(
+                            file,
+                            format!("{mp}.format"),
+                            "E107",
+                            format!("format must be compact, pretty or raw, got `{f}`"),
+                        ));
+                    }
+                    if let Some(c) = m.close_code
+                        && !(1000..=4999).contains(&c)
+                    {
+                        out.push(Diagnostic::error(
+                            file,
+                            format!("{mp}.close_code"),
+                            "E106",
+                            "close_code must be between 1000 and 4999",
+                        ));
+                    }
+                }
+                if !r.responses.is_empty() {
+                    out.push(Diagnostic::warning(
+                        file,
+                        format!("{rp}.responses"),
+                        "W070",
+                        "responses are ignored on a websocket Route",
+                    ));
+                }
+            }
             if r.kind == "http" {
                 let strict = s.strict_slash.unwrap_or(false);
                 match pattern::parse_mode(r.match_mode.as_deref()) {
@@ -771,6 +878,24 @@ mod tests {
             "id=\"{id}\"\nname=\"n\"\nport={port}\n[[routes]]\nid=\"{route}\"\npath=\"/x\"\n"
         );
         (format!("servers/{id}.toml"), parse_server(&t).unwrap())
+    }
+
+    #[test]
+    fn websocket_routes_are_checked() {
+        let t = "id=\"srv_a\"\nname=\"n\"\nport=1\n[[routes]]\nid=\"r1\"\nkind=\"websocket\"\npath=\"/ws\"\nmode=\"bogus\"\n\
+            [[routes.messages]]\ntrigger=\"interval\"\nevery=\"soon\"\n\
+            [[routes.messages]]\ntrigger=\"nope\"\n\
+            [[routes.messages]]\ntrigger=\"connect\"\nclose_code=5\nformat=\"fancy\"\n";
+        let d = validate_servers(&[("servers/a.toml".into(), parse_server(t).unwrap())]);
+        for c in ["E102", "E103", "E104", "E106", "E107"] {
+            assert!(d.iter().any(|d| d.code == c), "{c} in {d:?}");
+        }
+        let ok = "id=\"srv_a\"\nname=\"n\"\nport=1\n[[routes]]\nid=\"r1\"\nkind=\"websocket\"\npath=\"/ws\"\nmode=\"script\"\n\
+            [[routes.messages]]\ntrigger=\"interval\"\nevery=\"500ms\"\nbody=\"x\"\n";
+        let d = validate_servers(&[("servers/a.toml".into(), parse_server(ok).unwrap())]);
+        assert!(d.is_empty(), "{d:?}");
+        assert_eq!(crate::parse_duration_ms("1m"), Some(60_000));
+        assert_eq!(crate::parse_duration_ms("5ms"), None);
     }
 
     #[test]

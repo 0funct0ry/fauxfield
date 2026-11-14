@@ -174,6 +174,7 @@ pub struct MenuDef {
 
 /// Actions that are deliberately not in the menu, each with the reason.
 pub const NOT_IN_MENU: &[(&str, &str)] = &[
+    ("send_ws_message", "WebSocket tab and palette"),
     ("new_dataset_from_table", "Dataset tab toolbar and palette"),
     ("import_dataset_file", "Datasets tab and palette"),
     ("import_into_dataset", "Dataset tab toolbar and palette"),
@@ -515,6 +516,7 @@ pub fn build_menus(ctx: &MenuContext) -> Vec<MenuDef> {
             act("new_dataset", "New Dataset…"),
             act("new_crud_resource", "New CRUD Resource…"),
             act("new_static_route", "New Static Files Route…"),
+            act("new_websocket_route", "New WebSocket Route"),
             act("trust_dev_ca", "Trust Dev CA…"),
             act("reset_state", "Reset State"),
             MenuEntry::Separator,
@@ -641,6 +643,7 @@ pub fn enabled(id: &str, ctx: &MenuContext) -> bool {
         | "new_crud_resource"
         | "new_dataset"
         | "new_static_route"
+        | "new_websocket_route"
         | "trust_dev_ca"
         | "reset_state"
         | "show_sidebar_servers"
@@ -745,6 +748,7 @@ pub fn why_disabled(id: &str, ctx: &MenuContext) -> &'static str {
             | "new_crud_resource"
             | "new_dataset"
             | "new_static_route"
+            | "new_websocket_route"
             | "trust_dev_ca"
             | "reset_state"
             | "show_sidebar_servers"

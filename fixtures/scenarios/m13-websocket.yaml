@@ -1,0 +1,25 @@
+# M13 scenario: WebSocket Routes. The route tab shows the mode, the scripted messages with a
+# rendered preview, live connections and the timeline. Needs fixtures/ws-workspace as the
+# launch workspace. Not yet run in CI.
+name: m13-websocket
+size: default
+steps:
+  - state: [reset]
+  - click_element: {id: row-rte_ws_events}
+  - wait_for_idle: {}
+  - assert_find: {text: MESSAGES, ids: [ws-mode-script-rte_ws_events, ws-add-connect-rte_ws_events, ws-message-rte_ws_events-0, ws-composer, ws-send-rte_ws_events]}
+  - assert: {pointer: /route/ws/mode, equals: script}
+  - assert: {pointer: /route/ws/messages, equals: 3}
+  - screenshot: {name: m13-ws-route}
+  - click_element: {id: ws-add-interval-rte_ws_events}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/ws/messages, equals: 4}
+  - assert: {pointer: /route/ws/selected_message, equals: 3}
+  - assert_find: {text: Preview, ids: [ws-body-rte_ws_events-3, ws-preview-rte_ws_events-3]}
+  - click_element: {id: ws-del-rte_ws_events-3}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/ws/messages, equals: 3}
+  - click_element: {id: row-rte_ws_echo}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/ws/mode, equals: echo}
+  - audit: {themes: [one-dark, one-light], sizes: [default, min]}

@@ -1,0 +1,29 @@
+schema = 1
+id = "srv_rt"
+name = "Realtime"
+port = 4330
+
+[[routes]]
+id = "rte_ws_events"
+kind = "websocket"
+path = "/ws/events"
+mode = "script"
+
+  [[routes.messages]]
+  trigger = "connect"
+  body = '{"type":"hello","at":"{{ now() }}"}'
+
+  [[routes.messages]]
+  trigger = "interval"
+  every = "5s"
+  body = '{"type":"tick","value":{{ random_int(min=0, max=100) }}}'
+
+  [[routes.messages]]
+  trigger = "message"
+  when = { target = "body", key = "$.type", op = "eq", value = "ping" }
+  body = '{"type":"pong"}'
+
+[[routes]]
+id = "rte_ws_echo"
+kind = "websocket"
+path = "/ws/echo"

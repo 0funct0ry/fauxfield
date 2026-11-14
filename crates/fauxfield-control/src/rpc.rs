@@ -118,6 +118,38 @@ async fn dispatch(
         "chaos.set" => to(api
             .chaos_set(param(params, "server")?, param(params, "rate")?)
             .await),
+        "ws.connections" => api
+            .ws_connections(param(params, "server")?, param(params, "route")?)
+            .await
+            .map(|c| json!({"connections": c})),
+        "ws.messages" => api
+            .ws_messages(
+                param(params, "server")?,
+                param(params, "route")?,
+                param(params, "connection")?,
+                param::<Option<u64>>(params, "after")?.unwrap_or(0),
+                param::<Option<usize>>(params, "limit")?.unwrap_or(0),
+            )
+            .await
+            .map(|f| json!({"frames": f})),
+        "ws.send" => api
+            .ws_send(
+                param(params, "server")?,
+                param(params, "route")?,
+                param(params, "connection")?,
+                param(params, "body")?,
+                param::<Option<bool>>(params, "binary")?.unwrap_or(false),
+            )
+            .await
+            .map(|n| json!({"sent": n})),
+        "ws.disconnect" => api
+            .ws_disconnect(
+                param(params, "server")?,
+                param(params, "connection")?,
+                param(params, "code")?,
+            )
+            .await
+            .map(|_| json!({})),
         "shutdown" => api.shutdown().await.map(|_| json!({})),
         other => Err(ControlError::new(
             "method_not_found",
@@ -336,6 +368,65 @@ impl ControlApi for RemoteControl {
             self.call("chaos.set", json!({"server": server, "rate": rate}))
                 .await?,
         )
+    }
+    async fn ws_connections(
+        &self,
+        server: String,
+        route: Option<String>,
+    ) -> Result<Vec<fauxfield_engine::WsConnectionInfo>, ControlError> {
+        let v = self
+            .call("ws.connections", json!({"server": server, "route": route}))
+            .await?;
+        serde_json::from_value(v["connections"].clone())
+            .map_err(|e| ControlError::new("transport", e.to_string()))
+    }
+    async fn ws_messages(
+        &self,
+        server: String,
+        route: Option<String>,
+        connection: Option<String>,
+        after: u64,
+        limit: usize,
+    ) -> Result<Vec<fauxfield_engine::WsFrame>, ControlError> {
+        let v = self
+            .call(
+                "ws.messages",
+                json!({"server": server, "route": route, "connection": connection,
+                       "after": after, "limit": limit}),
+            )
+            .await?;
+        serde_json::from_value(v["frames"].clone())
+            .map_err(|e| ControlError::new("transport", e.to_string()))
+    }
+    async fn ws_send(
+        &self,
+        server: String,
+        route: Option<String>,
+        connection: Option<String>,
+        body: String,
+        binary: bool,
+    ) -> Result<usize, ControlError> {
+        let v = self
+            .call(
+                "ws.send",
+                json!({"server": server, "route": route, "connection": connection,
+                       "body": body, "binary": binary}),
+            )
+            .await?;
+        Ok(v["sent"].as_u64().unwrap_or(0) as usize)
+    }
+    async fn ws_disconnect(
+        &self,
+        server: String,
+        connection: String,
+        code: Option<u16>,
+    ) -> Result<(), ControlError> {
+        self.call(
+            "ws.disconnect",
+            json!({"server": server, "connection": connection, "code": code}),
+        )
+        .await
+        .map(|_| ())
     }
     async fn env_active(&self) -> Result<String, ControlError> {
         let v = self.call("env.active", Value::Null).await?;

@@ -114,7 +114,7 @@ pub const CRUD_OPS: [(&str, &str); 6] = [
 /// (same id, kind and priority; an `http` Route of higher priority overrides one of them).
 fn expand(server: &Server) -> Vec<Route> {
     let mut out = Vec::new();
-    for r in effective_routes_of(server, &["http", "crud", "static"]) {
+    for r in effective_routes_of(server, &["http", "crud", "static", "websocket"]) {
         if r.kind == "static" {
             // `/assets/*` (or a bare `/assets`) serves the directory: one entry for the base
             // (index) and one wildcard entry, for GET and HEAD.

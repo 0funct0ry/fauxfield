@@ -80,6 +80,8 @@ actions!(
         OpenDatasetSeed,
         NewDataset,
         NewStaticRoute,
+        NewWebsocketRoute,
+        SendWsMessage,
         TrustDevCa,
         NewFolder,
         NewResponse,
@@ -414,6 +416,16 @@ pub static ACTIONS: &[ActionInfo] = &[
         "new_static_route",
         "Route: New Static Files…",
         NewStaticRoute
+    ),
+    row!(
+        "new_websocket_route",
+        "Route: New WebSocket",
+        NewWebsocketRoute
+    ),
+    row!(
+        "send_ws_message",
+        "WebSocket: Send Draft Message to All Clients",
+        SendWsMessage
     ),
     row!("trust_dev_ca", "HTTPS: Trust Dev CA…", TrustDevCa),
     row!("new_folder", "Folder: New…", NewFolder),

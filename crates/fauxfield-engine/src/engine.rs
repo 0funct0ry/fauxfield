@@ -18,7 +18,9 @@ use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 
 mod proxy;
+mod ws;
 pub use proxy::RespBody;
+pub use ws::{WsConnectionInfo, WsFrame, apply_format as ws_apply_format};
 
 use crate::problem;
 use crate::recording::{Recording, Timing, body_text, redact};
@@ -110,6 +112,17 @@ pub enum EngineEvent {
         name: String,
         rows: usize,
     },
+    /// A WebSocket connection opened (`open`) or closed (M13).
+    WsConnection {
+        server_id: String,
+        connection: WsConnectionInfo,
+        open: bool,
+    },
+    /// A WebSocket frame went in or out (M13).
+    WsMessage {
+        server_id: String,
+        frame: Box<WsFrame>,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -178,6 +191,7 @@ struct ServerRt {
     data: Mutex<crate::data::DataStore>,
     limiter: Limiter,
     chaos: Mutex<Option<f64>>,
+    ws: ws::WsHub,
 }
 
 struct Inner {
@@ -304,6 +318,7 @@ impl Engine {
                             seq: Default::default(),
                             limiter: Default::default(),
                             chaos: Mutex::new(self.inner.cfg.chaos),
+                            ws: Default::default(),
                         }),
                     ));
                 }
@@ -510,6 +525,7 @@ impl Engine {
     fn stop_rt(&self, id: &str, rt: &ServerRt) {
         let running = rt.run.lock().unwrap().take();
         if let Some(r) = running {
+            rt.ws.close_all(1001);
             let _ = r.stop.send(true);
             // Wait for the drain so the port is free when this returns.
             let _ = self.inner.handle.block_on_join(r.task);
@@ -1106,6 +1122,7 @@ async fn serve(
                 let id2 = id.clone();
                 let watcher = graceful.watcher();
                 let acceptor = acceptor.clone();
+                let mut stop2 = stop.clone();
                 tokio::spawn(async move {
                     // The TLS handshake runs here so a slow client never blocks accept.
                     let conn = match acceptor {
@@ -1121,8 +1138,19 @@ async fn serve(
                             (eng.clone(), rt2.clone(), id2.clone(), ip.clone(), reset.clone());
                         async move { handle(eng, id, rt, ip, reset, req).await }
                     });
-                    let conn = hyper::server::conn::http1::Builder::new().serve_connection(io, svc);
-                    let _ = watcher.watch(conn).await;
+                    let conn = hyper::server::conn::http1::Builder::new().serve_connection(io, svc)
+                        .with_upgrades();
+                    // Upgradeable connections (WebSocket) are not `GracefulConnection`s: hold the
+                    // watcher so the drain still waits, and signal shutdown by hand.
+                    let _watcher = watcher;
+                    tokio::pin!(conn);
+                    tokio::select! {
+                        _ = conn.as_mut() => {}
+                        _ = stop2.changed() => {
+                            conn.as_mut().graceful_shutdown();
+                            let _ = conn.as_mut().await;
+                        }
+                    }
                 });
             }
         }
@@ -1159,9 +1187,10 @@ async fn handle(
     rt: Arc<ServerRt>,
     ip: String,
     reset: Arc<std::sync::atomic::AtomicBool>,
-    req: Request<Incoming>,
+    mut req: Request<Incoming>,
 ) -> Result<HyperResponse<RespBody>, ConnAbort> {
     let started = Instant::now();
+    let on_upgrade = hyper::upgrade::on(&mut req);
     let (parts, body_in) = req.into_parts();
     let method = parts.method.as_str().to_string();
     let url = parts
@@ -1215,6 +1244,23 @@ async fn handle(
         sim::rate_key(c, &ip, &req_headers, &url).and_then(|k| rt.limiter.check(c, &k))
     });
     let rate_limited = rate.as_ref().is_some_and(|r| r.limited);
+    if !rate_limited && let Some(r) = route.as_ref().filter(|r| r.kind == "websocket") {
+        return Ok(ws::upgrade(ws::UpgradeCall {
+            engine,
+            rt,
+            server_id: id,
+            route: r.clone(),
+            ip,
+            headers: req_headers,
+            url,
+            params,
+            route_pattern,
+            method,
+            on_upgrade,
+            started,
+            match_us,
+        }));
+    }
     let proxied = if preflight || rate_limited {
         None
     } else {

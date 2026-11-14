@@ -65,9 +65,30 @@ pub struct Route {
     pub forward: bool,
     /// Stay mocked when the proxy is in passthrough mode (M11).
     pub pinned: bool,
+    /// websocket Routes: `echo`, `script` or `broadcast`, and the scripted messages (M13).
+    pub ws_mode: String,
+    pub ws_messages: Vec<WsMsg>,
+}
+
+/// A scripted message of a websocket Route as the editor shows it (M13).
+#[derive(Clone, Debug, PartialEq)]
+pub struct WsMsg {
+    pub trigger: String,
+    pub every: String,
+    /// `when` shown as JSONPath key and expected value.
+    pub when_key: String,
+    pub when_value: String,
+    pub body: String,
+    pub binary: bool,
+    pub close_code: Option<u16>,
+    /// `compact` (default), `pretty` or `raw`.
+    pub format: String,
 }
 
 impl Route {
+    pub fn is_websocket(&self) -> bool {
+        self.kind == "websocket"
+    }
     pub fn is_crud(&self) -> bool {
         self.kind == "crud"
     }
@@ -382,7 +403,36 @@ impl Workspace {
             index: r.index.clone(),
             forward: r.proxy,
             pinned: r.pinned,
-            method: if r.kind == "static" {
+            ws_mode: r.mode.clone().unwrap_or_else(|| "echo".into()),
+            ws_messages: r
+                .messages
+                .iter()
+                .map(|m| WsMsg {
+                    trigger: m.trigger.clone(),
+                    every: m.every.clone().unwrap_or_default(),
+                    when_key: m
+                        .when
+                        .as_ref()
+                        .and_then(|w| w.key.clone())
+                        .unwrap_or_default(),
+                    when_value: m
+                        .when
+                        .as_ref()
+                        .and_then(|w| w.value.as_ref())
+                        .map(|v| match v {
+                            toml::Value::String(s) => s.clone(),
+                            o => o.to_string(),
+                        })
+                        .unwrap_or_default(),
+                    body: m.body.clone(),
+                    binary: m.binary,
+                    close_code: m.close_code,
+                    format: m.format.clone().unwrap_or_else(|| "compact".into()),
+                })
+                .collect(),
+            method: if r.kind == "websocket" {
+                "WS".to_string()
+            } else if r.kind == "static" {
                 "FILES".to_string()
             } else if r.kind == "crud" {
                 "CRUD".to_string()

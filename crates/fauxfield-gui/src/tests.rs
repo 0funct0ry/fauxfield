@@ -2380,6 +2380,90 @@ fn tls_cors_and_static_controls(cx: &mut TestAppContext) {
             .map(|r| r.id.clone())
     })
     .expect("static route created");
+    // WebSocket Route: created from the Server menu action and shown as a WS Route.
+    view.update(cx, |s, cx| s.begin_new_websocket(cx));
+    let ws_route = read(&view, cx, |s| {
+        s.ws.servers[0]
+            .all_routes()
+            .find(|r| r.is_websocket())
+            .map(|r| (r.path.clone(), r.method.clone(), r.ws_mode.clone()))
+    });
+    assert_eq!(
+        ws_route,
+        Some(("/ws".to_string(), "WS".to_string(), "echo".to_string()))
+    );
+    // Messages table: adding a message switches echo to script, opens its editor, and the body
+    // is saved by Apply.
+    let wsid = read(&view, cx, |s| {
+        s.ws.servers[0]
+            .all_routes()
+            .find(|r| r.is_websocket())
+            .map(|r| r.id.clone())
+    })
+    .expect("websocket route");
+    view.update(cx, |s, cx| s.ws_op("add-interval", &wsid, None, cx));
+    let (mode, n, every, open) = read(&view, cx, |s| {
+        let r = s.ws.find_route(&wsid).unwrap().1;
+        (
+            r.ws_mode.clone(),
+            r.ws_messages.len(),
+            r.ws_messages[0].every.clone(),
+            s.ws_body_ed.is_some(),
+        )
+    });
+    assert_eq!(
+        (mode.as_str(), n, every.as_str(), open),
+        ("script", 1, "5s", true)
+    );
+    let ed = read(&view, cx, |s| s.ws_body_ed.as_ref().unwrap().2.clone());
+    view.update(cx, |_, cx| {
+        ed.update(cx, |e, cx| e.set_text("{\"type\":\"tick\"}", cx))
+    });
+    view.update(cx, |s, cx| s.ws_op("apply", &wsid, Some(0), cx));
+    let body = read(&view, cx, |s| {
+        s.ws.find_route(&wsid).unwrap().1.ws_messages[0]
+            .body
+            .clone()
+    });
+    assert_eq!(body, "{\"type\":\"tick\"}");
+    view.update(cx, |s, cx| s.set_ws_format(&wsid, 0, "pretty", cx));
+    assert_eq!(
+        read(&view, cx, |s| s.ws.find_route(&wsid).unwrap().1.ws_messages
+            [0]
+        .format
+        .clone()),
+        "pretty"
+    );
+    view.update(cx, |s, cx| s.set_ws_format(&wsid, 0, "compact", cx));
+    assert_eq!(
+        read(&view, cx, |s| s.ws.find_route(&wsid).unwrap().1.ws_messages
+            [0]
+        .format
+        .clone()),
+        "compact"
+    );
+    view.update(cx, |s, cx| s.ws_op("mode-broadcast", &wsid, None, cx));
+    assert_eq!(
+        read(&view, cx, |s| s
+            .ws
+            .find_route(&wsid)
+            .unwrap()
+            .1
+            .ws_mode
+            .clone()),
+        "broadcast"
+    );
+    view.update(cx, |s, cx| s.ws_op("del", &wsid, Some(0), cx));
+    assert_eq!(
+        read(&view, cx, |s| s
+            .ws
+            .find_route(&wsid)
+            .unwrap()
+            .1
+            .ws_messages
+            .len()),
+        0
+    );
     let (path, d, idx) = read(&view, cx, |s| {
         let r = s.ws.find_route(&rid).unwrap().1;
         (r.path.clone(), r.dir.clone(), r.index.clone())

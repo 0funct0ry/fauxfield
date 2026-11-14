@@ -473,6 +473,30 @@ pub struct Shell {
     pub(crate) ca_cache: std::cell::RefCell<Option<fauxfield_engine::tls::CaStatus>>,
     /// static Route tab: `(route id, file)` shown in the preview.
     pub(crate) static_preview: Option<(String, String)>,
+    /// Live WebSocket connections and the timeline mirrored from the engine (M13).
+    pub(crate) ws_conns: Vec<fauxfield_engine::WsConnectionInfo>,
+    pub(crate) ws_frames: std::collections::VecDeque<fauxfield_engine::WsFrame>,
+    /// The connection selected in the WebSocket tab (filters the timeline, target of Send).
+    pub(crate) ws_sel: Option<String>,
+    /// The composer (multi-line) and the read-only viewer of the selected frame.
+    pub(crate) ws_composer: gpui::Entity<crate::code_editor::CodeEditor>,
+    pub(crate) ws_frame_view: gpui::Entity<crate::code_editor::CodeEditor>,
+    /// The message body being edited: `(route, message index, editor)`.
+    pub(crate) ws_body_ed: Option<(String, usize, gpui::Entity<crate::code_editor::CodeEditor>)>,
+    /// Selected message row per WebSocket Route.
+    pub(crate) ws_msg_sel: std::collections::HashMap<String, usize>,
+    /// Timeline filter: 0 all, 1 in, 2 out; payload filter text; selected frame id.
+    pub(crate) ws_dir: u8,
+    pub(crate) ws_search: String,
+    pub(crate) ws_frame_sel: Option<u64>,
+    /// The composer sends binary (base64) frames.
+    pub(crate) ws_send_binary: bool,
+    /// How the composer sends valid JSON: `compact`, `pretty` or `raw`.
+    pub(crate) ws_send_format: String,
+    /// Message-body and composer previews by key: `(body, rendered, is_error)`. Random functions
+    /// such as `uuid()` would change on every repaint, so it is rendered once per body.
+    pub(crate) ws_preview_cache:
+        std::cell::RefCell<std::collections::HashMap<String, (String, String, bool)>>,
     pub(crate) focus: FocusHandle,
     pub(crate) picker_focus: FocusHandle,
     /// The New Server dialog (Name, Host, Port), when open.
@@ -589,6 +613,7 @@ impl Shell {
         let (editor_settings, editor_notes) =
             crate::code_editor::EditorSettings::load(opts.config_dir.as_deref());
         problems.extend(editor_notes);
+        let editor_settings_for_ws = editor_settings.clone();
 
         let os_dark = matches!(
             window.appearance(),
@@ -732,6 +757,31 @@ impl Shell {
             trust_note: None,
             ca_cache: Default::default(),
             static_preview: None,
+            ws_conns: Vec::new(),
+            ws_frames: Default::default(),
+            ws_sel: None,
+            ws_composer: crate::ws_ui::new_editor(
+                &editor_settings_for_ws,
+                crate::code_editor::Language::Json,
+                "{\"type\":\"announce\"}",
+                false,
+                cx,
+            ),
+            ws_frame_view: crate::ws_ui::new_editor(
+                &editor_settings_for_ws,
+                crate::code_editor::Language::Json,
+                "",
+                true,
+                cx,
+            ),
+            ws_body_ed: None,
+            ws_msg_sel: Default::default(),
+            ws_dir: 0,
+            ws_search: String::new(),
+            ws_frame_sel: None,
+            ws_send_binary: false,
+            ws_send_format: "compact".into(),
+            ws_preview_cache: Default::default(),
             focus,
             picker_focus: cx.focus_handle(),
             server_dialog: None,
@@ -1545,6 +1595,8 @@ impl Shell {
             MenuAct::ToggleEnabled => self.toggle_enabled(&m.row_id, cx),
             MenuAct::ChangePort => self.change_port(&m.row_id, window, cx),
             MenuAct::ChangeHost => self.change_host(&m.row_id, window, cx),
+            MenuAct::NewStaticRoute => self.begin_new_static_in(&m.row_id, window, cx),
+            MenuAct::NewWebsocketRoute => self.new_websocket_in(&m.row_id, cx),
             MenuAct::ChangePrefix => self.change_prefix(&m.row_id, window, cx),
             MenuAct::NewServer => self.begin_prompt(PromptAction::NewServer, "", window, cx),
             MenuAct::RenameWorkspace => self.rename_workspace(window, cx),
@@ -3511,6 +3563,13 @@ impl Render for Shell {
             OpenDatasetSeed => |this, _w, cx| this.open_dataset_seed(cx),
             NewDataset => |this, w, cx| this.begin_new_dataset(w, cx),
             NewStaticRoute => |this, w, cx| this.begin_new_static(w, cx),
+            NewWebsocketRoute => |this, _w, cx| this.begin_new_websocket(cx),
+            SendWsMessage => |this, _w, cx| match this.current_route_id() {
+                Some(r) if this.ws.find_route(&r).is_some_and(|(_, r)| r.is_websocket()) => {
+                    this.ws_send(&r, None, cx)
+                }
+                _ => this.notify("Open a WebSocket route first.".into(), cx),
+            },
             TrustDevCa => |this, _w, cx| match this.current_server_id() {
                 Some(server) => {
                     this.click_row(&server, 2, cx);

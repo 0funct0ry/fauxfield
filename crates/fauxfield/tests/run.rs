@@ -253,3 +253,57 @@ fn logs_har_is_not_available_yet() {
         "error: --har arrives in M12"
     );
 }
+
+#[test]
+fn ws_commands_need_a_host_and_drive_connections() {
+    let dir = workspace();
+    for args in [
+        &["ws", "list", "S"][..],
+        &["ws", "send", "S", "x"],
+        &["ws", "log", "S"],
+    ] {
+        assert_eq!(
+            fauxfield(dir.path(), args).status.code(),
+            Some(4),
+            "{args:?}"
+        );
+    }
+    // Add a websocket Route to the sample server and run.
+    let (offset, port) = free_offset();
+    let servers = dir.path().join("servers");
+    let file = std::fs::read_dir(&servers)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let mut text = std::fs::read_to_string(&file).unwrap();
+    text.push_str("\n[[routes]]\nid = \"rte_ws\"\nkind = \"websocket\"\npath = \"/ws\"\n");
+    std::fs::write(&file, text).unwrap();
+    let child = Std::new(bin())
+        .current_dir(dir.path())
+        .args(["run", "--port-offset", &offset.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let _host = Host(child);
+    wait_for(port);
+    let slug = file.file_stem().unwrap().to_string_lossy().into_owned();
+    let out = fauxfield(dir.path(), &["ws", "list", &slug, "--json"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    snap("ws_list_json", &v);
+    let out = fauxfield(dir.path(), &["ws", "send", &slug, "hi", "--json"]);
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    snap("ws_send_json", &v);
+    let out = fauxfield(dir.path(), &["ws", "log", &slug, "--json"]);
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    snap("ws_log_json", &v);
+    let _ = fauxfield(dir.path(), &["stop"]);
+}

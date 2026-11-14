@@ -1003,6 +1003,17 @@ impl Shell {
         let Some(server) = self.current_server_id() else {
             return self.notify("Select a server first.".into(), cx);
         };
+        self.begin_new_static_in(&server, window, cx);
+    }
+
+    /// Pick a folder and serve it from Server `server`.
+    pub(crate) fn begin_new_static_in(
+        &mut self,
+        server: &str,
+        window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) {
+        let server = server.to_string();
         let rx = cx.prompt_for_paths(gpui::PathPromptOptions {
             files: false,
             directories: true,

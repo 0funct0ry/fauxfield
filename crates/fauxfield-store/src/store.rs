@@ -1395,6 +1395,170 @@ impl Store {
         Ok(id)
     }
 
+    /// Create a `websocket` Route at `path` in `echo` mode (M13).
+    pub fn create_websocket_route(
+        &self,
+        server_id: &str,
+        folder: Option<&str>,
+        path: &str,
+    ) -> Result<String, StoreError> {
+        let file = self
+            .server_file(server_id)
+            .ok_or_else(|| StoreError::NotFound(server_id.into()))?;
+        let id = new_id("rte");
+        self.edit(&file, |d| {
+            let mut t = Table::new();
+            t["id"] = value(id.clone());
+            if let Some(f) = folder {
+                t["folder"] = value(f);
+            }
+            t["kind"] = value("websocket");
+            t["path"] = value(path);
+            array_mut(d, "routes").push(t);
+            Ok(())
+        })?;
+        Ok(id)
+    }
+
+    /// Append a scripted message with `trigger` to a WebSocket Route; returns its index.
+    pub fn add_ws_message(&self, route_id: &str, trigger: &str) -> Result<usize, StoreError> {
+        let t = Target::Route(route_id.into());
+        let file = self
+            .file_of(&t)
+            .ok_or_else(|| StoreError::NotFound(route_id.into()))?;
+        let mut idx = 0;
+        self.edit(&file, |d| {
+            let r = resolve(d, &t).ok_or_else(|| StoreError::NotFound(route_id.into()))?;
+            if r.get("messages")
+                .and_then(Item::as_array_of_tables)
+                .is_none()
+            {
+                r["messages"] = Item::ArrayOfTables(ArrayOfTables::new());
+            }
+            let a = r["messages"]
+                .as_array_of_tables_mut()
+                .expect("just created");
+            let mut m = Table::new();
+            m["trigger"] = value(trigger);
+            if trigger == "interval" {
+                m["every"] = value("5s");
+            }
+            m["body"] = value("");
+            idx = a.len();
+            a.push(m);
+            Ok(())
+        })?;
+        Ok(idx)
+    }
+
+    fn with_ws_message(
+        &self,
+        route_id: &str,
+        idx: usize,
+        f: impl FnOnce(&mut Table),
+    ) -> Result<(), StoreError> {
+        let t = Target::Route(route_id.into());
+        let file = self
+            .file_of(&t)
+            .ok_or_else(|| StoreError::NotFound(route_id.into()))?;
+        self.edit(&file, |d| {
+            let r = resolve(d, &t).ok_or_else(|| StoreError::NotFound(route_id.into()))?;
+            let m = r
+                .get_mut("messages")
+                .and_then(Item::as_array_of_tables_mut)
+                .and_then(|a| a.get_mut(idx))
+                .ok_or_else(|| StoreError::NotFound(format!("{route_id} message {idx}")))?;
+            f(m);
+            Ok(())
+        })
+    }
+
+    /// Set (or remove with `None`) a text field of message `idx` (`trigger`, `every`, `body`).
+    pub fn set_ws_message_str(
+        &self,
+        route_id: &str,
+        idx: usize,
+        key: &str,
+        val: Option<&str>,
+    ) -> Result<(), StoreError> {
+        self.with_ws_message(route_id, idx, |m| match val {
+            Some(v) => m[key] = value(v),
+            None => {
+                m.remove(key);
+            }
+        })
+    }
+
+    /// Set `binary` (false removes the key).
+    pub fn set_ws_message_binary(
+        &self,
+        route_id: &str,
+        idx: usize,
+        on: bool,
+    ) -> Result<(), StoreError> {
+        self.with_ws_message(route_id, idx, |m| {
+            if on {
+                m["binary"] = value(true);
+            } else {
+                m.remove("binary");
+            }
+        })
+    }
+
+    /// Set or clear the message's `close_code`.
+    pub fn set_ws_message_close(
+        &self,
+        route_id: &str,
+        idx: usize,
+        code: Option<i64>,
+    ) -> Result<(), StoreError> {
+        self.with_ws_message(route_id, idx, |m| match code {
+            Some(c) => m["close_code"] = value(c),
+            None => {
+                m.remove("close_code");
+            }
+        })
+    }
+
+    /// Set the `when` condition to `body <key> eq <val>` (`None` clears it).
+    pub fn set_ws_when(
+        &self,
+        route_id: &str,
+        idx: usize,
+        cond: Option<(&str, &str)>,
+    ) -> Result<(), StoreError> {
+        self.with_ws_message(route_id, idx, |m| match cond {
+            Some((key, val)) => {
+                let mut w = toml_edit::InlineTable::new();
+                w.insert("target", "body".into());
+                w.insert("key", key.into());
+                w.insert("op", "eq".into());
+                w.insert("value", val.into());
+                m["when"] = value(w);
+            }
+            None => {
+                m.remove("when");
+            }
+        })
+    }
+
+    /// Remove message `idx` of a WebSocket Route.
+    pub fn delete_ws_message(&self, route_id: &str, idx: usize) -> Result<(), StoreError> {
+        let t = Target::Route(route_id.into());
+        let file = self
+            .file_of(&t)
+            .ok_or_else(|| StoreError::NotFound(route_id.into()))?;
+        self.edit(&file, |d| {
+            let r = resolve(d, &t).ok_or_else(|| StoreError::NotFound(route_id.into()))?;
+            if let Some(a) = r.get_mut("messages").and_then(Item::as_array_of_tables_mut)
+                && idx < a.len()
+            {
+                a.remove(idx);
+            }
+            Ok(())
+        })
+    }
+
     pub fn set_server_table_bool(
         &self,
         server_id: &str,

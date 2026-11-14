@@ -76,6 +76,40 @@ struct SetChaos {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct WsList {
+    /// Server ID, name or file slug.
+    server: String,
+    /// Only this WebSocket Route ID.
+    route: Option<String>,
+    /// Also return timeline frames with an id greater than this (0 returns the whole timeline).
+    after: Option<u64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct WsSend {
+    /// Server ID, name or file slug.
+    server: String,
+    /// Route ID: send to every connection of this Route. Omit for every connection.
+    route: Option<String>,
+    /// One connection ID (`wsc_...`). Omit to send to all.
+    connection: Option<String>,
+    /// Message body (text, or base64 when `binary`).
+    body: String,
+    /// Send as a binary frame (body is base64).
+    binary: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct WsDisconnect {
+    /// Server ID, name or file slug.
+    server: String,
+    /// Connection ID (`wsc_...`).
+    connection: String,
+    /// Close code (default 1000).
+    code: Option<u16>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct SendTest {
     /// Server ID, name, or file slug. It must be running.
     server: String,
@@ -250,6 +284,71 @@ pub fn register_control_tools(r: &mut Registry, provider: ControlProvider) {
                 let rate = a.rate.filter(|r| *r > 0.0);
                 let servers = host(&p)?.chaos_set(a.server, rate).await.map_err(fail)?;
                 Ok(json!({ "servers": servers }))
+            })
+        },
+    ));
+
+    let p = provider.clone();
+    r.register(ToolDef::new::<WsList>(
+        "list_ws_connections",
+        "List live WebSocket connections of a Server and the message timeline (in/out frames).",
+        ToolClass::Read,
+        move |m| -> ToolFuture {
+            let p = p.clone();
+            Box::pin(async move {
+                let a = parse::<WsList>(m)?;
+                let h = host(&p)?;
+                let connections = h
+                    .ws_connections(a.server.clone(), a.route.clone())
+                    .await
+                    .map_err(fail)?;
+                let frames = h
+                    .ws_messages(a.server, a.route, None, a.after.unwrap_or(0), 200)
+                    .await
+                    .map_err(fail)?;
+                Ok(json!({ "connections": connections, "frames": frames }))
+            })
+        },
+    ));
+
+    let p = provider.clone();
+    r.register(ToolDef::new::<WsSend>(
+        "send_ws_message",
+        "Send a message to one WebSocket connection, or to every connection of a Route or Server.",
+        ToolClass::Execute,
+        move |m| -> ToolFuture {
+            let p = p.clone();
+            Box::pin(async move {
+                let a = parse::<WsSend>(m)?;
+                let sent = host(&p)?
+                    .ws_send(
+                        a.server,
+                        a.route,
+                        a.connection,
+                        a.body,
+                        a.binary.unwrap_or(false),
+                    )
+                    .await
+                    .map_err(fail)?;
+                Ok(json!({ "sent": sent }))
+            })
+        },
+    ));
+
+    let p = provider.clone();
+    r.register(ToolDef::new::<WsDisconnect>(
+        "disconnect_ws_client",
+        "Close one WebSocket connection with a close code.",
+        ToolClass::Execute,
+        move |m| -> ToolFuture {
+            let p = p.clone();
+            Box::pin(async move {
+                let a = parse::<WsDisconnect>(m)?;
+                host(&p)?
+                    .ws_disconnect(a.server, a.connection, a.code)
+                    .await
+                    .map_err(fail)?;
+                Ok(json!({ "disconnected": true }))
             })
         },
     ));

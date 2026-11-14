@@ -86,6 +86,11 @@ pub enum Command {
         #[command(subcommand)]
         action: crate::env_cmd::VarAction,
     },
+    /// List WebSocket connections, read the timeline, send messages, disconnect clients.
+    Ws {
+        #[command(subcommand)]
+        action: crate::ws_cmd::WsAction,
+    },
     /// List, show, reset, export and import Datasets.
     Data {
         #[command(subcommand)]
@@ -209,6 +214,7 @@ pub fn run() -> i32 {
         Some(Command::Response { action }) => crate::workspace_cmd::response(action),
         Some(Command::Env { action }) => crate::env_cmd::env(action),
         Some(Command::Var { action }) => crate::env_cmd::var(action),
+        Some(Command::Ws { action }) => crate::ws_cmd::ws(action),
         Some(Command::Data { action }) => crate::data_cmd::data(action),
         Some(Command::Certs { action }) => crate::certs_cmd::certs(action),
         Some(Command::Doctor(a)) => crate::doctor_cmd::doctor(a),

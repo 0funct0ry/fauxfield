@@ -645,6 +645,7 @@ impl Shell {
                 cx.notify();
             }
             "sample-cancel" => self.close_sample_dialog(cx),
+            other if other.starts_with("ws-") => self.ws_op(&other["ws-".len()..], &id, idx, cx),
             other if other.starts_with("schema-") => {
                 let arg = if id.is_empty() {
                     String::new()

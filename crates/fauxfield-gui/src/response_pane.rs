@@ -98,6 +98,12 @@ pub enum InlineTarget {
         server: String,
         field: crate::https_ui::HttpsField,
     },
+    /// A WebSocket Route field: message `idx` (M13).
+    Ws {
+        route: String,
+        idx: usize,
+        field: crate::ws_ui::WsField,
+    },
     /// A static Route field (M10).
     Static {
         route: String,
@@ -402,6 +408,9 @@ impl Shell {
             }
             InlineTarget::Static { route, field } => {
                 self.commit_static_field(&route, field, &v, cx)
+            }
+            InlineTarget::Ws { route, idx, field } => {
+                self.commit_ws_field(&route, idx, field, &v, cx)
             }
             InlineTarget::Seed(server) => match v.parse::<u64>() {
                 Ok(n) => {

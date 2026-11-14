@@ -202,6 +202,8 @@ pub struct DatasetViewState {
 pub struct RouteState {
     pub id: String,
     pub response_mode: String,
+    /// WebSocket Route state (M13); absent for other kinds.
+    pub ws: Option<WsState>,
     /// `proxy = true` (Forward to upstream) and `pinned = true` (Pin mock), M11.
     pub forward: bool,
     pub pinned: bool,
@@ -546,6 +548,21 @@ pub struct PickerState {
     pub result_count: usize,
     /// Label of the highlighted entry (for the theme selector, the theme being previewed).
     pub highlighted: Option<String>,
+}
+
+/// The WebSocket tab (M13).
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct WsState {
+    pub mode: String,
+    pub messages: usize,
+    pub triggers: Vec<String>,
+    pub connections: Vec<String>,
+    pub selected_connection: Option<String>,
+    pub frames: usize,
+    pub frames_in: usize,
+    pub frames_out: usize,
+    pub selected_message: Option<usize>,
+    pub dir_filter: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -1102,6 +1119,26 @@ fn route_state(shell: &Shell) -> Option<RouteState> {
         response_mode: r.response_mode.clone(),
         forward: r.forward,
         pinned: r.pinned,
+        ws: r.is_websocket().then(|| {
+            let mine = || shell.ws_frames.iter().filter(|f| f.route_id == r.id);
+            WsState {
+                mode: r.ws_mode.clone(),
+                messages: r.ws_messages.len(),
+                triggers: r.ws_messages.iter().map(|m| m.trigger.clone()).collect(),
+                connections: shell
+                    .ws_conns
+                    .iter()
+                    .filter(|c| c.route_id == r.id)
+                    .map(|c| c.id.clone())
+                    .collect(),
+                selected_connection: shell.ws_sel.clone(),
+                frames: mine().count(),
+                frames_in: mine().filter(|f| f.dir == "in").count(),
+                frames_out: mine().filter(|f| f.dir == "out").count(),
+                selected_message: shell.ws_msg_sel.get(&r.id).copied(),
+                dir_filter: ["all", "in", "out"][usize::from(shell.ws_dir).min(2)].to_string(),
+            }
+        }),
         sub_tab: shell.route_sub.get(&r.id).copied().unwrap_or(0),
         selected_response: shell.resp_sel.get(&r.id).copied().unwrap_or(0),
         sample_dialog: shell.sample_dialog.is_some(),

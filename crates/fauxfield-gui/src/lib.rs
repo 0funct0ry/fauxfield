@@ -60,6 +60,7 @@ pub mod traffic;
 pub mod tree;
 pub mod ui;
 pub mod view;
+pub mod ws_ui;
 
 #[cfg(test)]
 mod tests;

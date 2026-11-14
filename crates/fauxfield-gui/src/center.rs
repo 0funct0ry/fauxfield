@@ -201,6 +201,9 @@ impl Shell {
                 Some((s, r)) if r.is_static() => {
                     self.render_static_route_tab(t, s, r, cx).into_any_element()
                 }
+                Some((s, r)) if r.is_websocket() => {
+                    self.render_ws_route_tab(t, s, r, cx).into_any_element()
+                }
                 Some((s, r)) if r.is_crud() => {
                     self.render_crud_route_tab(t, s, r, cx).into_any_element()
                 }

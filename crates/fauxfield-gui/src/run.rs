@@ -179,6 +179,18 @@ impl Shell {
                     }
                 }
                 EngineEvent::Dataset { .. } => {}
+                EngineEvent::WsConnection {
+                    connection, open, ..
+                } => {
+                    self.push_log(format!(
+                        "WebSocket {} {} ({})",
+                        if open { "opened" } else { "closed" },
+                        connection.id,
+                        connection.route_id
+                    ));
+                    self.on_ws_connection(connection, open);
+                }
+                EngineEvent::WsMessage { frame, .. } => self.on_ws_frame(*frame),
                 EngineEvent::Network { profile } => {
                     self.network_profile = profile;
                     self.push_log(format!("Network profile: {}", profile.label()));

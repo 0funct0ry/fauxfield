@@ -201,6 +201,12 @@ pub const ID_STRATEGIES: &[&str] = &["uuid", "increment", "ulid"];
 pub const CRUD_OPS: &[&str] = &["list", "get", "create", "update", "patch", "delete"];
 /// Known Route kinds.
 pub const ROUTE_KINDS: &[&str] = &["http", "crud", "static", "websocket"];
+/// WebSocket Route modes (SPEC §7.4, M13).
+pub const WS_MODES: &[&str] = &["echo", "script", "broadcast"];
+/// WebSocket message triggers (SPEC §7.4, M13).
+pub const WS_TRIGGERS: &[&str] = &["connect", "interval", "message"];
+/// How a WebSocket message body is sent (M13): valid JSON is compacted by default.
+pub const WS_FORMATS: &[&str] = &["compact", "pretty", "raw"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Folder {
@@ -274,6 +280,41 @@ pub struct Route {
     /// In `passthrough` mode keep this Route mocked instead of forwarding it (M11).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pinned: bool,
+    /// `websocket` routes: `echo`, `script` or `broadcast` (default `echo`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    /// `websocket` routes: scripted messages (M13).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub messages: Vec<WsMessage>,
+    #[serde(flatten)]
+    #[schemars(skip)]
+    pub extra: Extra,
+}
+
+/// One scripted message of a `websocket` Route (SPEC §7.4).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct WsMessage {
+    /// `connect`, `interval` or `message`.
+    pub trigger: String,
+    /// `interval` trigger: period like `500ms`, `5s`, `1m`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub every: Option<String>,
+    /// `message` trigger: condition on the incoming frame (`body` target, `key` = JSONPath).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when: Option<Rule>,
+    /// Templated message body (text frame; base64 bytes when `binary`).
+    #[serde(default)]
+    pub body: String,
+    /// `compact` (default), `pretty` (2 spaces) or `raw`: how a rendered body that is valid JSON
+    /// is sent. Anything that is not JSON is sent as it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    /// true: `body` is base64 and sent as a binary frame.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub binary: bool,
+    /// When set the connection is closed with this code after sending.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub close_code: Option<u16>,
     #[serde(flatten)]
     #[schemars(skip)]
     pub extra: Extra,
@@ -602,6 +643,25 @@ pub fn parse_window(s: &str) -> Option<u64> {
             _ => return None,
         },
     )
+}
+
+/// Duration text (`500ms`, `5s`, `1m`, `2h`) in milliseconds; must be at least 10 ms.
+pub fn parse_duration_ms(s: &str) -> Option<u64> {
+    let s = s.trim();
+    let (n, mul) = if let Some(n) = s.strip_suffix("ms") {
+        (n, 1)
+    } else if let Some(n) = s.strip_suffix('s') {
+        (n, 1000)
+    } else if let Some(n) = s.strip_suffix('m') {
+        (n, 60_000)
+    } else if let Some(n) = s.strip_suffix('h') {
+        (n, 3_600_000)
+    } else {
+        return None;
+    };
+    let n: u64 = n.trim().parse().ok()?;
+    let ms = n.checked_mul(mul)?;
+    (ms >= 10).then_some(ms)
 }
 
 /// True for `ip`, `header:<name>`, `query:<name>`.

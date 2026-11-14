@@ -350,6 +350,9 @@ pub enum MenuAct {
     StartStop,
     SetActive,
     NewRoute,
+    /// Server menu: add a static files or WebSocket Route (M10, M13).
+    NewStaticRoute,
+    NewWebsocketRoute,
     NewFolder,
     NewResponse,
     Rename,
@@ -410,6 +413,8 @@ impl MenuAct {
             StartStop => "start-stop".into(),
             SetActive => "set-active".into(),
             NewRoute => "new-route".into(),
+            NewStaticRoute => "new-static-route".into(),
+            NewWebsocketRoute => "new-websocket-route".into(),
             NewFolder => "new-folder".into(),
             NewResponse => "new-response".into(),
             Rename => "rename".into(),
@@ -511,6 +516,8 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
             }
             v.extend([
                 ("New route…", NewRoute),
+                ("New static files route…", NewStaticRoute),
+                ("New WebSocket route", NewWebsocketRoute),
                 ("New folder…", NewFolder),
                 (if *enabled { "Disable" } else { "Enable" }, ToggleEnabled),
                 ("Change Port…", ChangePort),
@@ -727,6 +734,8 @@ mod tests {
                 "Stop",
                 "Restart",
                 "New route…",
+                "New static files route…",
+                "New WebSocket route",
                 "New folder…",
                 "Disable",
                 "Change Port…",
@@ -747,8 +756,11 @@ mod tests {
             https: false,
         };
         let l = labels(&off, false);
-        assert_eq!((l[0], l[1], l[2]), ("Start", "New route…", "New folder…"));
-        assert_eq!(l[3], "Enable");
+        assert_eq!(
+            (l[0], l[1], l[3]),
+            ("Start", "New route…", "New WebSocket route")
+        );
+        assert_eq!(l[5], "Enable");
         assert!(!l.contains(&"Restart"));
         assert!(
             labels(&RowKind::Environment { active: true }, false)

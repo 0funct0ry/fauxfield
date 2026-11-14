@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use fauxfield_engine::{
     DatasetInfo, Engine, EngineError, Recording, ServerInfo, TestRequest, TestResponse,
-    TrafficFilter,
+    TrafficFilter, WsConnectionInfo, WsFrame,
 };
 use fauxfield_model::vars::ResolvedVar;
 use serde::{Deserialize, Serialize};
@@ -125,6 +125,38 @@ pub trait ControlApi: Send + Sync {
         server: Option<String>,
         rate: Option<f64>,
     ) -> Result<Vec<ServerInfo>, ControlError>;
+    /// Live WebSocket connections of a Server (optionally one Route, M13).
+    async fn ws_connections(
+        &self,
+        server: String,
+        route: Option<String>,
+    ) -> Result<Vec<WsConnectionInfo>, ControlError>;
+    /// WebSocket timeline frames with id greater than `after` (`limit` 0 = all).
+    async fn ws_messages(
+        &self,
+        server: String,
+        route: Option<String>,
+        connection: Option<String>,
+        after: u64,
+        limit: usize,
+    ) -> Result<Vec<WsFrame>, ControlError>;
+    /// Send a frame to one connection, or to every connection of the Route/Server. Returns
+    /// how many clients received it.
+    async fn ws_send(
+        &self,
+        server: String,
+        route: Option<String>,
+        connection: Option<String>,
+        body: String,
+        binary: bool,
+    ) -> Result<usize, ControlError>;
+    /// Close one WebSocket connection.
+    async fn ws_disconnect(
+        &self,
+        server: String,
+        connection: String,
+        code: Option<u16>,
+    ) -> Result<(), ControlError>;
     /// Asks the host to exit (graceful drain happens in the host).
     async fn shutdown(&self) -> Result<(), ControlError>;
 }
@@ -334,6 +366,57 @@ impl ControlApi for LocalControl {
     ) -> Result<Vec<ServerInfo>, ControlError> {
         self.engine.set_chaos(server.as_deref(), rate)?;
         Ok(self.engine.list())
+    }
+
+    async fn ws_connections(
+        &self,
+        server: String,
+        route: Option<String>,
+    ) -> Result<Vec<WsConnectionInfo>, ControlError> {
+        Ok(self.engine.ws_connections(&server, route.as_deref())?)
+    }
+
+    async fn ws_messages(
+        &self,
+        server: String,
+        route: Option<String>,
+        connection: Option<String>,
+        after: u64,
+        limit: usize,
+    ) -> Result<Vec<WsFrame>, ControlError> {
+        Ok(self.engine.ws_messages(
+            &server,
+            route.as_deref(),
+            connection.as_deref(),
+            after,
+            limit,
+        )?)
+    }
+
+    async fn ws_send(
+        &self,
+        server: String,
+        route: Option<String>,
+        connection: Option<String>,
+        body: String,
+        binary: bool,
+    ) -> Result<usize, ControlError> {
+        Ok(self.engine.ws_send(
+            &server,
+            route.as_deref(),
+            connection.as_deref(),
+            &body,
+            binary,
+        )?)
+    }
+
+    async fn ws_disconnect(
+        &self,
+        server: String,
+        connection: String,
+        code: Option<u16>,
+    ) -> Result<(), ControlError> {
+        Ok(self.engine.ws_disconnect(&server, &connection, code)?)
     }
 
     async fn shutdown(&self) -> Result<(), ControlError> {

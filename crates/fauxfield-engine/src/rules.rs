@@ -415,6 +415,11 @@ fn resolved(r: &Rule, c: &Ctx) -> Rule {
     r
 }
 
+/// Evaluate one standalone rule (WebSocket `when`, M13): template values resolve first.
+pub(crate) fn rule_passes(r: &Rule, c: &Ctx, cc: &Compiled) -> bool {
+    eval_rule(&resolved(r, c), c, cc).0
+}
+
 fn eval_response(resp: &Response, c: &Ctx, cc: &Compiled) -> ResponseTrace {
     let or = resp.rules_logic.as_deref() == Some("or");
     let rules: Vec<RuleTrace> = resp
