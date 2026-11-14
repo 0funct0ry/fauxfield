@@ -235,6 +235,8 @@ pub(super) fn upgrade(c: UpgradeCall) -> HyperResponse<RespBody> {
         error: None,
         fault: None,
         dataset_changes: vec![],
+        parent_id: None,
+        callback_id: None,
         source: "mock".into(),
         upstream: None,
     };

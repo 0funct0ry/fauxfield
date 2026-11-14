@@ -126,6 +126,7 @@ actions!(
         ClearTraffic,
         CopyAsCurl,
         MockThisRoute,
+        RefireCallback,
         ToggleServerProxy,
         ToggleRouteForward,
         ToggleRoutePinned,
@@ -245,6 +246,11 @@ pub static ACTIONS: &[ActionInfo] = &[
     row!("clear_traffic", "Traffic: Clear", ClearTraffic),
     row!("copy_as_curl", "Traffic: Copy as cURL", CopyAsCurl),
     row!("mock_this_route", "Traffic: Mock This Route", MockThisRoute),
+    row!(
+        "refire_callback",
+        "Traffic: Re-fire Callback",
+        RefireCallback
+    ),
     row!("toggle_proxy", "Server: Toggle Proxy", ToggleServerProxy),
     row!(
         "toggle_route_forward",

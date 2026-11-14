@@ -3150,3 +3150,179 @@ fn crud_operation_rows_copy_their_request_as_curl(cx: &mut TestAppContext) {
     .collect();
     assert!(labels.contains(&"Copy as cURL"), "{labels:?}");
 }
+
+#[gpui::test]
+fn callback_rows_nest_under_their_request(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    view.update(cx, |s, _| {
+        s.traffic = crate::traffic::synthetic(3);
+        for (i, r) in s.traffic.iter_mut().enumerate() {
+            r.id = (i + 1) as u64;
+        }
+        s.traffic_selected = Some(2);
+        let mut cb = s.traffic[0].clone();
+        cb.id = 10;
+        cb.parent = Some(1);
+        s.push_traffic_row(cb.clone());
+        cb.id = 11;
+        s.push_traffic_row(cb);
+    });
+    let (ids, sel) = read(&view, cx, |s| {
+        (
+            s.traffic.iter().map(|r| r.id).collect::<Vec<_>>(),
+            s.traffic_selected,
+        )
+    });
+    assert_eq!(
+        ids,
+        [1, 10, 11, 2, 3],
+        "callbacks follow their request in order"
+    );
+    assert_eq!(sel, Some(4), "the selection keeps following its row");
+}
+
+#[gpui::test]
+fn callbacks_table_and_modal_edit_the_file(cx: &mut TestAppContext) {
+    use crate::callback_dialog::CbMode;
+    let (view, cx) = setup(cx, None);
+    let resp = read(&view, cx, |s| {
+        s.ws.find_route("rt_users_get").unwrap().1.responses[0]
+            .id
+            .clone()
+    });
+    let list = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
+        let r = resp.clone();
+        read(view, cx, move |s| {
+            s.find_response(&r).unwrap().2.callbacks.clone()
+        })
+    };
+    view.update(cx, |s, _| {
+        s.open_tab("rt_users_get", TabKind::Route, "Get user", false);
+        s.resp_sub.insert(resp.clone(), 3);
+    });
+    // `+` opens the create modal; Save writes the Callback.
+    view.update_in(cx, |s, w, cx| {
+        s.begin_callback_dialog(&resp, None, CbMode::Create, w, cx)
+    });
+    cx.run_until_parked(); // the modal, its editor and preview render
+    view.update_in(cx, |s, w, cx| {
+        let d = s.callback_dialog.as_mut().unwrap();
+        d.verb = "PUT".into();
+        d.url
+            .update(cx, |t, cx| t.set_value("http://127.0.0.1:1/x", cx));
+        d.retries.update(cx, |t, cx| t.set_value("2", cx));
+        d.name.update(cx, |t, cx| t.set_value("Settled", cx));
+        s.callback_dialog_op("add_header", w, cx);
+        let d = s.callback_dialog.as_mut().unwrap();
+        d.headers[0].key.update(cx, |t, cx| t.set_value("x-a", cx));
+        d.headers[0]
+            .value
+            .update(cx, |t, cx| t.set_value("{{ request.method }}", cx));
+    });
+    cx.run_until_parked();
+    view.update_in(cx, |s, w, cx| s.callback_dialog_op("save", w, cx));
+    cx.run_until_parked();
+    let l = list(&view, cx);
+    assert_eq!(l.len(), 1);
+    assert_eq!(l[0].method.as_deref(), Some("PUT"));
+    assert_eq!(l[0].retries, Some(2));
+    assert_eq!(l[0].name.as_deref(), Some("Settled"));
+    assert_eq!(
+        l[0].headers.get("x-a").map(String::as_str),
+        Some("{{ request.method }}")
+    );
+    assert!(read(&view, cx, |s| s.callback_dialog.is_none()));
+
+    // An invalid draft is not saved and the modal stays open.
+    view.update_in(cx, |s, w, cx| {
+        s.begin_callback_dialog(&resp, Some(0), CbMode::Edit, w, cx);
+        let d = s.callback_dialog.as_mut().unwrap();
+        d.url.update(cx, |t, cx| t.set_value("ftp://nope", cx));
+        s.callback_dialog_op("save", w, cx);
+    });
+    assert!(read(&view, cx, |s| s.callback_dialog.is_some()));
+    assert_eq!(list(&view, cx)[0].url, "http://127.0.0.1:1/x");
+    // View mode never saves; Edit switches to edit mode.
+    view.update_in(cx, |s, w, cx| {
+        s.begin_callback_dialog(&resp, Some(0), CbMode::View, w, cx);
+        s.callback_dialog_op("save", w, cx);
+    });
+    assert_eq!(
+        read(&view, cx, |s| s.callback_dialog.as_ref().unwrap().mode),
+        CbMode::View
+    );
+    view.update_in(cx, |s, w, cx| s.callback_dialog_op("edit", w, cx));
+    assert_eq!(
+        read(&view, cx, |s| s.callback_dialog.as_ref().unwrap().mode),
+        CbMode::Edit
+    );
+    view.update_in(cx, |s, w, cx| s.callback_dialog_op("cancel", w, cx));
+
+    // Row actions.
+    view.update(cx, |s, cx| s.duplicate_callback(&resp, 0, cx));
+    assert_eq!(list(&view, cx).len(), 2);
+    view.update(cx, |s, cx| s.move_callback_row(&resp, 0, true, cx));
+    let ids: Vec<_> = list(&view, cx).iter().map(|c| c.id.clone()).collect();
+    assert!(ids[0].ends_with("_2") && ids[1] == "cb_1", "{ids:?}");
+    view.update(cx, |s, cx| {
+        s.edit_callback(&resp, 0, cx, |c| c.disabled = true)
+    });
+    assert!(list(&view, cx)[0].disabled);
+    cx.run_until_parked(); // the table and its row menus render
+    view.update(cx, |s, cx| s.delete_callback_row(&resp, 0, cx));
+    view.update(cx, |s, cx| s.delete_callback_row(&resp, 0, cx));
+    assert!(list(&view, cx).is_empty());
+}
+
+#[gpui::test]
+fn deleting_a_callback_asks_first_and_help_popovers_toggle(cx: &mut TestAppContext) {
+    use crate::callback_dialog::CbMode;
+    let (view, cx) = setup(cx, None);
+    let resp = read(&view, cx, |s| {
+        s.ws.find_route("rt_users_get").unwrap().1.responses[0]
+            .id
+            .clone()
+    });
+    view.update(cx, |s, cx| {
+        s.open_tab("rt_users_get", TabKind::Route, "Get user", false);
+        let c = fauxfield_model::Callback {
+            id: "cb_x".into(),
+            url: "http://127.0.0.1:1/x".into(),
+            ..Default::default()
+        };
+        let r = resp.clone();
+        s.store_op(cx, |st| st.set_callback(&r, None, &c));
+    });
+    let count = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
+        let r = resp.clone();
+        read(view, cx, move |s| {
+            s.find_response(&r).unwrap().2.callbacks.len()
+        })
+    };
+    assert_eq!(count(&view, cx), 1);
+    view.update(cx, |s, cx| s.ask_delete_callback(&resp, 0, cx));
+    assert_eq!(count(&view, cx), 1, "nothing is deleted before the answer");
+    assert_eq!(
+        read(&view, cx, |s| s.dialog_name()),
+        Some("delete_callback_confirm")
+    );
+    cx.run_until_parked(); // the confirmation renders
+    view.update(cx, |s, cx| s.cancel_dialog(cx));
+    assert_eq!(count(&view, cx), 1);
+    view.update(cx, |s, cx| {
+        s.ask_delete_callback(&resp, 0, cx);
+        s.confirm_dialog(cx);
+    });
+    assert_eq!(count(&view, cx), 0);
+
+    // The `?` popover of a field is open state in the dialog and renders.
+    view.update_in(cx, |s, w, cx| {
+        s.begin_callback_dialog(&resp, None, CbMode::Create, w, cx);
+        s.callback_dialog.as_mut().unwrap().help = Some("id");
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        read(&view, cx, |s| s.callback_dialog.as_ref().unwrap().help),
+        Some("id")
+    );
+}

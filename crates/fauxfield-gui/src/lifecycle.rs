@@ -74,6 +74,8 @@ pub struct Lifecycle {
     pub close_confirm: Option<Intent>,
     /// Server id awaiting a delete confirmation.
     pub delete_confirm: Option<String>,
+    /// Callback (Response id, index) awaiting a delete confirmation (M14).
+    pub callback_delete: Option<(String, usize)>,
     /// Dataset delete awaiting confirmation (M10.01).
     pub dataset_delete: Option<DatasetDelete>,
     /// Clear data or bulk row delete awaiting confirmation (M10.07).
@@ -333,6 +335,7 @@ impl Shell {
         self.active_env = String::new();
         self.lc.close_confirm = None;
         self.lc.delete_confirm = None;
+        self.lc.callback_delete = None;
         self.lc.dataset_delete = None;
         self.lc.data_confirm = None;
         self.lc.create_confirm = None;
@@ -346,6 +349,8 @@ impl Shell {
     pub fn confirm_dialog(&mut self, cx: &mut Context<Self>) {
         if let Some(intent) = self.lc.close_confirm.take() {
             self.perform(intent, cx);
+        } else if let Some((resp, i)) = self.lc.callback_delete.take() {
+            self.delete_callback_row(&resp, i, cx);
         } else if let Some(id) = self.lc.delete_confirm.take() {
             self.delete_server_now(&id, cx);
         } else if let Some(dd) = self.lc.dataset_delete.take() {
@@ -373,6 +378,7 @@ impl Shell {
     pub(crate) fn any_dialog_open(&self) -> bool {
         self.lc.close_confirm.is_some()
             || self.lc.delete_confirm.is_some()
+            || self.lc.callback_delete.is_some()
             || self.lc.dataset_delete.is_some()
             || self.lc.data_confirm.is_some()
             || self.lc.create_confirm.is_some()
@@ -384,6 +390,8 @@ impl Shell {
             Some("close_confirm")
         } else if self.lc.delete_confirm.is_some() {
             Some("delete_confirm")
+        } else if self.lc.callback_delete.is_some() {
+            Some("delete_callback_confirm")
         } else if self.lc.dataset_delete.is_some() {
             Some("delete_dataset_confirm")
         } else if self.lc.data_confirm.is_some() {
@@ -392,6 +400,8 @@ impl Shell {
             Some("create_confirm")
         } else if self.schema_dialog.is_some() {
             Some("schema_designer")
+        } else if self.callback_dialog.is_some() {
+            Some("callback_dialog")
         } else if self.column_dialog.is_some() {
             Some("add_column")
         } else if self.crud_dialog.is_some() {
@@ -430,6 +440,24 @@ impl Shell {
             };
             return self
                 .confirm_modal(t, "close-confirm", title, vec![], verb, cx)
+                .into_any_element();
+        }
+        if let Some((resp, i)) = &self.lc.callback_delete {
+            let c = self
+                .find_response(resp)
+                .and_then(|(_, _, r)| r.callbacks.get(*i).cloned());
+            let name = c
+                .map(|c| c.name.filter(|n| !n.is_empty()).unwrap_or(c.id))
+                .unwrap_or_default();
+            return self
+                .confirm_modal(
+                    t,
+                    "delete-callback-confirm",
+                    format!("Delete callback {name}?"),
+                    vec!["It stops firing after this Response. The Server file is edited.".into()],
+                    "Delete",
+                    cx,
+                )
                 .into_any_element();
         }
         if let Some(id) = &self.lc.delete_confirm

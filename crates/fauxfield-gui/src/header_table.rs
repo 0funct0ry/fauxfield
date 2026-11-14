@@ -563,6 +563,7 @@ mod tests {
             rules_logic: "and".into(),
             rules: vec![],
             actions: vec![],
+            callbacks: vec![],
             action_error_status: String::new(),
             content_type: "application/json".into(),
             delay: String::new(),

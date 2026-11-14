@@ -27,6 +27,10 @@ description: Every Tera function, filter and fake kind available in Response bod
 | `dataset_rows` | dataset_rows(data=data.orders, filter="status=open&total_gte=5", sort="total", order="desc", page=1, limit=10) filtered, sorted, paged rows of a Dataset |
 | `dataset_count` | dataset_count(data=data.orders, filter="status=open") number of rows matching a filter |
 
+## Callback context
+
+Inside a Callback (`url`, `headers`, `body`) the usual context is joined by `response` (`status`, `headers`, `body`, `json` of the Response that was sent) and, for `url` and `headers`, `callback` (`id`, `method` and `body`, the rendered body, so `hmac_sha256(key=vars.secret, data=callback.body)` signs what is sent). See the Callbacks guide.
+
 ## Filters
 
 | Name | Description |

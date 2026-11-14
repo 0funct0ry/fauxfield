@@ -142,6 +142,33 @@ impl Shell {
     }
 
     /// Drain engine events into Traffic, Logs and run state (called from the 60 ms poll).
+    /// Append a row; a Callback entry goes right after its triggering request and that
+    /// request's earlier Callback entries (SPEC §7.3), so they read as nested under it.
+    pub(crate) fn push_traffic_row(&mut self, row: TrafficRow) {
+        let Some(parent) = row.parent else {
+            self.traffic.push(row);
+            return;
+        };
+        let Some(p) = self.traffic.iter().rposition(|r| r.id == parent) else {
+            self.traffic.push(row);
+            return;
+        };
+        let mut at = p + 1;
+        while self
+            .traffic
+            .get(at)
+            .is_some_and(|r| r.parent == Some(parent))
+        {
+            at += 1;
+        }
+        self.traffic.insert(at, row);
+        if let Some(sel) = self.traffic_selected.as_mut()
+            && *sel >= at
+        {
+            *sel += 1;
+        }
+    }
+
     pub(crate) fn poll_engine(&mut self, cx: &mut Context<Self>) {
         let Some(rx) = self.engine_events.as_mut() else {
             return;
@@ -165,7 +192,14 @@ impl Shell {
                         rec.ts, rec.method, rec.url, rec.status, rec.timing.total_ms, rec.route
                     ));
                     let is_test = rec.source == "test";
-                    self.traffic.push(TrafficRow::from_recording(&rec));
+                    if let Some(err) = rec.error.as_ref().filter(|_| rec.source == "callback") {
+                        let msg = format!(
+                            "Callback {} failed: {err}",
+                            rec.callback_id.as_deref().unwrap_or("?")
+                        );
+                        self.notify(msg, cx);
+                    }
+                    self.push_traffic_row(TrafficRow::from_recording(&rec));
                     if self.traffic.len() > TRAFFIC_CAP {
                         let extra = self.traffic.len() - TRAFFIC_CAP;
                         self.traffic.drain(..extra);
@@ -408,6 +442,44 @@ impl Shell {
                 })
                 .ok();
             }
+        })
+        .detach();
+    }
+
+    /// Traffic: fire the Callbacks of the selected request again. On a Callback entry only that
+    /// Callback fires; on a request, all of its Callbacks. The new entries stream into Traffic.
+    pub fn refire_callback(&mut self, cx: &mut Context<Self>) {
+        let Some(rec) = self
+            .traffic_selected
+            .and_then(|i| self.traffic.get(i))
+            .and_then(|r| r.rec.clone())
+        else {
+            return self.notify("Select a request in Traffic first.".into(), cx);
+        };
+        let Some(host) = &self.host else {
+            return self.notify("Open a workspace first.".into(), cx);
+        };
+        let callback = rec
+            .callback_id
+            .as_deref()
+            .map(|c| c.split('#').next().unwrap_or(c).to_string());
+        let engine = host.engine().clone();
+        let (server, id) = (rec.server_id.clone(), rec.id);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        host.handle().spawn(async move {
+            let _ = tx.send(
+                engine
+                    .callback_refire(&server, id, callback.as_deref())
+                    .await,
+            );
+        });
+        cx.spawn(async move |this, cx| {
+            let msg = match rx.await {
+                Ok(Ok(list)) => format!("Re-fired {} callback(s)", list.len()),
+                Ok(Err(e)) => format!("Re-fire failed: {e}"),
+                Err(_) => return,
+            };
+            this.update(cx, |this, cx| this.notify(msg, cx)).ok();
         })
         .detach();
     }

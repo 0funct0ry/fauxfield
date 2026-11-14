@@ -307,3 +307,78 @@ fn ws_commands_need_a_host_and_drive_connections() {
     snap("ws_log_json", &v);
     let _ = fauxfield(dir.path(), &["stop"]);
 }
+
+#[test]
+fn callback_refire_needs_a_host_and_fires_again() {
+    let dir = workspace();
+    assert_eq!(
+        fauxfield(dir.path(), &["callback", "refire", "S", "1"])
+            .status
+            .code(),
+        Some(4)
+    );
+    let (offset, port) = free_offset();
+    let dead = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let file = std::fs::read_dir(dir.path().join("servers"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let mut text = std::fs::read_to_string(&file).unwrap();
+    text.push_str(&format!(
+        "\n[[routes]]\nid = \"rte_hook\"\npath = \"/hook-me\"\n[[routes.responses]]\nid = \"rsp_hook\"\nstatus = 202\n\
+         [[routes.responses.callbacks]]\nid = \"cb_hook\"\nurl = \"http://127.0.0.1:{dead}/x\"\ntimeout_ms = 500\n"
+    ));
+    std::fs::write(&file, text).unwrap();
+    let child = Std::new(bin())
+        .current_dir(dir.path())
+        .args(["run", "--port-offset", &offset.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let _host = Host(child);
+    wait_for(port);
+    let slug = file.file_stem().unwrap().to_string_lossy().into_owned();
+    assert!(http_get(port, "/hook-me").starts_with("HTTP/1.1 202"));
+    let out = fauxfield(
+        dir.path(),
+        &[
+            "callback",
+            "refire",
+            &slug,
+            "1",
+            "--callback",
+            "cb_hook",
+            "--json",
+        ],
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    for c in v["callbacks"].as_array_mut().unwrap() {
+        c["url"] = "http://127.0.0.1:<port>/x".into();
+        c["id"] = 0.into();
+        assert!(
+            c["error"]
+                .as_str()
+                .unwrap()
+                .starts_with("connection failed")
+        );
+        c["error"] = "connection failed: <os error>".into();
+    }
+    snap("callback_refire_json", &v);
+    let out = fauxfield(dir.path(), &["callback", "refire", &slug, "999"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no recording 999"));
+    let _ = fauxfield(dir.path(), &["stop"]);
+}

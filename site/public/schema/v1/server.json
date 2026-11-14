@@ -1,5 +1,93 @@
 {
   "$defs": {
+    "Callback": {
+      "description": "A Callback (webhook simulation, SPEC §7.3): an outgoing request fired after the Response is\nsent. `url`, `headers` and `body` are Tera templates; `callback.body` (the rendered body) is\navailable to header templates for signing.",
+      "properties": {
+        "backoff_ms": {
+          "description": "First retry wait; doubles on each further retry (default 500).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "body": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "delay_ms": {
+          "description": "Wait before the first attempt.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "description": {
+          "description": "One-line note; not sent.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "disabled": {
+          "type": "boolean"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "method": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Friendly label shown in the Callbacks table.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "retries": {
+          "description": "Extra attempts after a failure (connection error, timeout or 5xx). Default 0.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "timeout_ms": {
+          "description": "Per-attempt timeout (default 10000).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "url": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
     "Cors": {
       "description": "Server `[cors]` table.",
       "properties": {
@@ -781,6 +869,13 @@
             "null"
           ]
         },
+        "callbacks": {
+          "description": "Outgoing HTTP requests fired after this Response is sent (SPEC §7.3).",
+          "items": {
+            "$ref": "#/$defs/Callback"
+          },
+          "type": "array"
+        },
         "content_type": {
           "default": null,
           "type": [
@@ -957,9 +1052,23 @@
             "null"
           ]
         },
+        "messages": {
+          "description": "`websocket` routes: scripted messages (M13).",
+          "items": {
+            "$ref": "#/$defs/WsMessage"
+          },
+          "type": "array"
+        },
         "method": {
           "default": "GET",
           "type": "string"
+        },
+        "mode": {
+          "description": "`websocket` routes: `echo`, `script` or `broadcast` (default `echo`).",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "name": {
           "default": null,
@@ -1104,6 +1213,63 @@
           ]
         }
       },
+      "type": "object"
+    },
+    "WsMessage": {
+      "description": "One scripted message of a `websocket` Route (SPEC §7.4).",
+      "properties": {
+        "binary": {
+          "description": "true: `body` is base64 and sent as a binary frame.",
+          "type": "boolean"
+        },
+        "body": {
+          "default": "",
+          "description": "Templated message body (text frame; base64 bytes when `binary`).",
+          "type": "string"
+        },
+        "close_code": {
+          "description": "When set the connection is closed with this code after sending.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "every": {
+          "description": "`interval` trigger: period like `500ms`, `5s`, `1m`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "format": {
+          "description": "`compact` (default), `pretty` (2 spaces) or `raw`: how a rendered body that is valid JSON\nis sent. Anything that is not JSON is sent as it is.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "trigger": {
+          "description": "`connect`, `interval` or `message`.",
+          "type": "string"
+        },
+        "when": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Rule"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`message` trigger: condition on the incoming frame (`body` target, `key` = JSONPath)."
+        }
+      },
+      "required": [
+        "trigger"
+      ],
       "type": "object"
     }
   },

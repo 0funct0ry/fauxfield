@@ -1,0 +1,5 @@
+# UI state fixture (M14): the Callbacks sub-tab of a Response. Launch with fixtures/callbacks-workspace.
+steps:
+  - reset
+  - open: {kind: route, id: rte_charge}
+  - wait_idle

@@ -26,7 +26,7 @@ pub const BODY_LINE_H: f32 = 20.0;
 pub const BODY_GUTTER: f32 = 44.0;
 pub const BODY_FONT_SIZE: f32 = 13.0;
 /// Response sub-tabs.
-pub const RESPONSE_SUBTABS: [&str; 3] = ["Body", "Headers", "Actions"];
+pub const RESPONSE_SUBTABS: [&str; 4] = ["Body", "Headers", "Actions", "Callbacks"];
 
 /// Which inline field is being edited.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -913,6 +913,7 @@ impl Shell {
             .filter(|r| !r.pending)
             .count();
         let n_actions = resp.actions.len();
+        let n_callbacks = resp.callbacks.len();
         div()
             .size_full()
             .flex()
@@ -1081,7 +1082,9 @@ impl Shell {
                                 }))
                                 .child(*name)
                                 .when(
-                                    (i == 1 && n_headers > 0) || (i == 2 && n_actions > 0),
+                                    (i == 1 && n_headers > 0)
+                                        || (i == 2 && n_actions > 0)
+                                        || (i == 3 && n_callbacks > 0),
                                     |d| {
                                         d.child(
                                             div()
@@ -1090,8 +1093,12 @@ impl Shell {
                                                 .bg(t.element_selected)
                                                 .text_size(px(10.))
                                                 .child(
-                                                    if i == 1 { n_headers } else { n_actions }
-                                                        .to_string(),
+                                                    match i {
+                                                        1 => n_headers,
+                                                        2 => n_actions,
+                                                        _ => n_callbacks,
+                                                    }
+                                                    .to_string(),
                                                 ),
                                         )
                                     },
@@ -1106,6 +1113,7 @@ impl Shell {
             .child(div().flex_1().min_h_0().child(match sub {
                 1 => self.render_headers_editor(t, resp, cx),
                 2 => self.render_actions_editor(t, resp, cx),
+                3 => self.render_callbacks_editor(t, resp, cx),
                 _ => self.render_body_tab(t, resp, cx).into_any_element(),
             }))
             .into_any_element()

@@ -1,0 +1,50 @@
+schema = 1
+id = "srv_payments"
+name = "Payments"
+port = 4340
+
+[variables]
+webhook_secret = "whsec_test_123"
+
+[[routes]]
+id = "rte_charge"
+name = "Create charge"
+method = "POST"
+path = "/charges"
+
+  [[routes.responses]]
+  id = "rsp_charge_accepted"
+  name = "Accepted (webhook follows)"
+  status = 202
+  content_type = "application/json"
+  body = '{"id":"ch_{{ uuid() }}","status":"pending","amount":{{ request.json.amount | default(value=0) }}}'
+
+    [[routes.responses.callbacks]]
+    id = "cb_payment_settled"
+    method = "POST"
+    url = "{{ request.json.callback_url | default(value='http://127.0.0.1:9000/hook') }}"
+    delay_ms = 2000
+    retries = 2
+    backoff_ms = 500
+    body = '{"event":"payment.settled","amount":{{ request.json.amount | default(value=0) }}}'
+
+      [routes.responses.callbacks.headers]
+      content-type = "application/json"
+      x-signature = "{{ hmac_sha256(key=vars.webhook_secret, data=callback.body) }}"
+
+    [[routes.responses.callbacks]]
+    id = "cb_audit"
+    url = "http://127.0.0.1:9000/audit"
+    delay_ms = 3000
+    body = '{"event":"charge.created"}'
+
+[[routes]]
+id = "rte_charge_get"
+name = "Get charge"
+method = "GET"
+path = "/charges/:id"
+
+  [[routes.responses]]
+  id = "rsp_charge_get"
+  status = 200
+  body = '{"id":"{{ request.params.id }}","status":"settled"}'

@@ -157,6 +157,14 @@ pub trait ControlApi: Send + Sync {
         connection: String,
         code: Option<u16>,
     ) -> Result<(), ControlError>;
+    /// Fire the Callbacks of the Response that answered `recording` again (SPEC §7.3). `recording`
+    /// is a request or one of its callback entries; `callback` limits it to one Callback id.
+    async fn callback_refire(
+        &self,
+        server: String,
+        recording: u64,
+        callback: Option<String>,
+    ) -> Result<Vec<Recording>, ControlError>;
     /// Asks the host to exit (graceful drain happens in the host).
     async fn shutdown(&self) -> Result<(), ControlError>;
 }
@@ -417,6 +425,18 @@ impl ControlApi for LocalControl {
         code: Option<u16>,
     ) -> Result<(), ControlError> {
         Ok(self.engine.ws_disconnect(&server, &connection, code)?)
+    }
+
+    async fn callback_refire(
+        &self,
+        server: String,
+        recording: u64,
+        callback: Option<String>,
+    ) -> Result<Vec<Recording>, ControlError> {
+        Ok(self
+            .engine
+            .callback_refire(&server, recording, callback.as_deref())
+            .await?)
     }
 
     async fn shutdown(&self) -> Result<(), ControlError> {

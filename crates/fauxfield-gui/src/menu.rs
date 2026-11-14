@@ -527,6 +527,7 @@ pub fn build_menus(ctx: &MenuContext) -> Vec<MenuDef> {
                     act("clear_traffic", "Clear Traffic"),
                     act("copy_as_curl", "Copy as cURL"),
                     act("mock_this_route", "Mock This Route"),
+                    act("refire_callback", "Re-fire Callback"),
                 ],
             ),
         ],
@@ -664,7 +665,7 @@ pub fn enabled(id: &str, ctx: &MenuContext) -> bool {
         "restart_server" => ctx.current_server_running,
         "edit_server_port" => ctx.current_server.is_some(),
         "clear_traffic" => ctx.traffic_rows > 0,
-        "copy_as_curl" | "mock_this_route" => ctx.traffic_row_selected,
+        "copy_as_curl" | "mock_this_route" | "refire_callback" => ctx.traffic_row_selected,
         "copy_dataset_cell" | "copy_dataset_row" | "delete_dataset_row" => ctx.dataset_row_target,
         "send_test"
         | "edit_sample_request"

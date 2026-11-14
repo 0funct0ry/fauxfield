@@ -1,0 +1,17 @@
+---
+source: crates/fauxfield/tests/run.rs
+expression: v
+---
+{
+  "callbacks": [
+    {
+      "callback_id": "cb_hook#1",
+      "error": "connection failed: <os error>",
+      "id": 0,
+      "method": "POST",
+      "parent_id": 1,
+      "status": 0,
+      "url": "http://127.0.0.1:<port>/x"
+    }
+  ]
+}

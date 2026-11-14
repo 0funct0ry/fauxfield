@@ -9,9 +9,10 @@ use super::completion::{CompletionProvider, Completions, Item, Kind, Trigger, pr
 
 /// Top-level context names and keywords never flagged as unresolved variables.
 const ROOTS: &[&str] = &[
-    "request", "vars", "env", "server", "data", "state", "response", "loop", "true", "false", "if",
-    "else", "elif", "endif", "for", "endfor", "in", "set", "not", "and", "or", "block", "endblock",
-    "raw", "endraw", "include", "macro", "endmacro", "range", "get_env", "now",
+    "request", "vars", "env", "server", "data", "state", "response", "callback", "loop", "true",
+    "false", "if", "else", "elif", "endif", "for", "endfor", "in", "set", "not", "and", "or",
+    "block", "endblock", "raw", "endraw", "include", "macro", "endmacro", "range", "get_env",
+    "now",
 ];
 
 const REQUEST_KEYS: &[&str] = &[
@@ -32,6 +33,13 @@ const OTHER_KEYS: &[&str] = &[
     "server.name",
     "server.port",
     "server.base_url",
+    "response.status",
+    "response.headers",
+    "response.body",
+    "response.json",
+    "callback.id",
+    "callback.method",
+    "callback.body",
     "env",
     "state.call",
     "vars",

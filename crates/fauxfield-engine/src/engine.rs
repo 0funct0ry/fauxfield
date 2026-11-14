@@ -17,6 +17,8 @@ use tokio::net::TcpListener;
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 
+mod callbacks;
+pub use callbacks::{CallbackPreview, callback_preview};
 mod proxy;
 mod ws;
 pub use proxy::RespBody;
@@ -1307,6 +1309,8 @@ async fn handle(
     let mut chosen: (String, String) = Default::default();
     let mut render_error: Option<String> = None;
     let mut dataset_changes: Vec<crate::actions::DatasetChange> = vec![];
+    let mut callbacks: Vec<fauxfield_model::Callback> = vec![];
+    let mut cb_tpl: Option<crate::render::TplEnv> = None;
     let (route_id, (mut status, mut headers, mut bytes)) = match &route {
         _ if preflight => ("cors-preflight".to_string(), (204, vec![], Bytes::new())),
         _ if rate_limited => {
@@ -1580,6 +1584,10 @@ async fn handle(
                                 crate::render::build(&engine.inner.cfg.root, r, resp, &tpl, &path);
                             render_us = t0.elapsed().as_micros() as u64;
                             render_error = out.error;
+                            if out.status < 500 && resp.callbacks.iter().any(|c| !c.disabled) {
+                                callbacks = resp.callbacks.clone();
+                                cb_tpl = Some(tpl.clone());
+                            }
                             (out.status, out.headers, out.body)
                         }
                     }
@@ -1656,10 +1664,17 @@ async fn handle(
     let (req_body, req_cut) = body_text(&body);
     let (resp_body, resp_cut) = body_text(&bytes);
     let ts_ms = now_ms();
+    let rec_id = engine.inner.seq.fetch_add(1, Ordering::Relaxed);
+    let cb_ctx = (
+        route_id.clone(),
+        chosen.clone(),
+        server_name.clone(),
+        id.clone(),
+    );
     engine.record(
         &rt,
         Recording {
-            id: engine.inner.seq.fetch_add(1, Ordering::Relaxed),
+            id: rec_id,
             ts: rfc3339(ts_ms),
             ts_ms,
             server_id: id,
@@ -1690,6 +1705,8 @@ async fn handle(
             error: render_error,
             fault: fault_label,
             dataset_changes,
+            parent_id: None,
+            callback_id: None,
             source: if is_test { "test" } else { "mock" }.into(),
             upstream: None,
         },
@@ -1712,7 +1729,31 @@ async fn handle(
     for (k, v) in &headers {
         b = b.header(k.as_str(), v.as_str());
     }
-    Ok(b.body(RespBody::Sim(SimBody::new(bytes, mode, None)))
+    // Callbacks fire once the body has been sent (SPEC §7.3); not after a dropped connection.
+    let on_done: Option<Box<dyn FnOnce(u64) + Send>> = match cb_tpl {
+        Some(tpl) if fault.is_none() || matches!(fault.map(|f| f.0), Some(Fault::Empty)) => {
+            let (route_id, chosen, server_name, server_id) = cb_ctx;
+            let mut def = rt.def.lock().unwrap().clone();
+            def.name = server_name;
+            let job = callbacks::Job {
+                engine: engine.clone(),
+                rt: rt.clone(),
+                server_id,
+                server: def,
+                parent: rec_id,
+                route_id,
+                response_id: chosen.0,
+                response_name: chosen.1,
+                tpl,
+                status,
+                headers: headers.clone(),
+                body: bytes.clone(),
+            };
+            Some(Box::new(move |_| callbacks::spawn(job, &callbacks)))
+        }
+        _ => None,
+    };
+    Ok(b.body(RespBody::Sim(SimBody::new(bytes, mode, on_done)))
         .unwrap_or_else(|_| {
             HyperResponse::new(RespBody::Sim(SimBody::new(
                 Bytes::from_static(b"invalid response headers"),

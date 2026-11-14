@@ -412,6 +412,7 @@ impl Shell {
                     0 => self.render_responses(t, r, cx).into_any_element(),
                     1 => self.render_rules(t, r, cx),
                     2 => self.render_route_headers(t, r, cx),
+                    3 => self.render_route_callbacks(t, r, cx),
                     5 => self.render_route_settings(t, s, r, cx).into_any_element(),
                     n => div()
                         .p(px(16.))
@@ -1628,6 +1629,7 @@ impl Shell {
         let Some(rec) = row.rec.as_deref() else {
             return div().into_any_element();
         };
+        let has_callbacks = self.traffic.iter().any(|r| r.parent == Some(rec.id));
         let section = |title: &str| {
             div()
                 .pt(px(8.))
@@ -1810,6 +1812,58 @@ impl Shell {
                 format!("{} ms", rec.timing.transfer_ms),
             ))
             .child(line("Total".into(), format!("{} ms", rec.timing.total_ms)))
+            .children(rec.parent_id.map(|p| {
+                let target = self.traffic.iter().position(|r| r.id == p);
+                crate::dev_id!(
+                    div()
+                        .id("inspector-parent")
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap(px(4.))
+                        .pt(px(2.))
+                        .text_size(px(11.))
+                        .text_color(t.accent)
+                        .when(target.is_some(), |d| {
+                            d.cursor_pointer()
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.traffic_selected = target;
+                                    cx.notify();
+                                }))
+                        })
+                        .child(icon("arrow-up", 11., t.accent))
+                        .child(format!(
+                            "Triggered by request {p}{}",
+                            rec.callback_id
+                                .as_deref()
+                                .map(|c| format!(" (callback {c})"))
+                                .unwrap_or_default()
+                        )),
+                    "inspector-parent",
+                    Button,
+                    "Triggered by",
+                    Press(format!("inspector-parent:{p}"))
+                )
+            }))
+            .children(
+                rec.error
+                    .as_ref()
+                    .filter(|_| rec.source == "callback")
+                    .map(|e| {
+                        crate::dev_id!(
+                            div()
+                                .id("inspector-callback-error")
+                                .pt(px(2.))
+                                .text_size(px(11.))
+                                .text_color(t.deleted)
+                                .child(format!("Callback failed: {e}")),
+                            "inspector-callback-error",
+                            Text,
+                            format!("Callback failed: {e}"),
+                            None
+                        )
+                    }),
+            )
             .children(rec.fault.as_ref().map(|f| {
                 crate::dev_id!(
                     div()
@@ -1868,6 +1922,25 @@ impl Shell {
                         "Copy as cURL",
                         Action("copy_as_curl")
                     ))
+                    .when(rec.source == "callback" || has_callbacks, |d| {
+                        d.child(crate::dev_id!(
+                            toolbar_button(t, "refire-callback")
+                                .child(if rec.source == "callback" {
+                                    "Re-fire callback"
+                                } else {
+                                    "Re-fire callbacks"
+                                })
+                                .on_click(cx.listener(|this, _, w, cx| this.run_action_id(
+                                    "refire_callback",
+                                    w,
+                                    cx
+                                ))),
+                            "refire-callback",
+                            Button,
+                            "Re-fire callback",
+                            Action("refire_callback")
+                        ))
+                    })
                     .when(rec.route == "proxy" || rec.route == "unmatched", |d| {
                         d.child(crate::dev_id!(
                             toolbar_button(t, "mock-this-route")

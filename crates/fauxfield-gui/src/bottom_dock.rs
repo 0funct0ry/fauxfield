@@ -220,7 +220,11 @@ impl Shell {
                         .text_color(t.method_color(&r.method))
                         .child(r.method.clone()),
                 )
-                .child(div().flex_1().truncate().child(r.path.clone()))
+                .child(div().flex_1().truncate().child(if r.is_callback() {
+                    format!("  ↳ {}", r.path)
+                } else {
+                    r.path.clone()
+                }))
                 .child(
                     div()
                         .w(px(COLS[3]))
@@ -291,8 +295,18 @@ impl Shell {
                     div()
                         .w(px(COLS[7]))
                         .flex_none()
-                        .text_color(if r.proxied { t.modified } else { t.text_muted })
-                        .child(if r.proxied { "proxy" } else { "mock" }),
+                        .text_color(if r.proxied || r.is_callback() {
+                            t.modified
+                        } else {
+                            t.text_muted
+                        })
+                        .child(if r.is_callback() {
+                            "callback"
+                        } else if r.proxied {
+                            "proxy"
+                        } else {
+                            "mock"
+                        }),
                 ),
             format!("traffic-row-{i}"),
             Row,

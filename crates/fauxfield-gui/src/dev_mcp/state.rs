@@ -244,6 +244,9 @@ pub struct ResponseState {
     /// Dataset action steps (M10.06) and those that fail validation.
     pub actions: usize,
     pub invalid_actions: usize,
+    /// Callbacks (M14) and those switched off.
+    pub callbacks: usize,
+    pub disabled_callbacks: usize,
     /// The Dataset body source form is open.
     pub dataset_source: bool,
     /// Rules that fail validation (shown inline in the Rules sub-tab).
@@ -571,6 +574,9 @@ pub struct TrafficState {
     /// Rows answered by the proxy and rows that are proxied 502/504 (M11).
     pub proxied_count: usize,
     pub upstream_errors: usize,
+    /// Outgoing Callback entries and those that failed (M14).
+    pub callback_count: usize,
+    pub callback_errors: usize,
     pub filters: Vec<String>,
     pub selected: Option<usize>,
     /// Newest engine recording ID shown (0 when only synthetic rows or none).
@@ -810,6 +816,12 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
             row_count: shell.traffic.len(),
             proxied_count: shell.traffic.iter().filter(|r| r.proxied).count(),
             upstream_errors: shell.traffic.iter().filter(|r| r.upstream_error()).count(),
+            callback_count: shell.traffic.iter().filter(|r| r.is_callback()).count(),
+            callback_errors: shell
+                .traffic
+                .iter()
+                .filter(|r| r.is_callback() && r.status == 0 || r.is_callback() && r.status >= 400)
+                .count(),
             filters: Vec::new(),
             selected: shell.traffic_selected,
             last_id: shell
@@ -1171,6 +1183,8 @@ fn route_state(shell: &Shell) -> Option<RouteState> {
                     .iter()
                     .filter(|a| fauxfield_model::validate_action(a).is_some())
                     .count(),
+                callbacks: x.callbacks.len(),
+                disabled_callbacks: x.callbacks.iter().filter(|c| c.disabled).count(),
                 dataset_source: shell.ds_read.contains_key(&x.id),
                 template: x.template,
                 invalid_rules: x

@@ -86,6 +86,11 @@ pub enum Command {
         #[command(subcommand)]
         action: crate::env_cmd::VarAction,
     },
+    /// Fire the Callbacks (webhooks) of a recorded request again.
+    Callback {
+        #[command(subcommand)]
+        action: crate::callback_cmd::CallbackAction,
+    },
     /// List WebSocket connections, read the timeline, send messages, disconnect clients.
     Ws {
         #[command(subcommand)]
@@ -215,6 +220,7 @@ pub fn run() -> i32 {
         Some(Command::Env { action }) => crate::env_cmd::env(action),
         Some(Command::Var { action }) => crate::env_cmd::var(action),
         Some(Command::Ws { action }) => crate::ws_cmd::ws(action),
+        Some(Command::Callback { action }) => crate::callback_cmd::callback(action),
         Some(Command::Data { action }) => crate::data_cmd::data(action),
         Some(Command::Certs { action }) => crate::certs_cmd::certs(action),
         Some(Command::Doctor(a)) => crate::doctor_cmd::doctor(a),

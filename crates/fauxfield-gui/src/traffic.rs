@@ -22,9 +22,16 @@ pub struct TrafficRow {
     pub fault: Option<String>,
     /// Answered by the proxy upstream rather than a mock (M11).
     pub proxied: bool,
+    /// Callback entries (M14): the recording id of the request that triggered them.
+    pub parent: Option<u64>,
 }
 
 impl TrafficRow {
+    /// An outgoing Callback entry rather than a handled request.
+    pub fn is_callback(&self) -> bool {
+        self.parent.is_some()
+    }
+
     /// A proxied request whose upstream could not be reached or timed out (502/504).
     pub fn upstream_error(&self) -> bool {
         self.proxied && matches!(self.status, 502 | 504)
@@ -45,6 +52,7 @@ impl TrafficRow {
             size: r.response_body.len() as u32,
             fault: r.fault.clone(),
             proxied: r.route == "proxy",
+            parent: r.parent_id,
             rec: Some(Box::new(r.clone())),
         }
     }
@@ -94,6 +102,7 @@ pub fn synthetic(n: usize) -> Vec<TrafficRow> {
                 size: ((r >> 12) % 9000) as u32 + 20,
                 fault: None,
                 proxied,
+                parent: None,
             }
         })
         .collect()

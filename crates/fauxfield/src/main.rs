@@ -1,5 +1,6 @@
 //! `fauxfield`: the desktop app and CLI in one binary (SPEC §3.1, §10).
 
+mod callback_cmd;
 mod certs_cmd;
 mod cli;
 mod data_cmd;

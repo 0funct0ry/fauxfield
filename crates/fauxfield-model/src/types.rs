@@ -369,6 +369,54 @@ pub struct Response {
     /// Status returned when an action fails and the group is rolled back (default 409).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub action_error_status: Option<u16>,
+    /// Outgoing HTTP requests fired after this Response is sent (SPEC §7.3).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub callbacks: Vec<Callback>,
+    #[serde(flatten)]
+    #[schemars(skip)]
+    pub extra: Extra,
+}
+
+/// HTTP methods a [`Callback`] may use.
+pub const CALLBACK_METHODS: &[&str] = &["GET", "POST", "PUT", "PATCH", "DELETE"];
+/// Upper bound for `retries` (attempts after the first).
+pub const CALLBACK_MAX_RETRIES: u32 = 10;
+
+/// A Callback (webhook simulation, SPEC §7.3): an outgoing request fired after the Response is
+/// sent. `url`, `headers` and `body` are Tera templates; `callback.body` (the rendered body) is
+/// available to header templates for signing.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+pub struct Callback {
+    pub id: String,
+    /// Friendly label shown in the Callbacks table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// One-line note; not sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
+    #[serde(default)]
+    pub url: String,
+    /// Wait before the first attempt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delay_ms: Option<u64>,
+    #[serde(default)]
+    #[schemars(with = "BTreeMap<String, String>")]
+    pub headers: indexmap::IndexMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    /// Extra attempts after a failure (connection error, timeout or 5xx). Default 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retries: Option<u32>,
+    /// First retry wait; doubles on each further retry (default 500).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backoff_ms: Option<u64>,
+    /// Per-attempt timeout (default 10000).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub disabled: bool,
     #[serde(flatten)]
     #[schemars(skip)]
     pub extra: Extra,

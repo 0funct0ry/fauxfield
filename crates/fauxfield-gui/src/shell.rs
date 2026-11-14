@@ -497,6 +497,13 @@ pub struct Shell {
     /// such as `uuid()` would change on every repaint, so it is rendered once per body.
     pub(crate) ws_preview_cache:
         std::cell::RefCell<std::collections::HashMap<String, (String, String, bool)>>,
+    /// The Callback modal's preview, rendered once per distinct draft (random template functions
+    /// would otherwise change on every repaint) and again on *Render again*.
+    pub(crate) cb_preview_cache:
+        std::cell::RefCell<Option<(String, fauxfield_engine::CallbackPreview)>>,
+    /// Trigger bounds of popovers, by key (see `popover.rs`).
+    pub(crate) popover_bounds:
+        std::rc::Rc<std::cell::RefCell<HashMap<String, gpui::Bounds<gpui::Pixels>>>>,
     pub(crate) focus: FocusHandle,
     pub(crate) picker_focus: FocusHandle,
     /// The New Server dialog (Name, Host, Port), when open.
@@ -508,6 +515,11 @@ pub struct Shell {
     pub(crate) seed_dialog_focus: FocusHandle,
     pub(crate) schema_dialog: Option<crate::schema_dialog::SchemaDialog>,
     pub(crate) schema_dialog_focus: FocusHandle,
+    pub(crate) callback_dialog: Option<crate::callback_dialog::CallbackDialog>,
+    pub(crate) callback_dialog_focus: FocusHandle,
+    /// Selected Callback row per Response id, and the table's focus (M14).
+    pub(crate) cb_selected: HashMap<String, usize>,
+    pub(crate) cb_table_focus: FocusHandle,
     pub(crate) column_dialog: Option<crate::column_dialog::ColumnDialog>,
     pub(crate) column_dialog_focus: FocusHandle,
     pub(crate) crud_dialog: Option<crate::crud_dialog::CrudDialog>,
@@ -782,6 +794,8 @@ impl Shell {
             ws_send_binary: false,
             ws_send_format: "compact".into(),
             ws_preview_cache: Default::default(),
+            cb_preview_cache: Default::default(),
+            popover_bounds: Default::default(),
             focus,
             picker_focus: cx.focus_handle(),
             server_dialog: None,
@@ -792,6 +806,10 @@ impl Shell {
             seed_dialog_focus: cx.focus_handle(),
             schema_dialog: None,
             schema_dialog_focus: cx.focus_handle(),
+            callback_dialog: None,
+            callback_dialog_focus: cx.focus_handle(),
+            cb_selected: HashMap::new(),
+            cb_table_focus: cx.focus_handle(),
             column_dialog: None,
             column_dialog_focus: cx.focus_handle(),
             crud_dialog: None,
@@ -2121,6 +2139,7 @@ impl Shell {
             || self.schema_dialog.is_some()
             || self.crud_dialog.is_some()
             || self.column_dialog.is_some()
+            || self.callback_dialog.is_some()
             || self.export_dialog.is_some()
             || self.seed_dialog.is_some()
         {
@@ -3586,6 +3605,7 @@ impl Render for Shell {
             ClearTraffic => |this, _w, cx| this.clear_traffic(cx),
             CopyAsCurl => |this, _w, cx| this.copy_curl(cx),
             MockThisRoute => |this, _w, cx| this.mock_this_route(cx),
+            RefireCallback => |this, _w, cx| this.refire_callback(cx),
             ToggleServerProxy => |this, _w, cx| match this.current_server_id() {
                 Some(id) => this.toggle_proxy(&id, "enabled", cx),
                 None => this.notify("Select a server first.".into(), cx),
@@ -3710,6 +3730,9 @@ impl Render for Shell {
         })
         .when(self.schema_dialog.is_some(), |d| {
             d.child(self.render_schema_dialog(&t, cx))
+        })
+        .when(self.callback_dialog.is_some(), |d| {
+            d.child(self.render_callback_dialog(&t, cx))
         })
         .when(self.column_dialog.is_some(), |d| {
             d.child(self.render_column_dialog(&t, cx))

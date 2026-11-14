@@ -110,6 +110,16 @@ struct WsDisconnect {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct CallbackRefire {
+    /// Server ID, name or file slug.
+    server: String,
+    /// Recording id of the request that triggered the Callback (or of one of its callback entries).
+    recording: u64,
+    /// Callback id; omit to fire every Callback of that Response.
+    callback: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct SendTest {
     /// Server ID, name, or file slug. It must be running.
     server: String,
@@ -349,6 +359,24 @@ pub fn register_control_tools(r: &mut Registry, provider: ControlProvider) {
                     .await
                     .map_err(fail)?;
                 Ok(json!({ "disconnected": true }))
+            })
+        },
+    ));
+
+    let p = provider.clone();
+    r.register(ToolDef::new::<CallbackRefire>(
+        "refire_callback",
+        "Fire the Callbacks (webhooks) of a recorded request again, now, and return the outgoing entries with their status and error.",
+        ToolClass::Execute,
+        move |m| -> ToolFuture {
+            let p = p.clone();
+            Box::pin(async move {
+                let a = parse::<CallbackRefire>(m)?;
+                let recs = host(&p)?
+                    .callback_refire(a.server, a.recording, a.callback)
+                    .await
+                    .map_err(fail)?;
+                Ok(json!({ "callbacks": recs }))
             })
         },
     ));

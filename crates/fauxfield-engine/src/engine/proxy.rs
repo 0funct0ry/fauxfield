@@ -235,19 +235,26 @@ pub(super) struct Call {
     pub started: Instant,
 }
 
-enum Fail {
+pub(super) enum Fail {
     Unreachable(String),
 }
 
-struct Target {
-    tls: bool,
-    host: String,
-    port: u16,
-    authority: String,
-    base: String,
+impl Fail {
+    pub(super) fn message(&self) -> &str {
+        let Fail::Unreachable(m) = self;
+        m
+    }
 }
 
-fn parse_target(up: &str) -> Result<Target, String> {
+pub(super) struct Target {
+    pub tls: bool,
+    pub host: String,
+    pub port: u16,
+    pub authority: String,
+    pub base: String,
+}
+
+pub(super) fn parse_target(up: &str) -> Result<Target, String> {
     let uri: hyper::Uri = up
         .trim()
         .parse()
@@ -326,6 +333,8 @@ fn base_recording(c: &Call, upstream: &str) -> Recording {
     Recording {
         id: c.engine.inner.seq.fetch_add(1, Ordering::Relaxed),
         dataset_changes: vec![],
+        parent_id: None,
+        callback_id: None,
         ts: rfc3339(ts_ms),
         ts_ms,
         server_id: c.server_id.clone(),
@@ -357,11 +366,16 @@ fn base_recording(c: &Call, upstream: &str) -> Recording {
     }
 }
 
-async fn connect(
+pub(super) async fn connect<B>(
     t: &Target,
     insecure: bool,
-    req: Request<Tap<Incoming>>,
-) -> Result<HyperResponse<Incoming>, Fail> {
+    req: Request<B>,
+) -> Result<HyperResponse<Incoming>, Fail>
+where
+    B: Body + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
     let tcp = tokio::net::TcpStream::connect((t.host.as_str(), t.port))
         .await
         .map_err(|e| Fail::Unreachable(format!("connection failed: {e}")))?;

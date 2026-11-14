@@ -17,6 +17,8 @@ pub struct Response {
     pub actions: Vec<fauxfield_model::DatasetAction>,
     /// Status when an action fails (empty = default 409).
     pub action_error_status: String,
+    /// Callbacks fired after this Response is sent (M14).
+    pub callbacks: Vec<fauxfield_model::Callback>,
     pub content_type: String,
     /// Delay as written: milliseconds or a range such as `200..800`; empty = none.
     pub delay: String,
@@ -460,6 +462,7 @@ impl Workspace {
                     rules_logic: x.rules_logic.clone().unwrap_or_else(|| "and".into()),
                     rules: x.rules.clone(),
                     actions: x.actions.clone(),
+                    callbacks: x.callbacks.clone(),
                     action_error_status: x
                         .action_error_status
                         .map(|s| s.to_string())

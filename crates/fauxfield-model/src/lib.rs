@@ -15,11 +15,12 @@ pub use diagnostic::{Diagnostic, Severity};
 pub use generator::{GENERATORS, GeneratorField, GeneratorSeed, GeneratorSpec};
 pub use id::new_id;
 pub use types::{
-    ACTION_OPS, COLUMN_TYPES, CRUD_OPS, Cors, Dataset, DatasetAction, DatasetColumn, Delay,
-    Environment, FAULTS, Folder, ID_STRATEGIES, Manifest, Network, PROXY_MODES, PROXY_TIMEOUT_MS,
-    Proxy, ROUTE_KINDS, RateLimit, Response, Route, Rule, SCHEMA_VERSION, Server, TLS_MODES, Tls,
-    WS_FORMATS, WS_MODES, WS_TRIGGERS, WsMessage, parse_delay, parse_duration_ms,
-    parse_environment, parse_manifest, parse_server, parse_window, valid_rate_key,
+    ACTION_OPS, CALLBACK_MAX_RETRIES, CALLBACK_METHODS, COLUMN_TYPES, CRUD_OPS, Callback, Cors,
+    Dataset, DatasetAction, DatasetColumn, Delay, Environment, FAULTS, Folder, ID_STRATEGIES,
+    Manifest, Network, PROXY_MODES, PROXY_TIMEOUT_MS, Proxy, ROUTE_KINDS, RateLimit, Response,
+    Route, Rule, SCHEMA_VERSION, Server, TLS_MODES, Tls, WS_FORMATS, WS_MODES, WS_TRIGGERS,
+    WsMessage, parse_delay, parse_duration_ms, parse_environment, parse_manifest, parse_server,
+    parse_window, valid_rate_key,
 };
 pub use validate::{validate_action, validate_environment_names, validate_servers};
 

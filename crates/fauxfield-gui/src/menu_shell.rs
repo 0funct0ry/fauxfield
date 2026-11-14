@@ -127,6 +127,7 @@ impl Shell {
             || self.schema_dialog.is_some()
             || self.crud_dialog.is_some()
             || self.column_dialog.is_some()
+            || self.callback_dialog.is_some()
             || self.export_dialog.is_some()
             || self.seed_dialog.is_some()
             || self.body_edit.is_some()
@@ -191,6 +192,7 @@ impl Shell {
             || self.schema_dialog.is_some()
             || self.crud_dialog.is_some()
             || self.column_dialog.is_some()
+            || self.callback_dialog.is_some()
             || self.export_dialog.is_some()
             || self.seed_dialog.is_some()
             || self.any_dialog_open()
@@ -280,6 +282,9 @@ impl Shell {
             return Some(d.path.clone());
         }
         if let Some(d) = &self.column_dialog {
+            return d.focused.clone();
+        }
+        if let Some(d) = &self.callback_dialog {
             return d.focused.clone();
         }
         if let Some(d) = &self.export_dialog {

@@ -33,6 +33,12 @@ pub struct Recording {
     /// Dataset changes made by the chosen Response's actions (M10.06).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dataset_changes: Vec<crate::actions::DatasetChange>,
+    /// Callback entries (`source = "callback"`): the recording that triggered them (M14).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<u64>,
+    /// Callback entries: the Callback's id and attempt (`cb_id#2`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub callback_id: Option<String>,
     pub id: u64,
     pub ts: String,
     pub ts_ms: u64,
@@ -141,6 +147,8 @@ mod tests {
         let rec = Recording {
             id: 1,
             dataset_changes: vec![],
+            parent_id: None,
+            callback_id: None,
             ts: String::new(),
             ts_ms: 0,
             server_id: "s".into(),

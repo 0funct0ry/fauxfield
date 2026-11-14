@@ -150,6 +150,14 @@ async fn dispatch(
             )
             .await
             .map(|_| json!({})),
+        "callback.refire" => api
+            .callback_refire(
+                param(params, "server")?,
+                param(params, "recording")?,
+                param(params, "callback")?,
+            )
+            .await
+            .map(|r| json!({"recordings": r})),
         "shutdown" => api.shutdown().await.map(|_| json!({})),
         other => Err(ControlError::new(
             "method_not_found",
@@ -427,6 +435,21 @@ impl ControlApi for RemoteControl {
         )
         .await
         .map(|_| ())
+    }
+    async fn callback_refire(
+        &self,
+        server: String,
+        recording: u64,
+        callback: Option<String>,
+    ) -> Result<Vec<Recording>, ControlError> {
+        let v = self
+            .call(
+                "callback.refire",
+                json!({"server": server, "recording": recording, "callback": callback}),
+            )
+            .await?;
+        serde_json::from_value(v["recordings"].clone())
+            .map_err(|e| ControlError::new("transport", e.to_string()))
     }
     async fn env_active(&self) -> Result<String, ControlError> {
         let v = self.call("env.active", Value::Null).await?;

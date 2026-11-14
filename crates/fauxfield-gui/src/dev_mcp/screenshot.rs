@@ -121,6 +121,7 @@ fixtures!(
     "server-network",
     "server-proxy",
     "traffic-proxy",
+    "route-callbacks",
     "network-profile-open",
 );
 

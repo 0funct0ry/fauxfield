@@ -536,6 +536,64 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                         ));
                     }
                 }
+                let mut cb_ids = std::collections::HashSet::new();
+                for (k, cb) in resp.callbacks.iter().enumerate() {
+                    let cp = format!("{sp}.callbacks[{k}]");
+                    if cb.id.trim().is_empty() || !cb_ids.insert(cb.id.clone()) {
+                        out.push(Diagnostic::error(
+                            file,
+                            format!("{cp}.id"),
+                            "E108",
+                            "Callback id is empty or repeated within the Response",
+                        ));
+                    }
+                    if cb.url.trim().is_empty() {
+                        out.push(Diagnostic::error(
+                            file,
+                            format!("{cp}.url"),
+                            "E109",
+                            "Callback needs a url",
+                        ));
+                    } else if !(cb.url.contains("{{")
+                        || cb.url.contains("{%")
+                        || cb.url.starts_with("http://")
+                        || cb.url.starts_with("https://"))
+                    {
+                        out.push(Diagnostic::error(
+                            file,
+                            format!("{cp}.url"),
+                            "E110",
+                            "Callback url must be http:// or https://",
+                        ));
+                    }
+                    if let Some(m) = cb.method.as_deref()
+                        && !crate::types::CALLBACK_METHODS
+                            .contains(&m.to_ascii_uppercase().as_str())
+                    {
+                        out.push(Diagnostic::error(
+                            file,
+                            format!("{cp}.method"),
+                            "E111",
+                            format!("unknown Callback method `{m}`"),
+                        ));
+                    }
+                    if cb.retries.unwrap_or(0) > crate::types::CALLBACK_MAX_RETRIES {
+                        out.push(Diagnostic::error(
+                            file,
+                            format!("{cp}.retries"),
+                            "E112",
+                            format!("retries is at most {}", crate::types::CALLBACK_MAX_RETRIES),
+                        ));
+                    }
+                    if resp.fault.as_deref().is_some_and(|f| f != "none") && !cb.disabled {
+                        out.push(Diagnostic::warning(
+                            file,
+                            cp,
+                            "W094",
+                            "Callbacks do not fire when the Response injects a fault that drops the connection",
+                        ));
+                    }
+                }
                 if resp.body.is_some() && resp.body_file.is_some() {
                     out.push(Diagnostic::error(
                         file,
@@ -919,6 +977,18 @@ mod tests {
         let d = validate_servers(&[("servers/a.toml".into(), parse_server(t).unwrap())]);
         let codes: Vec<_> = d.iter().map(|d| d.code.as_str()).collect();
         for c in ["E086", "E087", "E088", "W072"] {
+            assert!(codes.contains(&c), "{c} in {codes:?}");
+        }
+    }
+
+    #[test]
+    fn callbacks_are_checked() {
+        let t = "id=\"srv_a\"\nname=\"n\"\nport=1\n[[routes]]\nid=\"rte_1\"\npath=\"/x\"\n[[routes.responses]]\nid=\"rsp_1\"\n\
+            [[routes.responses.callbacks]]\nid=\"a\"\nurl=\"\"\n\
+            [[routes.responses.callbacks]]\nid=\"a\"\nurl=\"ftp://x\"\nmethod=\"NOPE\"\nretries=99\n";
+        let d = validate_servers(&[("servers/a.toml".into(), parse_server(t).unwrap())]);
+        let codes: Vec<_> = d.iter().map(|d| d.code.as_str()).collect();
+        for c in ["E108", "E109", "E110", "E111", "E112"] {
             assert!(codes.contains(&c), "{c} in {codes:?}");
         }
     }

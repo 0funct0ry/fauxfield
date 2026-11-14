@@ -1,0 +1,38 @@
+# M14 scenario: Callbacks. The Response editor's Callbacks sub-tab is a table with a `+` button;
+# View, Edit and Delete buttons and a `...` menu act on a row; the modal edits one Callback with a
+# body editor and a live preview. Needs fixtures/callbacks-workspace as the launch workspace.
+# Not yet run in CI.
+name: m14-callbacks
+size: default
+steps:
+  - state: [reset]
+  - click_element: {id: row-rte_charge}
+  - wait_for_idle: {}
+  - click_element: {id: resp-subtab-Callbacks}
+  - wait_for_idle: {}
+  - assert_find: {text: callbacks, ids: [callback-add, callback-row-rsp_charge_accepted-0, callback-view-rsp_charge_accepted-0, callback-edit-rsp_charge_accepted-0, callback-delete-rsp_charge_accepted-0]}
+  - assert: {pointer: /route/responses/0/callbacks, equals: 2}
+  - screenshot: {name: m14-callbacks-table}
+  - click_element: {id: callback-view-rsp_charge_accepted-0}
+  - wait_for_idle: {}
+  - assert: {pointer: /modal, equals: callback_dialog}
+  - assert_find: {text: View callback, ids: [callback-dialog, callback-body, callback-preview, callback-to-edit]}
+  - screenshot: {name: m14-callback-view}
+  - click_element: {id: callback-cancel}
+  - wait_for_idle: {}
+  - click_element: {id: callback-edit-rsp_charge_accepted-0}
+  - wait_for_idle: {}
+  - assert_find: {text: Edit callback, ids: [callback-save, callback-add-header, callback-header-key-0]}
+  - screenshot: {name: m14-callback-edit}
+  - click_element: {id: callback-cancel}
+  - wait_for_idle: {}
+  - click_element: {id: callback-add}
+  - wait_for_idle: {}
+  - assert_find: {text: New callback, ids: [callback-url, callback-delay, callback-retries, callback-backoff, callback-timeout]}
+  - click_element: {id: callback-save}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/responses/0/callbacks, equals: 3}
+  - click_element: {id: callback-delete-rsp_charge_accepted-2}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/responses/0/callbacks, equals: 2}
+  - audit: {themes: [one-dark, one-light], sizes: [default, min]}

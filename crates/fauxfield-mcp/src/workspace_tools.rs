@@ -253,6 +253,10 @@ struct ResponseSpec {
     rules_logic: Option<String>,
     /// Replaces all rules of the Response when given. Fields: target, key, op, value, negate.
     rules: Option<Vec<fauxfield_model::Rule>>,
+    /// Replaces all Callbacks (webhooks fired after the Response is sent) when given. Fields: id,
+    /// method, url, delay_ms, headers, body, retries, backoff_ms, timeout_ms, disabled. `url`,
+    /// `headers` and `body` are Tera templates; headers can use `callback.body` for signing.
+    callbacks: Option<Vec<fauxfield_model::Callback>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -445,6 +449,27 @@ fn apply_response(store: &Store, id: &str, r: &ResponseSpec) -> Result<(), Strin
         }
         for rule in rules {
             store.set_rule(id, None, rule).map_err(e)?;
+        }
+    }
+    if let Some(cbs) = &r.callbacks {
+        for cb in cbs {
+            if cb.id.trim().is_empty() || cb.url.trim().is_empty() {
+                return Err("every callback needs an id and a url".into());
+            }
+        }
+        let have = store
+            .snapshot()
+            .servers
+            .iter()
+            .flat_map(|(_, s)| s.routes.iter())
+            .flat_map(|r| r.responses.iter())
+            .find(|x| x.id == id)
+            .map_or(0, |x| x.callbacks.len());
+        for _ in 0..have {
+            store.delete_callback(id, 0).map_err(e)?;
+        }
+        for cb in cbs {
+            store.set_callback(id, None, cb).map_err(e)?;
         }
     }
     Ok(())
