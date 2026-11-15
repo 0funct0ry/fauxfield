@@ -1,0 +1,49 @@
+# M17.05 scenario: visits each empty state reachable without data and runs the audit.
+# Run against a dev-mcp build; the audit step covers One Dark and One Light. Not yet run in CI.
+name: m17-05-empty-states
+size: default
+steps:
+  - state: [reset]
+  - open_workspace: fixtures/empty-workspace
+  - wait_for_idle: {}
+  # Servers (sidebar): title, hint and primary button come from the copy catalog.
+  - assert_find: {text: No Servers yet, ids: [empty-servers]}
+  - assert_find: {text: New Server…, ids: [empty-servers-primary]}
+  - screenshot: {name: m17-05-servers}
+  - click_element: {id: sidebar-tab-environments}
+  - wait_for_idle: {}
+  - assert_find: {text: No Environments, ids: [empty-environments]}
+  - assert_find: {text: New Environment…, ids: [empty-environments-primary]}
+  - click_element: {id: sidebar-tab-datasets}
+  - wait_for_idle: {}
+  - assert_find: {text: No Datasets, ids: [empty-datasets]}
+  - assert_find: {text: New Dataset…, ids: [empty-datasets-primary]}
+  # Bottom dock: Traffic, Problems, Logs.
+  - invoke: show_traffic
+  - wait_for_idle: {}
+  - assert_find: {text: No requests yet, ids: [empty-traffic-stopped]}
+  - assert_find: {text: Run All Servers, ids: [empty-traffic-stopped-primary]}
+  - invoke: show_problems
+  - wait_for_idle: {}
+  - assert_find: {text: No problems, ids: [empty-problems]}
+  - invoke: show_logs
+  - wait_for_idle: {}
+  # (Logs shows the driving MCP session's own calls as agent activity, so it is not empty here.)
+  - screenshot: {name: m17-05-logs}
+  # Quick Search and the palette with a query that matches nothing.
+  - invoke: quick_search
+  - wait_for: {condition: {pointer: /quick_search/open, equals: true}}
+  - type_text: zzzzqqqq
+  - wait_for_idle: {}
+  - assert_find: {text: No results}
+  - key: escape
+  - invoke: command_palette
+  - wait_for_idle: {}
+  - type_text: zzzzqqqq
+  - wait_for_idle: {}
+  - assert_find: {text: No matching command}
+  - key: escape
+  - audit:
+      states: [sidebar-servers-empty, sidebar-environments-empty, sidebar-datasets-empty, traffic-empty, problems-empty, quick-search-empty, palette-empty]
+      themes: [one-dark, one-light]
+      sizes: [default, min]

@@ -330,7 +330,7 @@ impl Shell {
                                     .p(px(16.))
                                     .text_size(px(12.))
                                     .text_color(t.text_muted)
-                                    .child("No callbacks. Click + to simulate a webhook after this Response."),
+                                    .child(crate::copy::empty_line("callbacks")),
                             )
                         }),
                 ),
@@ -566,7 +566,7 @@ impl Shell {
                 div()
                     .text_size(px(12.))
                     .text_color(t.text_muted)
-                    .child("No Callbacks on this Route."),
+                    .child(crate::copy::empty_line("callbacks")),
             );
         }
         col.into_any_element()

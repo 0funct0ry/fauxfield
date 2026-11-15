@@ -108,7 +108,14 @@ impl Shell {
                             .flex()
                             .items_center()
                             .text_color(t.text_muted)
-                            .child("No results")
+                            .child(
+                                crate::copy::empty(if p.kind == PickerKind::Palette {
+                                    "palette-no-results"
+                                } else {
+                                    "search-no-results"
+                                })
+                                .title,
+                            )
                             .into_any_element()
                     } else {
                         uniform_list(

@@ -11,7 +11,7 @@ mod types;
 mod validate;
 pub mod vars;
 
-pub use diagnostic::{Diagnostic, Severity};
+pub use diagnostic::{CODES as DIAGNOSTIC_CODES, Diagnostic, Severity, help as diagnostic_help};
 pub use generator::{GENERATORS, GeneratorField, GeneratorSeed, GeneratorSpec};
 pub use id::new_id;
 pub use types::{

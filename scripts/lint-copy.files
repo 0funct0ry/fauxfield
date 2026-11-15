@@ -1,0 +1,3 @@
+# Files migrated to the copy catalog (SPEC §20.34): no user-facing string literals in view code.
+# Add a file here when its strings have moved to crates/fauxfield-gui/src/copy.rs.
+crates/fauxfield-gui/src/empty_ui.rs

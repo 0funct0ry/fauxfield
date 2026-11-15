@@ -343,12 +343,15 @@ impl Shell {
             .text_size(px(11.))
             .text_color(t.text_muted)
             .when(empty, |d| {
-                d.child(match source {
-                    LogSource::Agent => {
-                        "No agent activity yet. Tool calls from a connected agent appear here."
-                    }
-                    _ => "No log lines yet. Servers log when they start, stop and handle requests.",
-                })
+                d.flex().flex_col().child(self.empty_state(
+                    if source == LogSource::Agent {
+                        "agent-activity"
+                    } else {
+                        "logs"
+                    },
+                    t,
+                    cx,
+                ))
             })
             .when(show_engine, |d| {
                 d.children(self.logs.iter().map(|l| div().child(l.clone())))

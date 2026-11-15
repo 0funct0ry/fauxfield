@@ -641,6 +641,28 @@ pub fn label_of(id: &str) -> String {
     find(id).map_or_else(|| id.to_string(), |a| a.label.to_string())
 }
 
+/// The words of an action name, lowercased and sorted, without punctuation: "Server: New…" and
+/// "New Server…" are the same name (SPEC §20.34).
+pub fn name_words(label: &str) -> Vec<String> {
+    let mut w: Vec<String> = label
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_lowercase)
+        .collect();
+    w.sort();
+    w
+}
+
+/// The tooltip of an action's button: its palette label with the live binding, e.g.
+/// `Server: New… (Cmd+N)`.
+pub fn tip(id: &str, keymap: &Keymap, mac: bool) -> String {
+    let label = label_of(id);
+    match keymap.binding_for(id) {
+        Some(k) => format!("{label} ({})", crate::keymap::display_keys(k, mac)),
+        None => label,
+    }
+}
+
 pub fn find(id: &str) -> Option<&'static ActionInfo> {
     ACTIONS.iter().find(|a| a.id == id)
 }
@@ -736,6 +758,16 @@ mod tests {
             for stroke in b.keys.split_whitespace() {
                 assert!(canonical(stroke).is_some(), "{stroke}");
             }
+        }
+    }
+
+    #[test]
+    fn tooltip_is_the_palette_label_with_the_binding() {
+        let km = Keymap::bundled();
+        for a in ACTIONS {
+            let t = tip(a.id, &km, true);
+            assert!(t.starts_with(a.label), "{t}");
+            assert_eq!(t.contains('('), km.binding_for(a.id).is_some(), "{t}");
         }
     }
 

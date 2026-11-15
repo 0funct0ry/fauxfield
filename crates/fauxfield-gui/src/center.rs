@@ -545,12 +545,11 @@ impl Shell {
                             .child(cell(70., r.priority.to_string(), t.text_muted))
                             .child(cell(90., status.0.into(), status.1))
                     }))
-                    .children(f.routes.is_empty().then(|| {
-                        div()
-                            .text_size(px(12.))
-                            .text_color(t.text_muted)
-                            .child("No routes in this folder. Drag routes here or use New route…")
-                    })),
+                    .children(f.routes.is_empty().then(|| self.empty_state(
+                        "folder-routes",
+                        t,
+                        cx
+                    )),),
                 "folder-routes-table",
                 Text,
                 "Folder routes",
@@ -2226,7 +2225,7 @@ impl Shell {
                         .py(px(8.))
                         .text_size(px(12.))
                         .text_color(t.text_muted)
-                        .child("No variables."),
+                        .child(crate::copy::empty_line("variables")),
                 )
             })
             .children(rows.into_iter().map(|r| {
@@ -2386,7 +2385,7 @@ impl Shell {
                         div()
                             .text_size(px(12.))
                             .text_color(t.text_muted)
-                            .child("No variables."),
+                            .child(crate::copy::empty_line("variables")),
                     )
                 })
                 .children(vars.into_iter().map(|v| {

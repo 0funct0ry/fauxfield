@@ -332,12 +332,15 @@ clippy-crate: ## Lint one package: CRATE=<name>
 	$(call require_var,CRATE)
 	$(CARGO) clippy -p $(CRATE) --all-targets $(call pkg_features,$(CRATE)) $(CARGO_OPTS) -- -D warnings
 
-lint: fmt-check clippy lint-colors ## Formatting check + clippy -D warnings (debug); the pre-commit gate
+lint: fmt-check clippy lint-colors lint-copy ## Formatting check + clippy -D warnings (debug); the pre-commit gate
 
 lint-colors: ## No hard-coded colour literals in fauxfield-gui
 	@scripts/lint-colors.sh
 
-lint-release: fmt-check clippy-release lint-colors ## Formatting check + clippy (release profile)
+lint-copy: ## No UI string literals in files migrated to the copy catalog
+	@scripts/lint-copy.sh
+
+lint-release: fmt-check clippy-release lint-colors lint-copy ## Formatting check + clippy (release profile)
 
 fix: ## Apply rustfmt and clippy's machine-applicable fixes (modifies files, needs a clean-ish tree)
 	$(CARGO) clippy --workspace --all-targets $(FEATURES) $(CARGO_OPTS) --fix --allow-dirty --allow-staged

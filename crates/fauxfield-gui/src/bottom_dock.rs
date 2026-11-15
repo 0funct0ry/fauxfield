@@ -137,17 +137,15 @@ impl Shell {
                         .child(head(COLS[7], "SOURCE")),
                 )
                 .child(if self.traffic.is_empty() {
-                    div()
-                        .id("traffic-empty")
-                        .flex_1()
-                        .p(px(12.))
-                        .text_color(t.text_muted)
-                        .child(if self.ws.servers.iter().any(|s| s.running) {
-                            "No requests yet. Send one with curl, or press Cmd/Ctrl+Enter on a route."
+                    self.empty_state(
+                        if self.ws.servers.iter().any(|s| s.running) {
+                            "traffic"
                         } else {
-                            "No requests yet. Start a server with Cmd/Ctrl+R, then send a request."
-                        })
-                        .into_any_element()
+                            "traffic-stopped"
+                        },
+                        t,
+                        cx,
+                    )
                 } else {
                     uniform_list(
                         "traffic-rows",
@@ -336,7 +334,8 @@ impl Shell {
                 crate::dev_id!(
                     div()
                         .id(crate::ui::eid(key.clone()))
-                        .h(px(ROW_H + 2.))
+                        .min_h(px(ROW_H + 2.))
+                        .py(px(2.))
                         .px(px(10.))
                         .flex()
                         .items_center()
@@ -362,9 +361,22 @@ impl Shell {
                         .child(
                             div()
                                 .flex_1()
-                                .truncate()
-                                .text_size(px(12.))
-                                .child(p.message.clone()),
+                                .min_w(px(0.))
+                                .flex()
+                                .flex_col()
+                                .child(
+                                    div()
+                                        .truncate()
+                                        .text_size(px(12.))
+                                        .child(p.message.clone()),
+                                )
+                                .children(fauxfield_model::diagnostic_help(&p.code).map(|h| {
+                                    div()
+                                        .truncate()
+                                        .text_size(px(11.))
+                                        .text_color(t.text_muted)
+                                        .child(h)
+                                })),
                         ),
                     key,
                     Row,
@@ -373,12 +385,7 @@ impl Shell {
                 )
             }))
             .when(self.problems.is_empty(), |d| {
-                d.child(
-                    div()
-                        .p(px(12.))
-                        .text_color(t.text_muted)
-                        .child("No problems."),
-                )
+                d.child(self.empty_state("problems", t, cx))
             })
             .into_any_element()
     }

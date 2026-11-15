@@ -123,7 +123,12 @@ impl Shell {
     /// "Fauxfield — <name>" while a workspace is open, "Fauxfield" otherwise.
     pub fn window_title_text(&self) -> String {
         if self.store.is_some() {
-            format!("Fauxfield — {}", self.ws.name)
+            let running = self.ws.running_count();
+            if running > 0 {
+                format!("Fauxfield — {} · {running} running", self.ws.name)
+            } else {
+                format!("Fauxfield — {}", self.ws.name)
+            }
         } else {
             "Fauxfield".to_string()
         }
@@ -324,6 +329,8 @@ impl Shell {
         self.conflicts.clear();
         self.notice = None;
         self.notice_action = None;
+        self.toasts_older.clear();
+        self.notice_is_error = false;
         self.menu = None;
         self.prompt = None;
         self.picker = None;
@@ -616,11 +623,20 @@ impl Shell {
         confirm: &'static str,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        // Destructive confirms are red and are not the default; Cancel is (SPEC §20.34).
+        let destructive = crate::copy::is_destructive(confirm);
         let button = |id: String, label: &'static str| {
-            toolbar_button(t, crate::ui::eid(id))
+            let b = toolbar_button(t, crate::ui::eid(id))
                 .h(px(26.))
                 .px(px(12.))
-                .child(label)
+                .child(label);
+            if destructive && label == confirm {
+                b.bg(t.deleted).text_color(t.background)
+            } else if destructive {
+                b.border_1().border_color(t.border_focused)
+            } else {
+                b
+            }
         };
         #[cfg(feature = "dev-mcp")]
         let label = title.clone();

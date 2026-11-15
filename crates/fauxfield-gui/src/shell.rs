@@ -485,6 +485,10 @@ pub struct Shell {
     pub(crate) mask_volatile: bool,
     pub(crate) notice: Option<(u64, String)>,
     notice_gen: u64,
+    /// Toasts below the newest (at most `copy::TOAST_MAX - 1`), newest last; each expires on its own.
+    pub(crate) toasts_older: Vec<(u64, String)>,
+    /// The newest toast is an error: it stays until dismissed or replaced.
+    pub(crate) notice_is_error: bool,
     pub(crate) resize: Option<Resize>,
     /// Pointer position and the size when the drag began (for the in-tab panes).
     pub(crate) resize_origin: (f32, f32, f32),
@@ -850,6 +854,8 @@ impl Shell {
             mask_volatile: false,
             notice: None,
             notice_gen: 0,
+            toasts_older: Vec::new(),
+            notice_is_error: false,
             resize: None,
             resize_origin: (0., 0., 0.),
             menu: None,
@@ -1190,27 +1196,70 @@ impl Shell {
 
     // ---- notices -----------------------------------------------------------------------
 
-    /// Shows a transient message in the status bar for four seconds.
+    /// Shows a toast: the newest sits in the status bar, up to two older ones stack above it
+    /// (SPEC §20.34). It goes away after `copy::TOAST_SECS` seconds.
     pub fn notify(&mut self, msg: String, cx: &mut Context<Self>) {
+        self.push_toast(msg, false, cx);
+    }
+
+    /// Shows an error toast: it persists until dismissed (click it) or replaced, and offers
+    /// "Copy details" unless the caller sets its own action afterwards.
+    pub fn notify_error(&mut self, msg: String, cx: &mut Context<Self>) {
+        self.push_toast(msg.clone(), true, cx);
+        self.notice_action = Some(crate::run::NoticeAction {
+            label: crate::copy::COPY_DETAILS,
+            action: crate::run::ToastAction::CopyText(msg),
+        });
+    }
+
+    fn push_toast(&mut self, msg: String, error: bool, cx: &mut Context<Self>) {
+        if let Some(prev) = self.notice.take() {
+            // An error that is replaced is dropped; a plain one moves down the stack.
+            if !self.notice_is_error {
+                self.toasts_older.push(prev);
+                while self.toasts_older.len() >= crate::copy::TOAST_MAX {
+                    self.toasts_older.remove(0);
+                }
+            }
+        }
         self.notice_gen += 1;
         let id = self.notice_gen;
         self.notice = Some((id, msg));
+        self.notice_is_error = error;
         self.notice_action = None;
-        cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(std::time::Duration::from_secs(4))
-                .await;
-            this.update(cx, |this, cx| {
-                if this.notice.as_ref().is_some_and(|(g, _)| *g == id) {
-                    this.notice = None;
-                    this.notice_action = None;
+        if !error {
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_secs(crate::copy::TOAST_SECS))
+                    .await;
+                this.update(cx, |this, cx| {
+                    this.expire_toast(id);
                     cx.notify();
-                }
+                })
+                .ok();
             })
-            .ok();
-        })
-        .detach();
+            .detach();
+        }
         cx.notify();
+    }
+
+    fn expire_toast(&mut self, id: u64) {
+        self.toasts_older.retain(|(g, _)| *g != id);
+        if self.notice.as_ref().is_some_and(|(g, _)| *g == id) {
+            self.notice = None;
+            self.notice_action = None;
+            self.notice_is_error = false;
+            // The next newest toast moves into the status bar.
+            self.notice = self.toasts_older.pop();
+        }
+    }
+
+    /// Dismisses the newest toast (a click on it), including a persistent error.
+    pub fn dismiss_toast(&mut self, cx: &mut Context<Self>) {
+        if let Some((id, _)) = self.notice {
+            self.expire_toast(id);
+            cx.notify();
+        }
     }
 
     // ---- docks -------------------------------------------------------------------------

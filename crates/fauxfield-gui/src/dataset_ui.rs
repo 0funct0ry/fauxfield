@@ -1454,9 +1454,9 @@ impl TableDelegate for DatasetTable {
                 .text_color(t.text_muted)
                 .when(!filtered, |d| d.child(add))
                 .child(div().px(px(12.)).child(if filtered {
-                    "No rows match the filter."
+                    crate::copy::empty_line("dataset-rows-filtered")
                 } else {
-                    "No rows yet."
+                    crate::copy::empty_line("dataset-rows")
                 }))
                 .into_any_element(),
         )

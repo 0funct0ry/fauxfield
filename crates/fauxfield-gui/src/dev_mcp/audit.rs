@@ -45,8 +45,8 @@ pub const VIEWS: &[(&str, &[(&str, &str)])] = &[
     ("Quick Search", &[("empty", "quick-search-empty")]),
     ("Command Palette", &[("empty", "palette-empty")]),
     ("Problems", &[("empty", "problems-empty")]),
-    ("Traffic", &[]),
-    ("Logs", &[]),
+    ("Traffic", &[("empty", "traffic-empty")]),
+    ("Logs", &[("empty", "logs-empty")]),
     ("Workspace tree", &[("empty", "empty-workspace")]),
 ];
 

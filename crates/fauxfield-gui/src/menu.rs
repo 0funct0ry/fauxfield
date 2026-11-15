@@ -818,6 +818,57 @@ pub fn menu_ids(menus: &[MenuDef]) -> Vec<&'static str> {
     out
 }
 
+/// Menu entries whose label may differ from the palette label, each with a reason.
+pub const LABEL_EXCEPTIONS: &[(&str, &str)] = &[
+    (
+        "toggle_bottom_dock",
+        "label follows state: Show/Hide Bottom Dock",
+    ),
+    (
+        "toggle_left_dock",
+        "label follows state: Show/Hide Left Dock",
+    ),
+    (
+        "toggle_right_dock",
+        "label follows state: Show/Hide Inspector",
+    ),
+    ("toggle_server", "label follows state: Start/Stop Server"),
+    (
+        "toggle_fullscreen",
+        "label follows state: Enter/Exit Full Screen",
+    ),
+    ("zoom_window", "Zoom on macOS, Maximize/Restore elsewhere"),
+    ("quit", "menu names the app: Quit Fauxfield"),
+    (
+        "restart_server",
+        "palette says Current, the Server menu says Server",
+    ),
+    ("run_all", "label follows state: Run All/Stop All Servers"),
+    ("reveal_workspace", "label names the platform file manager"),
+    (
+        "edit_route_method",
+        "menu says Edit Method, palette Change Method",
+    ),
+];
+
+/// Every (action id, menu label) pair in `menus`.
+pub fn action_labels(menus: &[MenuDef]) -> Vec<(&'static str, String)> {
+    fn walk(es: &[MenuEntry], out: &mut Vec<(&'static str, String)>) {
+        for e in es {
+            match e {
+                MenuEntry::Action { id, label, .. } => out.push((id, label.clone())),
+                MenuEntry::Submenu { entries, .. } => walk(entries, out),
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for m in menus {
+        walk(&m.entries, &mut out);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -921,6 +972,34 @@ mod tests {
             assert!(known.contains(id), "NOT_IN_MENU names unknown {id}");
             assert!(!reason.is_empty());
         }
+    }
+
+    /// The menu label names the palette action (its words are in the palette label; SPEC §9.11
+    /// drops the category). Other differences must be listed in `LABEL_EXCEPTIONS` with a reason.
+    #[test]
+    fn menu_labels_name_the_palette_action() {
+        let mut bad = Vec::new();
+        for p in [Platform::Macos, Platform::Windows] {
+            let c = ws(p);
+            for (id, label) in action_labels(&build_menus(&c)) {
+                let Some(info) = crate::actions::find(id) else {
+                    continue;
+                };
+                let (menu, palette) = (
+                    crate::actions::name_words(&label),
+                    crate::actions::name_words(info.label),
+                );
+                if menu.iter().all(|w| palette.contains(w))
+                    || LABEL_EXCEPTIONS.iter().any(|(i, _)| *i == id)
+                {
+                    continue;
+                }
+                bad.push(format!("{id}: menu {label:?} vs palette {:?}", info.label));
+            }
+        }
+        bad.sort();
+        bad.dedup();
+        assert!(bad.is_empty(), "{}", bad.join("\n"));
     }
 
     #[test]

@@ -133,6 +133,8 @@ fn reset_view(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) {
     shell.quit_confirm = false;
     shell.notice_action = None;
     shell.notice = None;
+    shell.toasts_older.clear();
+    shell.notice_is_error = false;
     shell.menu = None;
     shell.prompt = None;
     shell.close_all_combos(window, cx);

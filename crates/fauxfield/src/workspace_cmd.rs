@@ -247,6 +247,9 @@ pub fn validate(a: &WsArgs) -> i32 {
                 "warning"
             };
             println!("{sev}[{}] {} {}: {}", d.code, d.file, d.path, d.message);
+            if let Some(h) = &d.help {
+                println!("  help: {h}");
+            }
         }
         println!("{errors} error(s), {warnings} warning(s)");
     }

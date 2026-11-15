@@ -883,7 +883,12 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
         } else {
             shell.menu.as_ref().map(|_| "row_menu".to_string())
         },
-        toasts: shell.notice.iter().map(|(_, m)| m.clone()).collect(),
+        toasts: shell
+            .toasts_older
+            .iter()
+            .chain(shell.notice.iter())
+            .map(|(_, m)| m.clone())
+            .collect(),
         toast_action: shell.notice_action.as_ref().map(|a| a.label.to_string()),
         traffic: TrafficState {
             row_count: shell.traffic.len(),

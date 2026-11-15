@@ -237,7 +237,7 @@ impl Shell {
                 div()
                     .text_size(px(12.))
                     .text_color(t.text_muted)
-                    .child("No rules: used only as the fallback."),
+                    .child(crate::copy::empty_line("rules")),
             );
         }
         let n = resp.rules.len();

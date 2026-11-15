@@ -890,7 +890,7 @@ fn server_fields_host_prefix_enabled_and_hint_are_editable(cx: &mut TestAppConte
     );
     view.update(cx, |s, cx| s.toggle_server_at(ix, cx));
     settle(cx, &view, |s| s.notice_action.is_some());
-    assert!(notice(&view, cx).ends_with("is disabled. Enable it first."));
+    assert!(notice(&view, cx).contains("The Server is disabled in its file"));
     assert_eq!(
         read(&view, cx, |s| s.notice_action.clone().unwrap().action),
         ToastAction::EnableAndStart(id.clone())
@@ -3715,4 +3715,30 @@ fn every_action_appears_in_the_keymap_editor() {
             assert!(ids.contains(&b.action.as_str()), "{}", b.action);
         }
     }
+}
+
+#[gpui::test]
+fn toasts_stack_to_three_and_errors_persist(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    view.update(cx, |s, cx| {
+        for n in 1..=4 {
+            s.notify(format!("Route {n} deleted"), cx);
+        }
+    });
+    let (older, newest) = read(&view, cx, |s| (s.toasts_older.len(), s.notice.clone()));
+    assert_eq!(older, crate::copy::TOAST_MAX - 1);
+    assert_eq!(newest.unwrap().1, "Route 4 deleted");
+
+    view.update(cx, |s, cx| s.notify_error("Couldn’t start “A”.".into(), cx));
+    assert_eq!(
+        read(&view, cx, |s| s.notice_action.clone().unwrap().label),
+        crate::copy::COPY_DETAILS
+    );
+    // Past the 5 s timer the plain toasts are gone, the error stays until dismissed.
+    cx.executor()
+        .advance_clock(std::time::Duration::from_secs(crate::copy::TOAST_SECS + 1));
+    cx.run_until_parked();
+    assert!(read(&view, cx, |s| s.notice.is_some() && s.notice_is_error));
+    view.update(cx, |s, cx| s.dismiss_toast(cx));
+    assert!(read(&view, cx, |s| s.notice.is_none() || !s.notice_is_error));
 }

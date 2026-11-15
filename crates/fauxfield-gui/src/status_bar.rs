@@ -17,6 +17,7 @@ impl Shell {
         let problems = self.problems.len();
         div()
             .id("status-bar")
+            .relative()
             .h(px(STATUS_BAR_H))
             .w_full()
             .flex_none()
@@ -62,12 +63,41 @@ impl Shell {
                 self.ws.running_count(),
                 total
             )))
+            .children((!self.toasts_older.is_empty()).then(|| {
+                // Older toasts stack above the status bar, newest at the bottom.
+                div()
+                    .absolute()
+                    .bottom(px(STATUS_BAR_H))
+                    .left(px(6.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.))
+                    .children(self.toasts_older.iter().map(|(id, m)| {
+                        div()
+                            .id(crate::ui::eid(format!("toast-older-{id}")))
+                            .px(px(8.))
+                            .py(px(3.))
+                            .rounded(px(4.))
+                            .border_1()
+                            .border_color(t.border)
+                            .bg(t.elevated)
+                            .text_color(t.text_muted)
+                            .child(m.clone())
+                    }))
+            }))
             .child(crate::dev_id!(
                 div()
+                    .id("toast-text")
                     .flex_1()
                     .truncate()
                     .px(px(8.))
-                    .text_color(t.text)
+                    .text_color(if self.notice_is_error {
+                        t.deleted
+                    } else {
+                        t.text
+                    })
+                    .cursor_pointer()
+                    .on_click(cx.listener(|this, _, _, cx| this.dismiss_toast(cx)))
                     .children(self.notice.as_ref().map(|(_, m)| m.clone())),
                 "toast",
                 Toast,
@@ -89,13 +119,10 @@ impl Shell {
             .child(crate::dev_id!(
                 toolbar_button(t, "status-settings")
                     .child(icon("settings", 12., t.icon_muted))
-                    .tooltip(crate::ui::tooltip(format!(
-                        "Settings ({})",
-                        if cfg!(target_os = "macos") {
-                            "Cmd+,"
-                        } else {
-                            "Ctrl+,"
-                        }
+                    .tooltip(crate::ui::tooltip(crate::actions::tip(
+                        "open_settings",
+                        &self.keymap,
+                        cfg!(target_os = "macos"),
                     )))
                     .on_click(cx.listener(|this, _, _, cx| this.open_settings(cx))),
                 "status.settings",
@@ -105,16 +132,13 @@ impl Shell {
             ))
             .child({
                 let name = t.name.clone();
-                let chord = if cfg!(target_os = "macos") {
-                    "Cmd+K Cmd+T"
-                } else {
-                    "Ctrl+K Ctrl+T"
-                };
+                let tip =
+                    crate::actions::tip("select_theme", &self.keymap, cfg!(target_os = "macos"));
                 crate::dev_id!(
                     toolbar_button(t, "status-theme")
                         .child(icon("palette", 12., t.icon_muted))
                         .child(name.clone())
-                        .tooltip(crate::ui::tooltip(format!("Theme: {name} ({chord})")))
+                        .tooltip(crate::ui::tooltip(tip))
                         .on_click(cx.listener(|this, _, w, cx| {
                             this.open_picker(PickerKind::Theme, w, cx)
                         })),

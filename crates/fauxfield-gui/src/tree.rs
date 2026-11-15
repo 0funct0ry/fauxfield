@@ -53,11 +53,12 @@ impl SidebarTab {
             SidebarTab::Datasets => "show_sidebar_datasets",
         }
     }
-    pub fn empty_text(self) -> &'static str {
+    /// The copy-catalog id of this sidebar tab's empty state.
+    pub fn empty_id(self) -> &'static str {
         match self {
-            SidebarTab::Servers => "No servers yet.",
-            SidebarTab::Environments => "No environments.",
-            SidebarTab::Datasets => "No datasets. Create one with +.",
+            SidebarTab::Servers => "servers",
+            SidebarTab::Environments => "environments",
+            SidebarTab::Datasets => "datasets",
         }
     }
     /// Parses a persisted id; anything unknown falls back to Servers.

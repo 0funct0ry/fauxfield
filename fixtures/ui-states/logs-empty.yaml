@@ -1,0 +1,5 @@
+# UI state fixture (M17.05): the Logs tab with no lines ("No log lines yet").
+steps:
+  - reset
+  - invoke: show_logs
+  - wait_idle

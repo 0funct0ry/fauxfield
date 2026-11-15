@@ -385,24 +385,35 @@ impl Shell {
                 }
                 for (id, e) in errors {
                     match e {
-                        EngineError::PortInUse { server, port } => this.notify_action(
-                            format!("Port {port} is already in use ({server})."),
+                        EngineError::PortInUse { port, .. } => this.notify_error_action(
+                            crate::copy::fill(
+                                crate::copy::ERR_PORT_IN_USE,
+                                &[&name_of_server(this, &id), &port.to_string()],
+                            ),
                             Some(NoticeAction {
                                 label: "Change port",
                                 action: ToastAction::ChangePort(id),
                             }),
                             cx,
                         ),
-                        EngineError::Disabled(_) => this.notify_action(
-                            "{} is disabled. Enable it first."
-                                .replace("{}", &name_of_server(this, &id)),
+                        EngineError::Disabled(_) => this.notify_error_action(
+                            crate::copy::fill(
+                                crate::copy::ERR_SERVER_DISABLED,
+                                &[&name_of_server(this, &id)],
+                            ),
                             Some(NoticeAction {
                                 label: "Enable and start",
                                 action: ToastAction::EnableAndStart(id),
                             }),
                             cx,
                         ),
-                        other => this.notify(other.to_string(), cx),
+                        other => this.notify_error(
+                            crate::copy::fill(
+                                crate::copy::ERR_SERVER_START,
+                                &[&name_of_server(this, &id), &other.to_string()],
+                            ),
+                            cx,
+                        ),
                     }
                 }
                 cx.notify();
@@ -662,6 +673,19 @@ impl Shell {
     ) {
         self.notify(msg, cx);
         self.notice_action = action;
+    }
+
+    /// An error toast with its own action instead of "Copy details".
+    pub fn notify_error_action(
+        &mut self,
+        msg: String,
+        action: Option<NoticeAction>,
+        cx: &mut Context<Self>,
+    ) {
+        self.notify_error(msg, cx);
+        if action.is_some() {
+            self.notice_action = action;
+        }
     }
 
     /// "Change port": open the Server tab and prompt for the port.

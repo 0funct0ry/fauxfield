@@ -27,6 +27,7 @@ jobs:
       # GitHub's macOS runners ship the Metal toolchain, so no runtime-shaders feature is needed.
       - run: cargo fmt --all --check
       - run: scripts/lint-colors.sh
+      - run: scripts/lint-copy.sh
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
       - name: Generated references are up to date
