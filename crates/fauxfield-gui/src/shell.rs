@@ -3481,7 +3481,13 @@ impl Shell {
 /// Synthetic rows in test and dev-mcp builds only; a release build starts empty.
 #[cfg(any(test, feature = "dev-mcp"))]
 pub(crate) fn initial_traffic() -> Vec<TrafficRow> {
-    crate::traffic::synthetic(TRAFFIC_ROWS)
+    // `FAUXFIELD_TRAFFIC_ROWS` sizes the synthetic Traffic (the 100k-row perf scenario, M17.04).
+    let n = std::env::var("FAUXFIELD_TRAFFIC_ROWS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|n| *n <= crate::run::TRAFFIC_CAP)
+        .unwrap_or(TRAFFIC_ROWS);
+    crate::traffic::synthetic(n)
 }
 
 #[cfg(not(any(test, feature = "dev-mcp")))]

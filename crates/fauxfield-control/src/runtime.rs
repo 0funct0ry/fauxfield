@@ -53,7 +53,10 @@ pub struct Host {
 impl Host {
     /// Open the workspace at `root` and host it on a private runtime.
     pub fn start(root: &Path, opts: HostOptions) -> Result<Host, HostError> {
-        let store = Store::open(root).map_err(|e| HostError::Other(e.to_string()))?;
+        let store = {
+            let _s = crate::trace::span("store.open");
+            Store::open(root).map_err(|e| HostError::Other(e.to_string()))?
+        };
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
@@ -86,6 +89,7 @@ impl Host {
         rt: &mut Option<tokio::runtime::Runtime>,
         handle: tokio::runtime::Handle,
     ) -> Result<Host, HostError> {
+        let _build = crate::trace::span("host.build");
         let root = store.root();
         let engine = Engine::new(
             handle.clone(),
@@ -136,7 +140,10 @@ impl Host {
                 handle.spawn(serve(first, name, control.clone()));
             }
         }
-        attach_store_with_env(&engine, &store, opts.env.clone());
+        {
+            let _s = crate::trace::span("engine.apply");
+            attach_store_with_env(&engine, &store, opts.env.clone());
+        }
         let background = if opts.watch {
             store
                 .start_background(Duration::from_millis(300))

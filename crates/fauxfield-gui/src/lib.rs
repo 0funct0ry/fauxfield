@@ -161,7 +161,13 @@ fn launch(
                         window_min_size: Some(size(px(900.), px(600.))),
                         ..Default::default()
                     },
-                    move |window, cx| cx.new(|cx| Shell::new(opts, window, cx)),
+                    move |window, cx| {
+                        let _s = fauxfield_control::trace::span("shell.new");
+                        let v = cx.new(|cx| Shell::new(opts, window, cx));
+                        drop(_s);
+                        fauxfield_control::trace::flush();
+                        v
+                    },
                 )
                 .expect("open main window");
             after_open(window, cx);

@@ -266,7 +266,7 @@ dev-mcp: ## Run the GUI with the MCP host on a socket [MCP_SOCKET=<path>] [ARGS=
 
 ##@ Test
 
-.PHONY: test test-release test-crate test-gui nextest smoke smoke-ui bench bench-crate
+.PHONY: test test-release test-crate test-gui nextest smoke smoke-ui bench bench-crate bench-gui idle-rss size-check
 
 test: ## Run every test in the workspace (debug)
 	$(CARGO) test --workspace $(FEATURES) $(CARGO_OPTS) $(if $(ARGS),-- $(ARGS))
@@ -292,11 +292,24 @@ smoke: ## Headless MCP smoke test: `fauxfield mcp` over stdio and the unix socke
 smoke-ui: ## Run the UI scenarios against the dev-mcp app (needs a display) [SMOKE_ARGS=--no-capture]
 	RUNTIME_SHADERS_FEATURE=$(if $(RUNTIME_SHADERS),runtime-shaders) scripts/smoke-ui.sh $(SMOKE_ARGS)
 
-bench: ## (M4) Run all benchmarks (criterion; always release)
-	$(call not_yet,M4,bench)
+bench: ## (M17.04) Whole performance suite: criterion benches, size check (always release; asserts are the SPEC §15 budgets)
+	$(CARGO) bench -p fauxfield-engine -p fauxfield-control -p fauxfield-gui $(call pkg_features,fauxfield-gui) $(CARGO_OPTS)
+	scripts/size_check.sh
+	@echo "idle RSS needs a display: run 'make idle-rss' (GUI) on the dedicated runner"
 
-bench-crate: ## (M4) Benchmark one package: CRATE=<name> [ARGS=<filter>]
-	$(call not_yet,M4,bench-crate)
+bench-crate: ## (M17.04) Benchmark one package: CRATE=<name> [ARGS=<filter>]
+	$(CARGO) bench -p $(CRATE) $(call pkg_features,$(CRATE)) $(CARGO_OPTS) $(if $(ARGS),-- $(ARGS))
+
+bench-gui: ## (M17.04) GUI budgets: Traffic scroll bench and idle RSS (needs a display)
+	$(CARGO) bench -p fauxfield-gui $(call pkg_features,fauxfield-gui) $(CARGO_OPTS)
+	$(MAKE) idle-rss
+
+idle-rss: ## (M17.04) Idle memory of the release GUI on fixtures/perf-workspace (10 s idle, < 150 MB)
+	$(CARGO) build -p $(BIN_PACKAGE) --release $(call pkg_features,$(BIN_PACKAGE)) $(CARGO_OPTS)
+	scripts/idle_rss.sh
+
+size-check: ## (M17.04) Assert the stripped headless binary is < 15 MB
+	scripts/size_check.sh
 
 
 ##@ Code quality

@@ -222,6 +222,7 @@ pub fn run(a: RunArgs) -> i32 {
         }
     });
     let mut code = EXIT_OK;
+    let started = fauxfield_control::trace::span("servers.start");
     if a.server.is_empty() {
         for (_, e) in engine.start_all() {
             crate::err!("{e}");
@@ -242,6 +243,10 @@ pub fn run(a: RunArgs) -> i32 {
                 };
             }
         }
+    }
+    drop(started);
+    if let Some(p) = fauxfield_control::trace::flush() {
+        eprintln!("startup trace: {}", p.display());
     }
     if code != EXIT_OK {
         engine.stop_all();

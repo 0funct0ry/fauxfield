@@ -16,5 +16,6 @@ mod workspace_cmd;
 mod ws_cmd;
 
 fn main() {
+    fauxfield_control::trace::init();
     std::process::exit(cli::run());
 }

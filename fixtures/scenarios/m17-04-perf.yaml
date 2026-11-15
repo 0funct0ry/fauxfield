@@ -1,0 +1,14 @@
+# M17.04 scenario: performance. Opens the perf workspace (10 Servers, 500 Routes) with the
+# 100k-row Traffic fixture and asserts UX150 (frame time p95 < 8 ms, key-to-paint p95 < 50 ms)
+# passes. UX150 is only meaningful on a release build (`make smoke-ui` runs debug, so the
+# audit here reports; run it against `--release --features dev-mcp` for the gate).
+# workspace: perf-workspace
+# traffic_rows: 100000
+name: m17-04-perf
+size: default
+steps:
+  - state: [reset]
+  - invoke: show_traffic
+  - wait_for: {condition: {pointer: /traffic/row_count, equals: 100000}}
+  - assert: {pointer: /perf/startup/enabled, equals: false}
+  - audit: {themes: [one-dark], rules: [UX150], perf: true}

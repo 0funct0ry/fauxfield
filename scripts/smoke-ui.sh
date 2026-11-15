@@ -41,7 +41,9 @@ for f in $(grep -l '^# workspace: ' fixtures/scenarios/*.yaml 2>/dev/null); do
   echo "== $name ($fixture)"
   sock2="$(mktemp -u "${TMPDIR:-/tmp}/ffsmoke.XXXXXX")"
   cp -R "fixtures/$fixture" "$ws/$fixture"
-  "$bin" "$ws/$fixture" --mcp-socket "$sock2" >"$out/app-$fixture.log" 2>&1 &
+  # `# traffic_rows: N` sizes the synthetic Traffic (perf scenario: 100000).
+  rows="$(sed -n 's/^# traffic_rows: //p' "$f" | head -1)"
+  FAUXFIELD_TRAFFIC_ROWS="${rows:-10000}" "$bin" "$ws/$fixture" --mcp-socket "$sock2" >"$out/app-$fixture.log" 2>&1 &
   app2=$!
   for _ in $(seq 1 100); do [[ -S "$sock2" ]] && break; sleep 0.2; done
   sleep 1

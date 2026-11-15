@@ -43,6 +43,17 @@ fauxfield-mcp = { path = "crates/fauxfield-mcp" }
 fauxfield-gui = { path = "crates/fauxfield-gui" }
 
 [profile.release]
-lto = "thin"
+lto = "fat"
 codegen-units = 1
 strip = true
+opt-level = "s"
+
+# M17.04: size-optimise everything the headless binary contains so it stays under the SPEC §15
+# 15 MB budget: Fauxfield's own crates at "s", third-party at "z" (panic stays "unwind": template rendering catches panics). The GUI crate is not
+# in the headless build; it and gpui keep opt-level 3.
+[profile.release.package."*"]
+opt-level = "z"
+[profile.release.package.gpui]
+opt-level = 3
+[profile.release.package.fauxfield-gui]
+opt-level = 3

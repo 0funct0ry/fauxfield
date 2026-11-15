@@ -66,3 +66,7 @@ workspace = true
 [[bench]]
 name = "render"
 harness = false
+
+[[bench]]
+name = "engine_overhead"
+harness = false

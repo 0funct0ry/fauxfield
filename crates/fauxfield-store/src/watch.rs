@@ -9,6 +9,9 @@ use toml_edit::DocumentMut;
 
 use crate::store::{Doc, Event, Store, StoreError, hash, list_files, notify_all};
 
+/// Quiet time after the last file-system event before the workspace is rescanned.
+const SETTLE: Duration = Duration::from_millis(5);
+
 /// Autosave + file watcher. Dropping it stops both threads.
 pub struct Background {
     stop: Arc<AtomicBool>,
@@ -45,13 +48,22 @@ impl Store {
             let mut pending = false;
             let mut last = Instant::now();
             while !flag.load(Ordering::SeqCst) {
-                if rx.recv_timeout(Duration::from_millis(25)).is_ok() {
+                // While a burst is settling wake exactly when it has (M17.04: hot reload < 50 ms),
+                // otherwise poll the stop flag and autosave every 25 ms.
+                let wait = if pending {
+                    SETTLE
+                        .saturating_sub(last.elapsed())
+                        .max(Duration::from_millis(1))
+                } else {
+                    Duration::from_millis(25)
+                };
+                if rx.recv_timeout(wait).is_ok() {
                     while rx.try_recv().is_ok() {}
                     pending = true;
                     last = Instant::now();
                 }
                 // Let bursts of fs events settle before scanning.
-                if pending && last.elapsed() >= Duration::from_millis(40) {
+                if pending && last.elapsed() >= SETTLE {
                     pending = false;
                     store.reconcile();
                 }

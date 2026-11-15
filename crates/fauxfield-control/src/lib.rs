@@ -10,6 +10,7 @@ pub mod ipc;
 mod reload;
 mod rpc;
 mod runtime;
+pub mod trace;
 
 pub use agents::{AgentEvent, AgentSession, AgentTracker};
 pub use api::{ControlApi, ControlError, LocalControl};

@@ -82,6 +82,15 @@ fn main() {
             }
             println!("generated files are up to date");
         }
+        // `cargo xtask perf-workspace [DIR]`: the SPEC §15 start-up workspace (10 Servers, 500 Routes).
+        Some("perf-workspace") => {
+            let dir = args
+                .get(1)
+                .map(String::as_str)
+                .unwrap_or("fixtures/perf-workspace");
+            perf_workspace(Path::new(dir));
+            println!("wrote {dir}");
+        }
         Some("all") => GENERATED.iter().for_each(write),
         Some(cmd) if GENERATED.iter().any(|g| g.cmd == cmd) => {
             let g = GENERATED.iter().find(|g| g.cmd == cmd).unwrap();
@@ -96,7 +105,7 @@ fn main() {
         }
         _ => {
             eprintln!(
-                "usage: cargo xtask schema|settings-schema|settings-docs|keybindings-docs|template-docs|generator-docs|mcp-tools-docs|cli-docs [--check] | check | all"
+                "usage: cargo xtask schema|settings-schema|settings-docs|keybindings-docs|template-docs|generator-docs|mcp-tools-docs|cli-docs [--check] | check | all | perf-workspace [DIR]"
             );
             std::process::exit(2);
         }
@@ -405,4 +414,27 @@ fn keybindings_docs() -> String {
         o.push('\n');
     }
     o
+}
+
+/// Deterministic perf workspace: 10 Servers on ports 4800.., 50 Routes each (SPEC §15).
+fn perf_workspace(dir: &Path) {
+    let servers = dir.join("servers");
+    std::fs::create_dir_all(&servers).unwrap();
+    std::fs::write(
+        dir.join("fauxfield.toml"),
+        "schema = 1\nname = \"Perf workspace\"\n",
+    )
+    .unwrap();
+    for s in 0..10 {
+        let mut t = format!(
+            "schema = 1\nid = \"srv_perf_{s:02}\"\nname = \"Perf {s:02}\"\nenabled = true\nhost = \"127.0.0.1\"\nport = {}\n",
+            4800 + s
+        );
+        for r in 0..50 {
+            t += &format!(
+                "\n[[routes]]\nid = \"rt_perf_{s:02}_{r:02}\"\nname = \"Route {r:02}\"\nmethod = \"GET\"\npath = \"/api/r{r:02}/items\"\n\n  [[routes.responses]]\n  id = \"rsp_perf_{s:02}_{r:02}\"\n  name = \"200 OK\"\n  default = true\n  status = 200\n  content_type = \"application/json\"\n  body = '''{{ \"server\": {s}, \"route\": {r} }}'''\n"
+            );
+        }
+        std::fs::write(servers.join(format!("{s:02}-perf-{s:02}.toml")), t).unwrap();
+    }
 }

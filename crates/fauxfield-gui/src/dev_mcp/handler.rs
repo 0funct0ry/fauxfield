@@ -148,7 +148,7 @@ fn reset_view(shell: &mut Shell, window: &mut Window, cx: &mut Context<Shell>) {
     shell.bar.sub = None;
     super::input::release_held_ports();
     // Baseline Traffic is the synthetic 10k rows; real requests and the engine's buffer go.
-    shell.traffic = crate::traffic::synthetic(crate::shell::TRAFFIC_ROWS);
+    shell.traffic = crate::shell::initial_traffic();
     if let Some(h) = &shell.host {
         h.engine().stop_all();
         h.engine().clear_traffic();
@@ -195,7 +195,10 @@ pub fn dispatch(
     match req.method.as_str() {
         "ui.state" => {
             let s = snapshot(shell, window, cx, host.workspace_path.as_deref());
-            Ok(serde_json::to_value(host.tracker.observe(s)).expect("UiState serializes"))
+            let mut v = serde_json::to_value(host.tracker.observe(s)).expect("UiState serializes");
+            // M17.04: startup trace summary (`FAUXFIELD_TRACE=startup`), `{enabled: false}` otherwise.
+            v["perf"] = json!({ "startup": fauxfield_control::trace::summary() });
+            Ok(v)
         }
         "ui.open_workspace" => {
             let input: OpenWorkspaceInput = args(&req.params)?;
@@ -360,6 +363,7 @@ mod tests {
         let s = state(&view, cx, &mut h);
         assert_eq!(s["docks"]["left"]["open"], true);
         assert_eq!(s["docks"]["right"]["open"], false);
+        assert!(s["perf"]["startup"]["enabled"].is_boolean());
         assert_eq!(s["bottom_tab"], "traffic");
         assert_eq!(s["traffic"]["row_count"], crate::shell::TRAFFIC_ROWS);
         assert_eq!(s["tabs"], json!([]));

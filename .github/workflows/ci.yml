@@ -100,6 +100,45 @@ jobs:
           name: smoke-ui-${{ runner.os }}
           path: target/smoke
 
+  # Performance (M17.04): the SPEC §15 budgets assert on every run (release); on the dedicated
+  # runner (label `perf`) results are also compared with the baseline saved from main and a
+  # > 10 % regression fails. Shared runners only report.
+  bench:
+    runs-on: ${{ vars.PERF_RUNNER || 'ubuntu-latest' }}
+    env:
+      FAUXFIELD_BENCH_DEDICATED: ${{ vars.PERF_RUNNER && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux system libraries for GPUI
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libxcb1-dev libvulkan-dev libasound2-dev libfontconfig-dev libssl-dev
+      - name: Baseline from main
+        if: github.event_name == 'pull_request' && vars.PERF_RUNNER
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: ci.yml
+          branch: main
+          name: bench-baseline
+          path: target/bench-baseline
+        continue-on-error: true
+      - run: make bench
+      - name: Compare with the baseline (gate only on the dedicated runner)
+        if: github.event_name == 'pull_request' && hashFiles('target/bench-baseline/**') != ''
+        run: scripts/bench_compare.py target/bench-baseline ${{ vars.PERF_RUNNER && '--gate' || '' }}
+      - name: Save baseline (main)
+        if: github.ref == 'refs/heads/main'
+        run: mkdir -p target/bench-baseline && cp -R target/criterion/. target/bench-baseline/
+      - uses: actions/upload-artifact@v4
+        if: github.ref == 'refs/heads/main'
+        with:
+          name: bench-baseline
+          path: target/bench-baseline
+
   deny:
     runs-on: ubuntu-latest
     steps:
