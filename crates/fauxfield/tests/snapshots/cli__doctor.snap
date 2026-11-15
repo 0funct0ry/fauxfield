@@ -23,6 +23,11 @@ expression: v
     }
   ],
   "schema": "fauxfield.doctor/v1",
+  "themes": {
+    "bundled": 27,
+    "errors": [],
+    "missing_keys": 18
+  },
   "version": "<version>",
   "workspace": "<workspace>"
 }

@@ -43,6 +43,7 @@ pub fn doctor(a: WsArgs) -> i32 {
             }
         }
     }
+    let themes = theme_report(&mut problems);
     let ca_json = ca.as_ref().map(|c| serde_json::to_value(c).unwrap());
     if let Some(c) = &ca
         && c.exists
@@ -58,6 +59,7 @@ pub fn doctor(a: WsArgs) -> i32 {
             "ports": ports,
             "ca": ca_json,
             "certs": certs,
+            "themes": themes,
             "ok": problems == 0,
         }));
     } else {
@@ -83,6 +85,15 @@ pub fn doctor(a: WsArgs) -> i32 {
             ),
             _ => println!("dev CA: not created yet (`fauxfield certs trust` creates it)"),
         }
+        if let Some(n) = themes["missing_keys"].as_u64() {
+            println!(
+                "themes: {} bundled, theme.missing_key {n}",
+                themes["bundled"]
+            );
+        }
+        for e in themes["errors"].as_array().into_iter().flatten() {
+            println!("theme error: {}", e.as_str().unwrap_or(""));
+        }
         for c in &certs {
             let d = &c["cert"];
             match (d["days_left"].as_i64(), c["error"].as_str()) {
@@ -96,4 +107,25 @@ pub fn doctor(a: WsArgs) -> i32 {
         }
     }
     if problems == 0 { EXIT_OK } else { EXIT_RUNTIME }
+}
+
+/// Theme health: bundled count, `theme.missing_key` total, broken user theme files. The
+/// headless build has no theme parser and reports nulls.
+fn theme_report(problems: &mut usize) -> serde_json::Value {
+    #[cfg(feature = "gui")]
+    {
+        let dir = fauxfield_store::settings::user_themes_dir();
+        let (bundled, missing, errors) = fauxfield_gui::theme::report(dir.as_deref());
+        *problems += errors.len();
+        json!({
+            "bundled": bundled,
+            "missing_keys": missing,
+            "errors": errors.iter().map(|e| e.text()).collect::<Vec<_>>(),
+        })
+    }
+    #[cfg(not(feature = "gui"))]
+    {
+        let _ = problems;
+        json!({ "bundled": null, "missing_keys": null, "errors": [] })
+    }
 }

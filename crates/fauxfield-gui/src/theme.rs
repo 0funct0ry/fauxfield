@@ -1,7 +1,7 @@
 //! Theme tokens as GPUI colours, converted from `theme_model` (SPEC §9.2). Views read colours
 //! only from here: no hard-coded colours anywhere in views.
 
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 
 use gpui::{App, Global, Hsla, Rgba};
 
@@ -55,15 +55,175 @@ pub struct Theme {
 
 impl Global for Theme {}
 
+struct Bundled {
+    themes: Vec<ThemeTokens>,
+    missing_keys: usize,
+}
+
+fn load_bundled() -> &'static Bundled {
+    static ALL: OnceLock<Bundled> = OnceLock::new();
+    ALL.get_or_init(|| {
+        // One comes first: it is the fallback for every other family's missing keys.
+        let one = theme_model::parse_family(BUNDLED_THEME_FAMILIES[0]).expect("One parses");
+        let dark = one
+            .iter()
+            .find(|t| t.name == DEFAULT_DARK)
+            .expect("One Dark");
+        let light = one
+            .iter()
+            .find(|t| t.name == DEFAULT_LIGHT)
+            .expect("One Light");
+        let mut themes = one.clone();
+        let mut missing_keys = 0;
+        for fam in &BUNDLED_THEME_FAMILIES[1..] {
+            let p = theme_model::parse_family_counted(fam, Some((dark, light)))
+                .expect("bundled theme family parses");
+            missing_keys += p.missing_keys;
+            themes.extend(p.themes);
+        }
+        Bundled {
+            themes,
+            missing_keys,
+        }
+    })
+}
+
 /// All bundled themes, parsed once (never per frame or per preview step).
 pub fn bundled() -> &'static [ThemeTokens] {
-    static ALL: OnceLock<Vec<ThemeTokens>> = OnceLock::new();
-    ALL.get_or_init(|| {
-        BUNDLED_THEME_FAMILIES
+    &load_bundled().themes
+}
+
+/// Optional keys the bundled themes lacked and took from One Dark/One Light (`doctor`).
+pub fn missing_keys() -> usize {
+    load_bundled().missing_keys
+}
+
+/// A user theme file that could not be loaded (Problems and `doctor`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThemeProblem {
+    pub file: String,
+    pub line: Option<usize>,
+    pub message: String,
+}
+
+impl ThemeProblem {
+    /// `themes/foo.json: line 12: message`
+    pub fn text(&self) -> String {
+        match self.line {
+            Some(l) => format!("{}: line {l}: {}", self.file, self.message),
+            None => format!("{}: {}", self.file, self.message),
+        }
+    }
+}
+
+fn user_store() -> &'static RwLock<Vec<ThemeTokens>> {
+    static USER: OnceLock<RwLock<Vec<ThemeTokens>>> = OnceLock::new();
+    USER.get_or_init(|| RwLock::new(Vec::new()))
+}
+
+/// Replaces the user themes with every `*.json` family in `dir`. A broken file is skipped and
+/// reported; the rest still load.
+pub fn load_user_themes(dir: Option<&std::path::Path>) -> Vec<ThemeProblem> {
+    let b = load_bundled();
+    let fb = (
+        b.themes
             .iter()
-            .flat_map(|f| theme_model::parse_family(f).expect("bundled theme family parses"))
-            .collect()
-    })
+            .find(|t| t.name == DEFAULT_DARK)
+            .expect("One Dark"),
+        b.themes
+            .iter()
+            .find(|t| t.name == DEFAULT_LIGHT)
+            .expect("One Light"),
+    );
+    let (mut themes, mut problems) = (Vec::new(), Vec::new());
+    let mut files: Vec<_> = dir
+        .and_then(|d| std::fs::read_dir(d).ok())
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "json"))
+        .collect();
+    files.sort();
+    for p in files {
+        let file = format!(
+            "themes/{}",
+            p.file_name()
+                .map(|n| n.to_string_lossy())
+                .unwrap_or_default()
+        );
+        let text = match std::fs::read_to_string(&p) {
+            Ok(t) => t,
+            Err(e) => {
+                problems.push(ThemeProblem {
+                    file,
+                    line: None,
+                    message: e.to_string(),
+                });
+                continue;
+            }
+        };
+        match theme_model::parse_family_counted(&text, Some(fb)) {
+            Ok(parsed) => themes.extend(parsed.themes),
+            Err(e) => {
+                let (line, message) = match e.downcast_ref::<serde_json::Error>() {
+                    Some(j) => (Some(j.line()), j.to_string()),
+                    None => (None, format!("{e:#}")),
+                };
+                problems.push(ThemeProblem {
+                    file,
+                    line,
+                    message,
+                });
+            }
+        }
+    }
+    *user_store().write().unwrap_or_else(|e| e.into_inner()) = themes;
+    problems
+}
+
+/// Tokens of one theme by name (user themes first), without cloning the whole list.
+pub fn tokens_named(name: &str) -> Option<ThemeTokens> {
+    let user = user_store().read().unwrap_or_else(|e| e.into_inner());
+    user.iter()
+        .chain(bundled())
+        .find(|t| t.name == name)
+        .cloned()
+}
+
+/// `doctor`: bundled theme count, optional keys filled from One, and broken user theme files.
+pub fn report(user_dir: Option<&std::path::Path>) -> (usize, usize, Vec<ThemeProblem>) {
+    let b = load_bundled();
+    (b.themes.len(), b.missing_keys, load_user_themes(user_dir))
+}
+
+/// One selectable theme.
+#[derive(Clone)]
+pub struct Entry {
+    pub tokens: ThemeTokens,
+    /// Loaded from `~/.config/fauxfield/themes` (tagged "user" in the selector).
+    pub user: bool,
+}
+
+/// Bundled and user themes; a user theme replaces a bundled one of the same name.
+pub fn all() -> Vec<Entry> {
+    let user = user_store()
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    let mut out: Vec<Entry> = bundled()
+        .iter()
+        .filter(|t| !user.iter().any(|u| u.name == t.name))
+        .map(|t| Entry {
+            tokens: t.clone(),
+            user: false,
+        })
+        .collect();
+    out.extend(user.into_iter().map(|t| Entry {
+        tokens: t,
+        user: true,
+    }));
+    out
 }
 
 fn hsla(c: Rgba8) -> Hsla {
@@ -122,10 +282,10 @@ impl Theme {
     }
 
     pub fn named(name: &str) -> Option<Theme> {
-        bundled()
+        all()
             .iter()
-            .find(|t| t.name == name)
-            .map(Theme::from_tokens)
+            .find(|e| e.tokens.name == name)
+            .map(|e| Theme::from_tokens(&e.tokens))
     }
 
     pub fn one_dark() -> Theme {
@@ -181,8 +341,74 @@ mod tests {
     fn bundled_themes_load() {
         assert_eq!(Theme::one_dark().appearance, Appearance::Dark);
         assert_eq!(Theme::one_light().appearance, Appearance::Light);
-        assert_eq!(bundled().len(), 2);
+        assert_eq!(bundled().len(), 27);
+        for n in [
+            "Ayu Mirage",
+            "Gruvbox Dark Hard",
+            "Rosé Pine Dawn",
+            "Catppuccin Mocha",
+            "Tokyo Night",
+            "Nord Dark",
+        ] {
+            assert!(Theme::named(n).is_some(), "{n}");
+        }
         assert!(Theme::named("Nope").is_none());
+    }
+
+    #[test]
+    fn bundled_missing_keys_are_counted_and_light_themes_have_light_fallbacks() {
+        // Counted, not fatal; the number only matters to `doctor`.
+        let _ = missing_keys();
+        for t in bundled() {
+            assert_ne!(
+                t.text, t.editor,
+                "{} text must differ from its background",
+                t.name
+            );
+        }
+    }
+
+    #[test]
+    fn user_themes_win_collisions_and_broken_files_are_reported() {
+        let d = tempfile::tempdir().unwrap();
+        let ok = r##"{"name":"F","themes":[{"name":"One Dark","appearance":"dark","style":{"editor.background":"#101010","text":"#eeeeee"}}]}"##;
+        std::fs::write(d.path().join("a.json"), ok).unwrap();
+        std::fs::write(d.path().join("b.json"), "{\n  \"themes\": [,\n}").unwrap();
+        let problems = load_user_themes(Some(d.path()));
+        assert_eq!(problems.len(), 1);
+        assert_eq!(problems[0].file, "themes/b.json");
+        assert!(problems[0].line.is_some());
+        let e = all()
+            .into_iter()
+            .find(|e| e.tokens.name == "One Dark")
+            .unwrap();
+        assert!(e.user);
+        assert_eq!(
+            all().iter().filter(|e| e.tokens.name == "One Dark").count(),
+            1
+        );
+        assert!(load_user_themes(None).is_empty());
+        assert!(!all().iter().any(|e| e.user));
+    }
+
+    #[test]
+    fn store_theme_index_matches_the_bundled_files() {
+        let from_files: Vec<(String, &str)> = bundled()
+            .iter()
+            .map(|t| {
+                let a = if t.appearance == Appearance::Dark {
+                    "dark"
+                } else {
+                    "light"
+                };
+                (t.name.clone(), a)
+            })
+            .collect();
+        let index: Vec<(String, &str)> = fauxfield_store::settings::BUNDLED_THEMES
+            .iter()
+            .map(|(n, a)| (n.to_string(), *a))
+            .collect();
+        assert_eq!(from_files, index);
     }
 
     #[test]

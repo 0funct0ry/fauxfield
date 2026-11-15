@@ -103,6 +103,22 @@ struct RawTheme {
 
 /// Parses a theme family (or a single theme) into tokens, in file order.
 pub fn parse_family(json: &str) -> Result<Vec<ThemeTokens>> {
+    Ok(parse_family_counted(json, None)?.themes)
+}
+
+/// A parsed family plus how many optional keys were absent and taken from the fallback theme.
+pub struct Parsed {
+    pub themes: Vec<ThemeTokens>,
+    pub missing_keys: usize,
+}
+
+/// Like [`parse_family`], but a missing optional key falls back to the same token of
+/// `fallbacks` (One Dark for dark themes, One Light for light ones; SPEC §9.2) and is counted.
+/// Without fallbacks the key is derived from other tokens of the same theme.
+pub fn parse_family_counted(
+    json: &str,
+    fallbacks: Option<(&ThemeTokens, &ThemeTokens)>,
+) -> Result<Parsed> {
     let fam: Family = serde_json::from_str(json).context("theme file is not valid JSON")?;
     let mut raws = fam.themes.unwrap_or_default();
     if let (Some(name), Some(appearance), Some(style)) = (fam.name, fam.appearance, fam.style) {
@@ -115,10 +131,22 @@ pub fn parse_family(json: &str) -> Result<Vec<ThemeTokens>> {
     if raws.is_empty() {
         bail!("theme file contains no themes");
     }
-    raws.into_iter().map(tokens_from).collect()
+    let mut missing_keys = 0;
+    let themes = raws
+        .into_iter()
+        .map(|r| tokens_from(r, fallbacks, &mut missing_keys))
+        .collect::<Result<_>>()?;
+    Ok(Parsed {
+        themes,
+        missing_keys,
+    })
 }
 
-fn tokens_from(raw: RawTheme) -> Result<ThemeTokens> {
+fn tokens_from(
+    raw: RawTheme,
+    fallbacks: Option<(&ThemeTokens, &ThemeTokens)>,
+    missing: &mut usize,
+) -> Result<ThemeTokens> {
     let appearance = match raw.appearance.as_str() {
         "dark" => Appearance::Dark,
         "light" => Appearance::Light,
@@ -133,51 +161,70 @@ fn tokens_from(raw: RawTheme) -> Result<ThemeTokens> {
         Rgba8::parse(v.as_str()?)
     };
     let need = |key: &str| get(key).with_context(|| format!("theme {}: missing {key}", raw.name));
-    let or = |key: &str, fallback: Rgba8| get(key).unwrap_or(fallback);
+    let one = fallbacks.map(|(dark, light)| match appearance {
+        Appearance::Dark => dark,
+        Appearance::Light => light,
+    });
+    let count = std::cell::Cell::new(0usize);
+    let or = |key: &str, field: fn(&ThemeTokens) -> Rgba8, chain: Rgba8| {
+        get(key).unwrap_or_else(|| match one {
+            Some(o) => {
+                count.set(count.get() + 1);
+                field(o)
+            }
+            None => chain,
+        })
+    };
 
     let editor = need("editor.background")?;
-    let surface = or("surface.background", editor);
-    let title_bar = or("title_bar.background", surface);
+    let surface = or("surface.background", |o| o.surface, editor);
+    let title_bar = or("title_bar.background", |o| o.title_bar, surface);
     let text = need("text")?;
-    let text_muted = or("text.muted", text);
-    let border = or("border", surface);
-    let accent = or("text.accent", text);
-    let string = or("syntax.string", text);
-    Ok(ThemeTokens {
+    let text_muted = or("text.muted", |o| o.text_muted, text);
+    let border = or("border", |o| o.border, surface);
+    let accent = or("text.accent", |o| o.text_accent, text);
+    let string = or("syntax.string", |o| o.syntax_string, text);
+    let result = ThemeTokens {
         name: raw.name.clone(),
         appearance,
-        background: or("background", title_bar),
+        background: or("background", |o| o.background, title_bar),
         title_bar,
-        status_bar: or("status_bar.background", title_bar),
+        status_bar: or("status_bar.background", |o| o.status_bar, title_bar),
         surface,
-        panel: or("panel.background", surface),
-        elevated: or("elevated_surface.background", surface),
+        panel: or("panel.background", |o| o.panel, surface),
+        elevated: or("elevated_surface.background", |o| o.elevated, surface),
         editor,
-        tab_bar: or("tab_bar.background", surface),
-        tab_active: or("tab.active_background", editor),
-        tab_inactive: or("tab.inactive_background", surface),
+        tab_bar: or("tab_bar.background", |o| o.tab_bar, surface),
+        tab_active: or("tab.active_background", |o| o.tab_active, editor),
+        tab_inactive: or("tab.inactive_background", |o| o.tab_inactive, surface),
         border,
-        border_variant: or("border.variant", border),
-        border_focused: or("border.focused", accent),
+        border_variant: or("border.variant", |o| o.border_variant, border),
+        border_focused: or("border.focused", |o| o.border_focused, accent),
         text,
         text_muted,
-        text_placeholder: or("text.placeholder", text_muted),
+        text_placeholder: or("text.placeholder", |o| o.text_placeholder, text_muted),
         text_accent: accent,
-        icon_muted: or("icon.muted", text_muted),
-        element_hover: or("element.hover", surface),
-        element_selected: or("element.selected", surface),
-        created: or("created", string),
-        modified: or("modified", text),
-        deleted: or("deleted", text),
-        syntax_function: or("syntax.function", accent),
-        syntax_type: or("syntax.type", text),
-        syntax_keyword: or("syntax.keyword", text),
+        icon_muted: or("icon.muted", |o| o.icon_muted, text_muted),
+        element_hover: or("element.hover", |o| o.element_hover, surface),
+        element_selected: or("element.selected", |o| o.element_selected, surface),
+        created: or("created", |o| o.created, string),
+        modified: or("modified", |o| o.modified, text),
+        deleted: or("deleted", |o| o.deleted, text),
+        syntax_function: or("syntax.function", |o| o.syntax_function, accent),
+        syntax_type: or("syntax.type", |o| o.syntax_type, text),
+        syntax_keyword: or("syntax.keyword", |o| o.syntax_keyword, text),
         syntax_string: string,
-        syntax_constant: or("syntax.constant", or("syntax.number", text)),
-        syntax_number: or("syntax.number", text),
-        syntax_property: or("syntax.property", text),
-        syntax_comment: or("syntax.comment", text_muted),
-    })
+        syntax_constant: or(
+            "syntax.constant",
+            |o| o.syntax_constant,
+            or("syntax.number", |o| o.syntax_number, text),
+        ),
+        syntax_number: or("syntax.number", |o| o.syntax_number, text),
+        syntax_property: or("syntax.property", |o| o.syntax_property, text),
+        syntax_comment: or("syntax.comment", |o| o.syntax_comment, text_muted),
+    };
+    *missing += count.get();
+    Ok(result)
 }
 
 #[cfg(test)]

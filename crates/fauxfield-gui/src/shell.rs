@@ -4,6 +4,9 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use gpui::{
     Context, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
@@ -20,10 +23,12 @@ use crate::layout::{BottomTab, Layout};
 use crate::search::{self, CommandEntry, Hit, Kind, Target};
 use crate::tabs::{TabKind, TabSet};
 use crate::theme::{self, Theme};
+use crate::theme_model::Appearance;
 use crate::traffic::TrafficRow;
 use crate::tree::{self, MenuAct, RowKind};
 use crate::ui::STATUS_BAR_H;
 use crate::view::{Problem, Workspace};
+use fauxfield_store::settings::ThemeSetting;
 use fauxfield_store::{Background, Event as StoreEvent, Store};
 
 pub const TRAFFIC_ROWS: usize = 10_000;
@@ -340,12 +345,43 @@ pub enum OpenMode {
     Reveal,
 }
 
+/// The theme the settings select for the current OS appearance; unknown names fall back to One.
+pub(crate) fn resolve_theme(s: &ThemeSetting, os_dark: bool) -> Theme {
+    use fauxfield_store::settings::ThemeMode;
+    let dark = match s.mode {
+        ThemeMode::System => os_dark,
+        ThemeMode::Dark => true,
+        ThemeMode::Light => false,
+    };
+    let name = if dark { &s.dark } else { &s.light };
+    Theme::named(name).unwrap_or_else(|| {
+        if dark {
+            Theme::one_dark()
+        } else {
+            Theme::one_light()
+        }
+    })
+}
+
+fn theme_problem(p: &theme::ThemeProblem) -> Problem {
+    Problem {
+        warning: true,
+        code: "theme.invalid".into(),
+        message: p.text(),
+        file: p.file.clone(),
+        path: String::new(),
+        target: None,
+    }
+}
+
 #[derive(Default)]
 pub struct ShellOptions {
     /// Where the layout JSON lives; `None` disables persistence (tests).
     pub layout_path: Option<PathBuf>,
     /// Directory holding an optional user `keymap.toml`.
     pub config_dir: Option<PathBuf>,
+    /// The shared `settings.toml` (theme, fonts, `[editor]`); `None` disables it (tests).
+    pub settings_path: Option<PathBuf>,
     /// Workspace folder to open; `None` shows the Welcome view.
     pub workspace: Option<PathBuf>,
     /// File holding the recent-workspaces list; `None` disables it (tests).
@@ -382,6 +418,12 @@ pub struct Shell {
     pub(crate) active_env: String,
     pub(crate) picker: Option<Picker>,
     theme_before_preview: Option<String>,
+    pub(crate) settings_path: Option<PathBuf>,
+    pub(crate) theme_setting: ThemeSetting,
+    pub(crate) os_dark: bool,
+    theme_problems: Vec<Problem>,
+    settings_dirty: Arc<AtomicBool>,
+    _settings_watch: Option<fauxfield_store::settings::ConfigWatcher>,
     recent: Vec<String>,
     pub(crate) picker_scroll: UniformListScrollHandle,
     pub(crate) traffic: Vec<TrafficRow>,
@@ -633,27 +675,46 @@ impl Shell {
         let (keymap, keymap_error) = Keymap::load(opts.config_dir.as_deref());
         let mut problems = actions::install(cx, &keymap);
         problems.extend(keymap_error);
+        let settings_file = opts.settings_path.clone();
         let (editor_settings, editor_notes) =
-            crate::code_editor::EditorSettings::load(opts.config_dir.as_deref());
+            crate::code_editor::EditorSettings::load(settings_file.as_deref());
         problems.extend(editor_notes);
         let editor_settings_for_ws = editor_settings.clone();
 
+        let settings = settings_file
+            .as_deref()
+            .map(fauxfield_store::settings::Settings::load)
+            .transpose()
+            .unwrap_or_else(|e| {
+                problems.push(e);
+                None
+            })
+            .unwrap_or_default();
+        let theme_setting = settings.theme;
+        let theme_dir = settings_file
+            .as_deref()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("themes"));
+        let theme_problems: Vec<Problem> = theme::load_user_themes(theme_dir.as_deref())
+            .iter()
+            .map(theme_problem)
+            .collect();
         let os_dark = matches!(
             window.appearance(),
             gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark
         );
-        let chosen = layout
-            .theme
-            .as_deref()
-            .and_then(Theme::named)
-            .unwrap_or_else(|| {
-                if os_dark {
-                    Theme::one_dark()
-                } else {
-                    Theme::one_light()
-                }
-            });
-        cx.set_global(chosen);
+        cx.set_global(resolve_theme(&theme_setting, os_dark));
+
+        let settings_dirty = Arc::new(AtomicBool::new(false));
+        let _settings_watch = settings_file.as_ref().and_then(|f| {
+            let flag = settings_dirty.clone();
+            let mut paths = vec![f.clone()];
+            paths.extend(theme_dir.clone());
+            fauxfield_store::settings::watch(&paths, Duration::from_millis(30), move || {
+                flag.store(true, Ordering::SeqCst)
+            })
+            .ok()
+        });
 
         let saved: Vec<_> = layout
             .tabs
@@ -724,6 +785,12 @@ impl Shell {
             resp_sel: HashMap::new(),
             picker: None,
             theme_before_preview: None,
+            settings_path: opts.settings_path.clone(),
+            theme_setting,
+            os_dark,
+            theme_problems,
+            settings_dirty,
+            _settings_watch,
             recent: Vec::new(),
             picker_scroll: UniformListScrollHandle::new(),
             // Real rows come from the engine; synthetic ones feed tests and dev-mcp scenarios.
@@ -877,6 +944,30 @@ impl Shell {
         // Saved tab titles may be stale (files edited while the app was closed).
         shell.refresh_tab_titles();
         shell.attach_store(cx);
+        cx.observe_window_appearance(window, |this, window, cx| {
+            let dark = matches!(
+                window.appearance(),
+                gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark
+            );
+            this.on_appearance_changed(dark, cx);
+        })
+        .detach();
+        let dirty = shell.settings_dirty.clone();
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(50))
+                    .await;
+                if dirty.swap(false, Ordering::SeqCst)
+                    && this
+                        .update(cx, |this, cx| this.reload_settings(cx))
+                        .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
         let weak = cx.entity().downgrade();
         window.on_window_should_close(cx, move |_w, cx| {
             weak.update(cx, |s, cx| s.should_close(cx)).unwrap_or(true)
@@ -979,6 +1070,7 @@ impl Shell {
                 .unwrap_or_default();
         }
         self.problems = Workspace::problems(&snap);
+        self.problems.extend(self.theme_problems.clone());
         self.conflicts = store.conflicts();
         let ws = &self.ws;
         let before = self.tabs.tabs().len();
@@ -1026,6 +1118,7 @@ impl Shell {
         self.known_folders.clear();
         self.apply_start_collapsed();
         self.problems = Workspace::problems(&snap);
+        self.problems.extend(self.theme_problems.clone());
         self.store = Some(store);
         self.tabs = TabSet::from_saved(vec![], None);
         self.selected = None;
@@ -1749,11 +1842,30 @@ impl Shell {
                 hits
             }
             PickerKind::Theme => {
-                let names: Vec<String> = theme::bundled().iter().map(|t| t.name.clone()).collect();
+                // Dark group first, then Light; each keeps bundled-then-user order.
+                let mut entries = theme::all();
+                entries.sort_by_key(|e| e.tokens.appearance != Appearance::Dark);
+                let names: Vec<String> = entries.iter().map(|e| e.tokens.name.clone()).collect();
                 search::filter_labels(query, &names)
                     .into_iter()
                     .map(|i| {
-                        simple_hit(Kind::Theme, &names[i], "", Target::Theme(names[i].clone()))
+                        let e = &entries[i];
+                        let group = if e.tokens.appearance == Appearance::Dark {
+                            "Dark"
+                        } else {
+                            "Light"
+                        };
+                        let detail = if e.user {
+                            format!("{group} · user")
+                        } else {
+                            group.to_string()
+                        };
+                        simple_hit(
+                            Kind::Theme,
+                            &names[i],
+                            &detail,
+                            Target::Theme(names[i].clone()),
+                        )
                     })
                     .collect()
             }
@@ -1910,6 +2022,92 @@ impl Shell {
         }
     }
 
+    /// Applies a theme the user picked and persists it in `settings.toml`: the Dark or Light
+    /// slot of its appearance is set and, unless following the system, the mode pins it.
+    pub(crate) fn choose_theme(&mut self, name: &str, cx: &mut Context<Self>) {
+        use fauxfield_store::settings::ThemeMode;
+        let Some(t) = Theme::named(name) else { return };
+        let which = if t.appearance == Appearance::Dark {
+            ThemeMode::Dark
+        } else {
+            ThemeMode::Light
+        };
+        if which == ThemeMode::Dark {
+            self.theme_setting.dark = name.to_string();
+        } else {
+            self.theme_setting.light = name.to_string();
+        }
+        if self.theme_setting.mode != ThemeMode::System {
+            self.theme_setting.mode = which;
+        }
+        self.apply_theme(name, cx);
+        if let Some(path) = &self.settings_path {
+            let mode = (self.theme_setting.mode != ThemeMode::System).then_some(which);
+            if let Err(e) = fauxfield_store::settings::write_theme(path, mode, Some((which, name)))
+            {
+                self.notify(format!("Could not save theme: {e}"), cx);
+            }
+        }
+    }
+
+    /// The "Follow system appearance" switch: `mode = "system"`, or pin the current theme.
+    pub(crate) fn set_follow_system(&mut self, follow: bool, cx: &mut Context<Self>) {
+        use fauxfield_store::settings::ThemeMode;
+        let current = cx.global::<Theme>().appearance;
+        self.theme_setting.mode = match (follow, current) {
+            (true, _) => ThemeMode::System,
+            (false, Appearance::Dark) => ThemeMode::Dark,
+            (false, Appearance::Light) => ThemeMode::Light,
+        };
+        let mode = self.theme_setting.mode;
+        if let Some(path) = &self.settings_path
+            && let Err(e) = fauxfield_store::settings::write_theme(path, Some(mode), None)
+        {
+            self.notify(format!("Could not save theme: {e}"), cx);
+        }
+        let t = resolve_theme(&self.theme_setting, self.os_dark);
+        cx.set_global(t);
+        cx.notify();
+    }
+
+    /// The OS switched between light and dark.
+    pub(crate) fn on_appearance_changed(&mut self, dark: bool, cx: &mut Context<Self>) {
+        self.os_dark = dark;
+        if self.theme_setting.mode == fauxfield_store::settings::ThemeMode::System
+            && self
+                .picker
+                .as_ref()
+                .is_none_or(|p| p.kind != PickerKind::Theme)
+        {
+            let t = resolve_theme(&self.theme_setting, dark);
+            cx.set_global(t);
+            cx.notify();
+        }
+    }
+
+    /// Re-reads `settings.toml` and the user themes after the watcher fired.
+    pub(crate) fn reload_settings(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.settings_path.clone() else {
+            return;
+        };
+        let dir = path.parent().map(|p| p.join("themes"));
+        self.theme_problems = theme::load_user_themes(dir.as_deref())
+            .iter()
+            .map(theme_problem)
+            .collect();
+        match fauxfield_store::settings::Settings::load(&path) {
+            Ok(s) => self.theme_setting = s.theme,
+            Err(e) => self.notify(e, cx),
+        }
+        self.problems.retain(|p| p.code != "theme.invalid");
+        self.problems.extend(self.theme_problems.clone());
+        if self.theme_before_preview.is_none() {
+            let t = resolve_theme(&self.theme_setting, self.os_dark);
+            cx.set_global(t);
+        }
+        cx.notify();
+    }
+
     pub(crate) fn apply_theme(&mut self, name: &str, cx: &mut Context<Self>) {
         if let Some(t) = Theme::named(name) {
             cx.set_global(t);
@@ -1988,10 +2186,8 @@ impl Shell {
         };
         match &hit.target {
             Target::Theme(name) => {
-                self.apply_theme(name, cx);
-                self.layout.theme = Some(name.clone());
                 self.theme_before_preview = None;
-                self.save_layout();
+                self.choose_theme(name, cx);
                 self.close_picker(false, window, cx);
             }
             Target::SwitchEnvironment(name) => {

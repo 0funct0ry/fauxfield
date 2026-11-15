@@ -129,6 +129,7 @@ fn launch(
             let opts = ShellOptions {
                 layout_path: dirs.as_ref().map(|d| d.data_dir().join("layout.json")),
                 config_dir: dirs.as_ref().map(|d| d.config_dir().to_path_buf()),
+                settings_path: fauxfield_store::settings::settings_path(),
                 workspace: workspace.clone(),
                 recent_path: recent_file(dirs.as_ref()),
                 port_offset: 0,

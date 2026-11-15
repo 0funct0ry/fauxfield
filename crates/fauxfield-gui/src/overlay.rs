@@ -134,7 +134,10 @@ impl Shell {
                         .track_scroll(self.picker_scroll.clone())
                         .h(px(list_h))
                         .into_any_element()
-                    }),
+                    })
+                    .children(
+                        (p.kind == PickerKind::Theme).then(|| self.render_theme_footer(t, cx)),
+                    ),
             )
     }
 
@@ -156,7 +159,7 @@ impl Shell {
             (None, Kind::Dataset) => icon("server", 14., t.icon_muted).into_any_element(),
             (None, Kind::Variable) => icon("file-text", 14., t.icon_muted).into_any_element(),
             (None, Kind::Network) => icon("wifi", 14., t.icon_muted).into_any_element(),
-            (None, Kind::Theme) => icon("palette", 14., t.icon_muted).into_any_element(),
+            (None, Kind::Theme) => swatch_strip(t, &h.label),
             (None, _) => icon("terminal", 14., t.icon_muted).into_any_element(),
         };
         crate::dev_id_z!(
@@ -194,6 +197,77 @@ impl Shell {
             Row,
             &h.label,
             PickerHit(i)
+        )
+        .into_any_element()
+    }
+}
+
+/// Background, accent and three syntax colours of a theme (SPEC §9.2 swatch strip).
+fn swatch_strip(t: &Theme, name: &str) -> AnyElement {
+    let Some(tok) = crate::theme::tokens_named(name) else {
+        return icon("palette", 14., t.icon_muted).into_any_element();
+    };
+    let to_hsla = |c: crate::theme_model::Rgba8| -> gpui::Hsla {
+        gpui::Rgba {
+            r: f32::from(c.r) / 255.0,
+            g: f32::from(c.g) / 255.0,
+            b: f32::from(c.b) / 255.0,
+            a: 1.0,
+        }
+        .into()
+    };
+    let colors = [
+        tok.editor,
+        tok.text_accent,
+        tok.syntax_string,
+        tok.syntax_function,
+        tok.syntax_keyword,
+    ];
+    div()
+        .flex()
+        .flex_row()
+        .rounded(px(3.))
+        .overflow_hidden()
+        .border_1()
+        .border_color(t.border_variant)
+        .children(
+            colors
+                .into_iter()
+                .map(|c| div().w(px(8.)).h(px(14.)).bg(to_hsla(c))),
+        )
+        .into_any_element()
+}
+
+impl Shell {
+    /// Theme selector footer: the "Follow system appearance" switch.
+    fn render_theme_footer(&self, t: &Theme, cx: &mut Context<Self>) -> AnyElement {
+        let follow = self.theme_setting.mode == fauxfield_store::settings::ThemeMode::System;
+        let box_ = div()
+            .size(px(14.))
+            .rounded(px(3.))
+            .border_1()
+            .border_color(t.border_focused)
+            .when(follow, |d| d.bg(t.accent));
+        crate::dev_id!(
+            div()
+                .id("theme-follow-system")
+                .h(px(ITEM_H))
+                .px(px(12.))
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(8.))
+                .border_t_1()
+                .border_color(t.border_variant)
+                .cursor_pointer()
+                .text_color(t.text_muted)
+                .child(box_)
+                .child("Follow system appearance")
+                .on_click(cx.listener(move |this, _, _, cx| this.set_follow_system(!follow, cx))),
+            "theme-follow-system",
+            Button,
+            "Follow system appearance",
+            None
         )
         .into_any_element()
     }

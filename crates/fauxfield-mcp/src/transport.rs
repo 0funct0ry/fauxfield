@@ -123,30 +123,30 @@ pub struct McpSettings {
     pub redact: Vec<String>,
 }
 
-#[derive(Deserialize, Default)]
-struct SettingsFile {
-    #[serde(default)]
-    mcp: McpSettings,
-}
-
 impl McpSettings {
-    /// Parse the `[mcp]` table out of a settings.toml document.
+    /// Parse the `[mcp]` table out of a settings.toml document (via the shared store loader).
     pub fn from_toml(text: &str) -> Result<Self, String> {
-        toml::from_str::<SettingsFile>(text)
-            .map(|f| f.mcp)
-            .map_err(|e| format!("invalid settings.toml: {e}"))
+        Self::from_settings(fauxfield_store::settings::Settings::from_toml(text)?)
+    }
+
+    pub fn from_settings(s: fauxfield_store::settings::Settings) -> Result<Self, String> {
+        let m = s.mcp;
+        Ok(Self {
+            transport: m
+                .transport
+                .map(|t| t.parse::<TransportKind>())
+                .transpose()
+                .map_err(|e| format!("invalid settings.toml: {e}"))?,
+            allow: m.allow,
+            socket: m.socket,
+            port: m.port,
+            redact: m.redact,
+        })
     }
 
     /// Load `<config dir>/fauxfield/settings.toml`; a missing file means defaults.
     pub fn load_default() -> Result<Self, String> {
-        let Some(path) = settings_path() else {
-            return Ok(Self::default());
-        };
-        match std::fs::read_to_string(&path) {
-            Ok(t) => Self::from_toml(&t).map_err(|e| format!("{}: {e}", path.display())),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
-            Err(e) => Err(format!("{}: {e}", path.display())),
-        }
+        Self::from_settings(fauxfield_store::settings::Settings::load_default()?)
     }
 
     /// Settings first, then flags win.
@@ -171,19 +171,7 @@ impl McpSettings {
     }
 }
 
-pub fn settings_path() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("FAUXFIELD_SETTINGS") {
-        return Some(PathBuf::from(p));
-    }
-    let base = if cfg!(windows) {
-        std::env::var_os("APPDATA").map(PathBuf::from)
-    } else {
-        std::env::var_os("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-    }?;
-    Some(base.join("fauxfield").join("settings.toml"))
-}
+pub use fauxfield_store::settings::settings_path;
 
 /// Unix: `$XDG_RUNTIME_DIR/fauxfield/mcp-<pid>.sock` (elsewhere the per-user temp dir; on macOS
 /// `$TMPDIR` is already per-user). Windows: `\\.\pipe\fauxfield-mcp-<pid>`.

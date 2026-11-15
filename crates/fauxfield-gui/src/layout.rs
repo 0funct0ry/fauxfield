@@ -1,4 +1,4 @@
-//! Dock sizes, visibility, open tabs and the chosen theme, persisted as JSON in the platform
+//! Dock sizes, visibility, open tabs, persisted as JSON in the platform
 //! data dir (M1 only; per-workspace `.fauxfield/ui.json` arrives in M2). Loading never fails: a
 //! missing, corrupt, or future-version file yields defaults.
 
@@ -54,7 +54,6 @@ pub struct Layout {
     pub bottom_tab: BottomTab,
     /// Selected sidebar tab id (`servers`|`environments`|`datasets`); unknown loads as servers.
     pub sidebar_tab: String,
-    pub theme: Option<String>,
     pub tabs: Vec<Tab>,
     pub active_tab: Option<String>,
     /// Format valid JSON bodies when the body editor saves (off by default).
@@ -85,7 +84,6 @@ impl Default for Layout {
             preview_height: PREVIEW.1,
             bottom_tab: BottomTab::Traffic,
             sidebar_tab: "servers".into(),
-            theme: None,
             tabs: Vec::new(),
             active_tab: None,
             format_on_save: false,
@@ -176,7 +174,6 @@ mod tests {
         let mut l = Layout {
             left_open: false,
             bottom_tab: BottomTab::Logs,
-            theme: Some("One Light".into()),
             ..Layout::default()
         };
         l.tabs.push(Tab {

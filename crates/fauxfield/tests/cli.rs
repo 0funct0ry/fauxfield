@@ -603,6 +603,7 @@ fn run_with_data(data: &std::path::Path, args: &[&str]) -> (i32, String, String)
     let out = Command::cargo_bin("fauxfield")
         .unwrap()
         .env("FAUXFIELD_DATA_DIR", data)
+        .env("FAUXFIELD_SETTINGS", data.join("settings.toml"))
         .args(args)
         .output()
         .unwrap();
@@ -969,7 +970,8 @@ fn theme_list_and_set_write_settings_without_clobbering() {
         .iter()
         .map(|t| t["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["One Dark", "One Light"]);
+    assert_eq!(&names[..2], ["One Dark", "One Light"]);
+    assert!(names.contains(&"Nord Dark") && names.contains(&"Tokyo Night"));
     let (code, _) = theme(&["theme", "set", "one light"]);
     assert_eq!(code, 0);
     let text = std::fs::read_to_string(&settings).unwrap();

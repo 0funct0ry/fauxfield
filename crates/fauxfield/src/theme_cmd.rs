@@ -5,9 +5,10 @@
 use std::path::PathBuf;
 
 use clap::Subcommand;
+use fauxfield_store::settings::{ThemeMode, write_theme};
 use serde::Deserialize;
 use serde_json::json;
-use toml_edit::{DocumentMut, Item, Table, value};
+use toml_edit::DocumentMut;
 
 use crate::{
     cli::{EXIT_OK, EXIT_RUNTIME, EXIT_USAGE},
@@ -31,8 +32,6 @@ pub enum ThemeAction {
         json: bool,
     },
 }
-
-const BUNDLED: &str = include_str!("../../fauxfield-gui/assets/themes/one.json");
 
 #[derive(Deserialize)]
 struct Family {
@@ -69,13 +68,18 @@ fn parse(text: &str, source: &'static str) -> Vec<Theme> {
 }
 
 fn user_dir() -> Option<PathBuf> {
-    fauxfield_mcp::transport::settings_path()?
-        .parent()
-        .map(|p| p.join("themes"))
+    fauxfield_store::settings::user_themes_dir()
 }
 
 fn all_themes() -> Vec<Theme> {
-    let mut v = parse(BUNDLED, "bundled");
+    let mut v: Vec<Theme> = fauxfield_store::settings::BUNDLED_THEMES
+        .iter()
+        .map(|(name, appearance)| Theme {
+            name: (*name).to_owned(),
+            appearance: (*appearance).to_owned(),
+            source: "bundled",
+        })
+        .collect();
     if let Some(dir) = user_dir()
         && let Ok(rd) = std::fs::read_dir(dir)
     {
@@ -110,12 +114,12 @@ fn current(doc: &DocumentMut) -> (String, String, String) {
 }
 
 pub fn theme(action: ThemeAction) -> i32 {
-    let path = fauxfield_mcp::transport::settings_path();
+    let path = fauxfield_store::settings::settings_path();
     let text = path
         .as_ref()
         .and_then(|p| std::fs::read_to_string(p).ok())
         .unwrap_or_default();
-    let mut doc: DocumentMut = match text.parse() {
+    let doc: DocumentMut = match text.parse() {
         Ok(d) => d,
         Err(e) => {
             crate::err!("settings.toml is not valid TOML: {e}");
@@ -168,24 +172,13 @@ pub fn theme(action: ThemeAction) -> i32 {
             } else {
                 "light"
             };
-            let table = doc
-                .entry("theme")
-                .or_insert_with(|| Item::Table(Table::new()))
-                .as_table_like_mut();
-            let Some(table) = table else {
-                crate::err!("`theme` in settings.toml must be a table");
-                return EXIT_RUNTIME;
+            let which = if slot == "dark" {
+                ThemeMode::Dark
+            } else {
+                ThemeMode::Light
             };
-            table.insert(slot, value(t.name.as_str()));
-            table.insert("mode", value(slot));
-            if let Some(dir) = path.parent()
-                && let Err(e) = std::fs::create_dir_all(dir)
-            {
-                crate::err!("cannot create {}: {e}", dir.display());
-                return EXIT_RUNTIME;
-            }
-            if let Err(e) = std::fs::write(&path, doc.to_string()) {
-                crate::err!("cannot write {}: {e}", path.display());
+            if let Err(e) = write_theme(&path, Some(which), Some((which, t.name.as_str()))) {
+                crate::err!("{e}");
                 return EXIT_RUNTIME;
             }
             if json {
@@ -204,9 +197,10 @@ pub fn theme(action: ThemeAction) -> i32 {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn bundled_family_lists_one_dark_and_light() {
-        let t = super::parse(super::BUNDLED, "bundled");
+    fn bundled_index_lists_every_family() {
+        let t = super::all_themes();
         let names: Vec<_> = t.iter().map(|t| t.name.as_str()).collect();
-        assert_eq!(names, ["One Dark", "One Light"]);
+        assert!(names.starts_with(&["One Dark", "One Light"]));
+        assert!(names.contains(&"Catppuccin Mocha") && names.contains(&"Nord Dark"));
     }
 }

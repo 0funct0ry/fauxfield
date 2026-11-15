@@ -582,6 +582,7 @@ mod tests {
                 ShellOptions {
                     layout_path: None,
                     config_dir: None,
+                    settings_path: None,
                     ..crate::view::test_options()
                 },
                 w,

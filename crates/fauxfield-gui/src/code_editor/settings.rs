@@ -118,12 +118,12 @@ impl EditorSettings {
         )
     }
 
-    /// Reads `settings.toml` from the config dir; a missing file is the defaults.
-    pub fn load(config_dir: Option<&std::path::Path>) -> (EditorSettings, Vec<String>) {
-        let Some(dir) = config_dir else {
+    /// Reads `settings.toml`; a missing file is the defaults.
+    pub fn load(settings_file: Option<&std::path::Path>) -> (EditorSettings, Vec<String>) {
+        let Some(file) = settings_file else {
             return (EditorSettings::default(), Vec::new());
         };
-        match std::fs::read_to_string(dir.join("settings.toml")) {
+        match std::fs::read_to_string(file) {
             Ok(t) => EditorSettings::parse(&t),
             Err(_) => (EditorSettings::default(), Vec::new()),
         }

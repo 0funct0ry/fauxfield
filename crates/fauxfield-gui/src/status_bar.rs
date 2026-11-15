@@ -87,6 +87,27 @@ impl Shell {
             }))
             .children(self.render_agent_status(t, cx))
             .child({
+                let name = t.name.clone();
+                let chord = if cfg!(target_os = "macos") {
+                    "Cmd+K Cmd+T"
+                } else {
+                    "Ctrl+K Ctrl+T"
+                };
+                crate::dev_id!(
+                    toolbar_button(t, "status-theme")
+                        .child(icon("palette", 12., t.icon_muted))
+                        .child(name.clone())
+                        .tooltip(crate::ui::tooltip(format!("Theme: {name} ({chord})")))
+                        .on_click(cx.listener(|this, _, w, cx| {
+                            this.open_picker(PickerKind::Theme, w, cx)
+                        })),
+                    "status-theme",
+                    Button,
+                    format!("Theme: {name}"),
+                    Action("select_theme")
+                )
+            })
+            .child({
                 let p = self.network_profile;
                 let col = if p == fauxfield_engine::NetworkProfile::None {
                     t.icon_muted

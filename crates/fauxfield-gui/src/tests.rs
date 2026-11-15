@@ -20,6 +20,7 @@ fn setup(
             ShellOptions {
                 layout_path,
                 config_dir: None,
+                settings_path: None,
                 ..crate::view::test_options()
             },
             w,
@@ -158,7 +159,7 @@ fn theme_chord_previews_live_and_escape_reverts(cx: &mut TestAppContext) {
     assert_eq!(theme_name(cx), "One Dark");
 
     cx.simulate_keystrokes("down");
-    assert_eq!(theme_name(cx), "One Light", "highlight previews the theme");
+    assert_eq!(theme_name(cx), "Ayu Dark", "highlight previews the theme");
     cx.simulate_keystrokes("escape");
     assert_eq!(theme_name(cx), "One Dark", "Esc reverts");
     assert!(read(&view, cx, |s| s.picker.is_none()));
@@ -167,11 +168,21 @@ fn theme_chord_previews_live_and_escape_reverts(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("secondary-k secondary-t");
     cx.simulate_keystrokes("down");
     cx.simulate_keystrokes("enter");
-    assert_eq!(theme_name(cx), "One Light");
+    assert_eq!(theme_name(cx), "Ayu Dark");
     assert_eq!(
-        read(&view, cx, |s| s.layout.theme.clone()).as_deref(),
-        Some("One Light")
+        read(&view, cx, |s| s.theme_setting.dark.clone()),
+        "Ayu Dark"
     );
+
+    // The OS flipping to light follows only in system mode.
+    view.update(cx, |s, cx| {
+        s.on_appearance_changed(false, cx);
+    });
+    assert_eq!(theme_name(cx), "One Light");
+    view.update(cx, |s, cx| {
+        s.on_appearance_changed(true, cx);
+    });
+    assert_eq!(theme_name(cx), "Ayu Dark");
 }
 
 #[gpui::test]

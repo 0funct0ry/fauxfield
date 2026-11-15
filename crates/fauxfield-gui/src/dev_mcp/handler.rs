@@ -320,6 +320,7 @@ mod tests {
                 ShellOptions {
                     layout_path: None,
                     config_dir: None,
+                    settings_path: None,
                     ..crate::view::test_options()
                 },
                 w,
@@ -789,6 +790,7 @@ mod tests {
                 ShellOptions {
                     layout_path: Some(layout.clone()),
                     config_dir: None,
+                    settings_path: None,
                     ..crate::view::test_options()
                 },
                 w,

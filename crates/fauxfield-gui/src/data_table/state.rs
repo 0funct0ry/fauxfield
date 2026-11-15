@@ -6,9 +6,9 @@ use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, DragMoveEvent, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Render,
-    ScrollStrategy, ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement, Styled,
-    UniformListScrollHandle, Window, canvas, div, point, px, uniform_list,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement,
+    Render, ScrollStrategy, ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement,
+    Styled, UniformListScrollHandle, Window, canvas, div, point, px, uniform_list,
 };
 
 use super::actions as act;

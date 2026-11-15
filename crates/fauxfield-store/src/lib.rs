@@ -6,6 +6,7 @@ pub mod agents;
 mod datasets;
 mod init;
 mod recent;
+pub mod settings;
 mod store;
 mod templates;
 mod vars;

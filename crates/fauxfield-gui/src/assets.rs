@@ -70,21 +70,32 @@ const FILES: &[(&str, &[u8])] = embed![
 
 const FONTS: &[&[u8]] = &[
     include_bytes!("../assets/fonts/IBMPlexSans_400Regular.ttf"),
+    include_bytes!("../assets/fonts/IBMPlexSans-Italic.ttf"),
     include_bytes!("../assets/fonts/IBMPlexSans_500Medium.ttf"),
     include_bytes!("../assets/fonts/IBMPlexSans_600SemiBold.ttf"),
-    include_bytes!("../assets/fonts/JetBrainsMono_400Regular.ttf"),
-    include_bytes!("../assets/fonts/JetBrainsMono_400Regular_Italic.ttf"),
-    include_bytes!("../assets/fonts/JetBrainsMono_700Bold.ttf"),
+    include_bytes!("../assets/fonts/IBMPlexMono-Regular.ttf"),
+    include_bytes!("../assets/fonts/IBMPlexMono-Italic.ttf"),
+    include_bytes!("../assets/fonts/IBMPlexMono-Medium.ttf"),
+    include_bytes!("../assets/fonts/IBMPlexMono-Bold.ttf"),
 ];
 
 /// UI font family (SPEC §9.1).
 pub const UI_FONT: &str = "IBM Plex Sans";
-/// Buffer font. SPEC §9.1 names IBM Plex Mono; it is not bundled yet (docs/adr/002), so
-/// JetBrains Mono (OFL) stands in. Swap this constant and `FONTS` when the Plex Mono files land.
-pub const BUFFER_FONT: &str = "JetBrains Mono";
+/// Buffer (code) font family (SPEC §9.1).
+pub const BUFFER_FONT: &str = "IBM Plex Mono";
 
-/// The bundled theme family (Zed theme JSON, schema v0.2.0).
-pub const BUNDLED_THEME_FAMILIES: &[&str] = &[include_str!("../assets/themes/one.json")];
+/// Bundled theme families (unchanged Zed theme JSON, schema v0.2.0); licences in THIRD_PARTY_LICENSES.md.
+pub const BUNDLED_THEME_FAMILIES: &[&str] = &[
+    include_str!("../assets/themes/one.json"),
+    include_str!("../assets/themes/ayu.json"),
+    include_str!("../assets/themes/gruvbox.json"),
+    include_str!("../assets/themes/rose-pine.json"),
+    include_str!("../assets/themes/rose-pine-moon.json"),
+    include_str!("../assets/themes/rose-pine-dawn.json"),
+    include_str!("../assets/themes/catppuccin.json"),
+    include_str!("../assets/themes/tokyo-night.json"),
+    include_str!("../assets/themes/nord.json"),
+];
 
 pub struct Assets;
 
