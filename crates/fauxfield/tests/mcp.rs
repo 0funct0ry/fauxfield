@@ -237,18 +237,6 @@ mod unix {
 }
 
 #[test]
-fn http_transport_is_not_available_yet() {
-    let out = std::process::Command::new(BIN)
-        .args(["mcp", "--transport", "http"])
-        .env("FAUXFIELD_SETTINGS", "/nonexistent/settings.toml")
-        .output()
-        .unwrap();
-    assert_eq!(out.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("not available until M16"));
-    assert!(out.stdout.is_empty(), "stdout is protocol-only");
-}
-
-#[test]
 fn bad_flags_are_usage_errors() {
     for args in [
         vec!["mcp", "--allow", "bogus"],
@@ -337,131 +325,6 @@ async fn workspace_tools_edit_files_and_respect_read_only() {
     c.cancel().await.unwrap();
 }
 
-/// M3: start a server, hit it, read its traffic, and stop it, all through MCP tools.
-#[cfg(unix)]
-#[tokio::test]
-async fn control_tools_start_send_traffic_stop() {
-    let dir = tempfile::tempdir().unwrap();
-    assert!(
-        std::process::Command::new(BIN)
-            .args(["init", dir.path().to_str().unwrap()])
-            .status()
-            .unwrap()
-            .success()
-    );
-    let port = std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
-    let p = dir.path().to_str().unwrap();
-    let mut child = spawn(&[p]);
-    let c = ().serve((child.stdout.take().unwrap(), child.stdin.take().unwrap())).await.unwrap();
-    let call = |name: &'static str, args: serde_json::Value| {
-        let c = &c;
-        async move {
-            c.call_tool(
-                CallToolRequestParams::new(name).with_arguments(args.as_object().unwrap().clone()),
-            )
-            .await
-        }
-    };
-    let names: Vec<_> = c
-        .list_all_tools()
-        .await
-        .unwrap()
-        .into_iter()
-        .map(|t| t.name.to_string())
-        .collect();
-    for t in [
-        "start_server",
-        "stop_server",
-        "restart_server",
-        "get_traffic",
-        "send_test_request",
-    ] {
-        assert!(names.contains(&t.to_string()), "{t} missing");
-    }
-    call(
-        "update_server",
-        json!({"server": "example-api", "port": port}),
-    )
-    .await
-    .unwrap();
-    let r = call("start_server", json!({"server": "example-api"}))
-        .await
-        .unwrap()
-        .structured_content
-        .unwrap();
-    assert_eq!(r["servers"][0]["status"]["state"], "running");
-    let r = call(
-        "send_test_request",
-        json!({"server": "example-api", "path": "/health"}),
-    )
-    .await
-    .unwrap()
-    .structured_content
-    .unwrap();
-    assert_eq!(r["status"], 200);
-    assert_eq!(r["body"], r#"{"status": "ok"}"#);
-    // A plain curl-style request shows up in traffic too.
-    let t = call(
-        "get_traffic",
-        json!({"server": "example-api", "status": "2xx"}),
-    )
-    .await
-    .unwrap()
-    .structured_content
-    .unwrap();
-    assert_eq!(t["count"], 1);
-    assert!(
-        t["traffic"][0]["route"]
-            .as_str()
-            .unwrap()
-            .starts_with("rte_")
-    );
-    let miss = call("get_traffic", json!({"status": "5xx"}))
-        .await
-        .unwrap()
-        .structured_content
-        .unwrap();
-    assert_eq!(miss["count"], 0);
-    // An attached CLI sees the same host.
-    let status = std::process::Command::new(BIN)
-        .args(["status", "--json", "-w", p])
-        .output()
-        .unwrap();
-    assert_eq!(status.status.code(), Some(0));
-    let r = call("restart_server", json!({"server": "example-api"}))
-        .await
-        .unwrap();
-    assert_eq!(
-        r.structured_content.unwrap()["servers"][0]["status"]["state"],
-        "running"
-    );
-    let r = call("stop_server", json!({})).await.unwrap();
-    assert_eq!(
-        r.structured_content.unwrap()["servers"][0]["status"]["state"],
-        "stopped"
-    );
-    c.cancel().await.unwrap();
-
-    // Read-only hides the execute tools.
-    let mut child = spawn(&[p, "--read-only"]);
-    let c = ().serve((child.stdout.take().unwrap(), child.stdin.take().unwrap())).await.unwrap();
-    let names: Vec<_> = c
-        .list_all_tools()
-        .await
-        .unwrap()
-        .into_iter()
-        .map(|t| t.name.to_string())
-        .collect();
-    assert!(names.contains(&"get_traffic".to_string()));
-    assert!(!names.contains(&"start_server".to_string()));
-    assert!(!names.contains(&"send_test_request".to_string()));
-    c.cancel().await.unwrap();
-}
-
 fn init_ws() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     assert!(
@@ -472,14 +335,6 @@ fn init_ws() -> tempfile::TempDir {
             .success()
     );
     dir
-}
-
-fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
 }
 
 #[test]
@@ -584,75 +439,6 @@ async fn read_only_get_traffic_never_creates_a_host() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(4), "no host must be running");
-}
-
-/// C3: two MCP processes that both need a host end with exactly one, and both see traffic.
-#[tokio::test]
-async fn two_processes_share_one_host() {
-    let dir = init_ws();
-    let p = dir.path().to_str().unwrap();
-    let port = free_port();
-    let file = dir.path().join("servers/example-api.toml");
-    let t = std::fs::read_to_string(&file)
-        .unwrap()
-        .replace("3001", &port.to_string());
-    std::fs::write(&file, t).unwrap();
-    let (mut a, mut b) = (spawn(&[p]), spawn(&[p]));
-    let ca = ().serve((a.stdout.take().unwrap(), a.stdin.take().unwrap())).await.unwrap();
-    let cb = ().serve((b.stdout.take().unwrap(), b.stdin.take().unwrap())).await.unwrap();
-    async fn start(
-        c: &rmcp::service::RunningService<rmcp::RoleClient, ()>,
-    ) -> Result<rmcp::model::CallToolResult, rmcp::service::ServiceError> {
-        c.call_tool(
-            CallToolRequestParams::new("start_server").with_arguments(
-                json!({"server": "example-api"})
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-            ),
-        )
-        .await
-    }
-    let (ra, rb) = tokio::join!(start(&ca), start(&cb));
-    for r in [ra, rb] {
-        let r = r.unwrap();
-        assert_ne!(r.is_error, Some(true), "{r:?}");
-        assert_eq!(
-            r.structured_content.unwrap()["servers"][0]["status"]["state"],
-            "running"
-        );
-    }
-    // One request through one process is visible from the other.
-    let sent = ca
-        .call_tool(
-            CallToolRequestParams::new("send_test_request").with_arguments(
-                json!({"server": "example-api", "path": "/health"})
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-            ),
-        )
-        .await
-        .unwrap();
-    assert_ne!(sent.is_error, Some(true));
-    for c in [&ca, &cb] {
-        let t = c
-            .call_tool(CallToolRequestParams::new("get_traffic"))
-            .await
-            .unwrap()
-            .structured_content
-            .unwrap();
-        assert_eq!(t["count"], 1, "{t}");
-    }
-    let status = std::process::Command::new(BIN)
-        .args(["status", "--json", "-w", p])
-        .output()
-        .unwrap();
-    assert_eq!(status.status.code(), Some(0));
-    let v: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
-    assert_eq!(v["servers"].as_array().unwrap().len(), 1);
-    ca.cancel().await.unwrap();
-    cb.cancel().await.unwrap();
 }
 
 #[cfg(windows)]

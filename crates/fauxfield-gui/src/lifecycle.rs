@@ -410,6 +410,8 @@ impl Shell {
             Some("export_dataset")
         } else if self.seed_dialog.is_some() {
             Some("seed_data")
+        } else if self.agents_dialog.is_some() {
+            Some("agents")
         } else if self.about_open {
             Some("about")
         } else if self.sample_dialog.is_some() {
@@ -698,6 +700,10 @@ impl Shell {
             ToastAction::CreateWorkspaceAt(p) => self.create_folder_chosen(p, cx),
             ToastAction::OpenWorkspaceAt(p) => self.open_folder_chosen(p, cx),
             ToastAction::UndoRowDelete => self.undo_row_delete(cx),
+            ToastAction::CopyText(t) => {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(t));
+                self.notify("Copied".into(), cx);
+            }
             ToastAction::EnableAndStart(id) => {
                 use fauxfield_store::Target as T;
                 if self

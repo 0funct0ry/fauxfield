@@ -2,6 +2,7 @@
 //! `toml_edit` so comments and ordering survive; writes are atomic and debounced;
 //! a watcher hot-reloads external edits. Must not depend on GPUI.
 
+pub mod agents;
 mod datasets;
 mod init;
 mod recent;

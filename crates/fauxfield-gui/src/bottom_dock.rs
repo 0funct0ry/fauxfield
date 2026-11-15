@@ -100,7 +100,7 @@ impl Shell {
             .child(match active {
                 BottomTab::Traffic => self.render_traffic(t, cx),
                 BottomTab::Problems => self.render_problems(t, cx),
-                BottomTab::Logs => self.render_logs(t),
+                BottomTab::Logs => self.render_logs(t, cx),
             })
     }
 
@@ -380,23 +380,6 @@ impl Shell {
                         .child("No problems."),
                 )
             })
-            .into_any_element()
-    }
-
-    fn render_logs(&self, t: &Theme) -> AnyElement {
-        div()
-            .id("logs")
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .p(px(10.))
-            .font_family(BUFFER_FONT)
-            .text_size(px(11.))
-            .text_color(t.text_muted)
-            .when(self.logs.is_empty(), |d| {
-                d.child("No log lines yet. Servers log when they start, stop and handle requests.")
-            })
-            .children(self.logs.iter().map(|l| div().child(l.clone())))
             .into_any_element()
     }
 }

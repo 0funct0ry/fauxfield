@@ -1,0 +1,48 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: out
+---
+Local-first mock API tool: desktop app, headless runner, CLI and MCP server.
+
+Usage: fauxfield [OPTIONS] [PATH]
+       fauxfield <COMMAND>
+
+Commands:
+  open         Open the desktop app, optionally on a workspace folder
+  init         Create a workspace (SPEC §4.1) with one example server
+  validate     Validate the workspace files; exit code 3 when there are errors
+  workspace    Show or rename the workspace
+  server       List and inspect Servers
+  route        List and inspect Routes
+  response     Add and configure Responses of a Route
+  env          List, switch and add Environments
+  var          Get, set and unset variables at a scope
+  callback     Fire the Callbacks (webhooks) of a recorded request again
+  ws           List WebSocket connections, read the timeline, send messages, disconnect clients
+  data         List, show, reset, export and import Datasets
+  certs        Show, trust and untrust the development CA used by HTTPS Servers
+  doctor       Check ports, the development CA trust state and certificate expiry
+  render       Render a Response template against a sample request, without running a server
+  run          Serve a workspace headless: become the host and run its servers until stopped
+  status       Show the running host and its servers (exit code 4 when no host is running)
+  stop         Stop servers on the running host; without --server also ends a headless host
+  logs         Print request logs from the running host
+  mcp          Run the MCP server for agents (SPEC §11.1). Logs go to stderr; stdout is protocol-only
+  agents       Set up coding agents (MCP client config, AGENTS.md)
+  theme        List and choose the color theme
+  record       Record traffic from an upstream into a Server (arrives in M12)
+  import       Import an OpenAPI document (arrives in M15)
+  export       Export an OpenAPI document (arrives in M15)
+  template     List and apply Templates (arrives in M15)
+  version      Print version information
+  completions  Print a shell completion script to stdout
+  help         Print this message or the help of the given subcommand(s)
+
+Arguments:
+  [PATH]  Workspace folder to open (default: the nearest ancestor containing fauxfield.toml)
+
+Options:
+  -q, --quiet     Suppress informational output
+      --no-color  Disable coloured output (also honoured: the NO_COLOR environment variable)
+  -h, --help      Print help
+  -V, --version   Print version

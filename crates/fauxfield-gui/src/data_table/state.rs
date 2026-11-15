@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, DragMoveEvent, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Render,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Render,
     ScrollStrategy, ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement, Styled,
     UniformListScrollHandle, Window, canvas, div, point, px, uniform_list,
 };
@@ -229,6 +229,8 @@ pub struct TableState<D: TableDelegate> {
     geo: Rc<Cell<Geometry>>,
     keyboard: bool,
     resize: Option<ResizeStart>,
+    /// Horizontal scrollbar drag: (mouse x, `scroll_x`) at press.
+    hbar_drag: Option<(f32, f32)>,
     resize_dirty: bool,
     suppress_drag: bool,
     gap: Option<usize>,
@@ -263,6 +265,7 @@ impl<D: TableDelegate> TableState<D> {
             geo: Rc::new(Cell::new(Geometry::default())),
             keyboard: false,
             resize: None,
+            hbar_drag: None,
             resize_dirty: false,
             suppress_drag: false,
             gap: None,
@@ -1265,7 +1268,13 @@ impl<D: TableDelegate> TableState<D> {
             .into_any_element()
     }
 
-    fn scrollbars(&self, t: &Theme, look: &TableLook, hdr_h: f32) -> Vec<AnyElement> {
+    fn scrollbars(
+        &self,
+        t: &Theme,
+        look: &TableLook,
+        hdr_h: f32,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
         let g = self.geo.get();
         let mut out = vec![];
         let total_h = self.model.rows as f32 * look.size.row_height();
@@ -1299,10 +1308,18 @@ impl<D: TableDelegate> TableState<D> {
                     .absolute()
                     .bottom(px(1.))
                     .left(px(l_w + left))
-                    .h(px(5.))
+                    .h(px(7.))
                     .w(px(thumb))
                     .rounded(px(3.))
                     .bg(t.border)
+                    .cursor_pointer()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+                            this.hbar_drag = Some((f32::from(ev.position.x), this.scroll_x));
+                            cx.stop_propagation();
+                        }),
+                    )
                     .into_any_element(),
             );
         }
@@ -1520,10 +1537,36 @@ impl<D: TableDelegate> TableState<D> {
                     this.flush_resize(cx);
                 }),
             )
+            .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _, cx| {
+                let Some((x0, s0)) = this.hbar_drag else {
+                    return;
+                };
+                if !ev.dragging() {
+                    this.hbar_drag = None;
+                    return;
+                }
+                let (l, r) = this.region_bounds();
+                let total = this.mid_total(l, r);
+                let vp = this.geo.get().mid_w;
+                let thumb = (vp * vp / total).max(20.0).min(vp);
+                let track = (vp - thumb).max(1.0);
+                let dx = (f32::from(ev.position.x) - x0) / track * this.max_scroll_x();
+                this.scroll_x = (s0 + dx).clamp(0.0, this.max_scroll_x());
+                cx.notify();
+            }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _, _, _| this.hbar_drag = None),
+            )
             .on_scroll_wheel(cx.listener(|this, ev: &ScrollWheelEvent, _, cx| {
                 let d = ev.delta.pixel_delta(px(this.row_h));
-                let dx = f32::from(d.x);
-                if dx.abs() > f32::from(d.y).abs() {
+                // Shift + wheel on a mouse reports a vertical delta; treat it as horizontal.
+                let dx = if ev.modifiers.shift && f32::from(d.x) == 0.0 {
+                    f32::from(d.y)
+                } else {
+                    f32::from(d.x)
+                };
+                if ev.modifiers.shift || dx.abs() > f32::from(d.y).abs() {
                     this.scroll_x = (this.scroll_x - dx).clamp(0.0, this.max_scroll_x());
                     cx.notify();
                     cx.stop_propagation();
@@ -1531,7 +1574,7 @@ impl<D: TableDelegate> TableState<D> {
             }))
             .child(header)
             .child(body)
-            .children(self.scrollbars(&t, look, hdr_h * self.model.header_rows as f32));
+            .children(self.scrollbars(&t, look, hdr_h * self.model.header_rows as f32, cx));
         let _ = point(px(0.), px(0.));
         let root = crate::dev_id!(
             root,

@@ -3,6 +3,7 @@ source: crates/fauxfield/tests/cli.rs
 expression: v
 ---
 {
+  "ok": true,
   "routes": [
     {
       "folder": null,
@@ -17,5 +18,6 @@ expression: v
       "server": "<srv-id>",
       "shadowed_by": null
     }
-  ]
+  ],
+  "schema": "fauxfield.route.list/v1"
 }

@@ -8,6 +8,8 @@ expression: v
     "local"
   ],
   "name": "<name>",
+  "ok": true,
   "root": "<root>",
+  "schema": "fauxfield.workspace.info/v1",
   "servers": 1
 }

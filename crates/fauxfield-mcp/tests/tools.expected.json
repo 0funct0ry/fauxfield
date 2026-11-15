@@ -1,0 +1,197 @@
+[
+  {
+    "class": "write",
+    "milestone": "M10.02",
+    "name": "bake_dataset"
+  },
+  {
+    "class": "read",
+    "milestone": "M10",
+    "name": "certs_status"
+  },
+  {
+    "class": "read",
+    "milestone": "M10",
+    "name": "certs_trust_command"
+  },
+  {
+    "class": "execute",
+    "milestone": "M10.02",
+    "name": "clear_dataset"
+  },
+  {
+    "class": "write",
+    "milestone": "M2",
+    "name": "create_server"
+  },
+  {
+    "class": "read",
+    "milestone": "M10.01",
+    "name": "dataset_references"
+  },
+  {
+    "class": "write",
+    "milestone": "M10.01",
+    "name": "delete_dataset"
+  },
+  {
+    "class": "write",
+    "milestone": "M2",
+    "name": "delete_route"
+  },
+  {
+    "class": "write",
+    "milestone": "M2",
+    "name": "delete_server"
+  },
+  {
+    "class": "execute",
+    "milestone": "M13",
+    "name": "disconnect_ws_client"
+  },
+  {
+    "class": "read",
+    "milestone": "M2",
+    "name": "get_route"
+  },
+  {
+    "class": "read",
+    "milestone": "M2",
+    "name": "get_server"
+  },
+  {
+    "class": "read",
+    "milestone": "M3",
+    "name": "get_traffic"
+  },
+  {
+    "class": "write",
+    "milestone": "M10.05",
+    "name": "import_dataset"
+  },
+  {
+    "class": "read",
+    "milestone": "M2",
+    "name": "list_routes"
+  },
+  {
+    "class": "read",
+    "milestone": "M2",
+    "name": "list_servers"
+  },
+  {
+    "class": "read",
+    "milestone": "M10",
+    "name": "list_static_files"
+  },
+  {
+    "class": "read",
+    "milestone": "M13",
+    "name": "list_ws_connections"
+  },
+  {
+    "class": "read",
+    "milestone": "M4",
+    "name": "match_path"
+  },
+  {
+    "class": "read",
+    "milestone": "M1.1",
+    "name": "ping"
+  },
+  {
+    "class": "read",
+    "milestone": "M10.02",
+    "name": "preview_generator"
+  },
+  {
+    "class": "execute",
+    "milestone": "M14",
+    "name": "refire_callback"
+  },
+  {
+    "class": "read",
+    "milestone": "M6",
+    "name": "render_template"
+  },
+  {
+    "class": "execute",
+    "milestone": "M8",
+    "name": "reset_state"
+  },
+  {
+    "class": "execute",
+    "milestone": "M3",
+    "name": "restart_server"
+  },
+  {
+    "class": "execute",
+    "milestone": "M3",
+    "name": "send_test_request"
+  },
+  {
+    "class": "execute",
+    "milestone": "M13",
+    "name": "send_ws_message"
+  },
+  {
+    "class": "read",
+    "milestone": "M1.1",
+    "name": "server_info"
+  },
+  {
+    "class": "execute",
+    "milestone": "M9",
+    "name": "set_chaos"
+  },
+  {
+    "class": "execute",
+    "milestone": "M9",
+    "name": "set_network_profile"
+  },
+  {
+    "class": "write",
+    "milestone": "M7",
+    "name": "set_variable"
+  },
+  {
+    "class": "execute",
+    "milestone": "M3",
+    "name": "start_server"
+  },
+  {
+    "class": "execute",
+    "milestone": "M3",
+    "name": "stop_server"
+  },
+  {
+    "class": "write",
+    "milestone": "M2",
+    "name": "update_server"
+  },
+  {
+    "class": "write",
+    "milestone": "M3.1",
+    "name": "update_workspace"
+  },
+  {
+    "class": "write",
+    "milestone": "M8",
+    "name": "upsert_dataset"
+  },
+  {
+    "class": "write",
+    "milestone": "M2",
+    "name": "upsert_route"
+  },
+  {
+    "class": "read",
+    "milestone": "M2",
+    "name": "validate"
+  },
+  {
+    "class": "read",
+    "milestone": "M2",
+    "name": "workspace_info"
+  }
+]

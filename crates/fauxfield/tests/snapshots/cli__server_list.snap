@@ -1,8 +1,10 @@
 ---
 source: crates/fauxfield/tests/cli.rs
-expression: redact(out)
+expression: v
 ---
 {
+  "ok": true,
+  "schema": "fauxfield.server.list/v1",
   "servers": [
     {
       "enabled": true,

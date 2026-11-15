@@ -13,5 +13,7 @@ expression: v
       "name": "local",
       "variables": 1
     }
-  ]
+  ],
+  "ok": true,
+  "schema": "fauxfield.env.list/v1"
 }

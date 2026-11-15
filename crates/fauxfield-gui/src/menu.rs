@@ -414,6 +414,7 @@ pub fn build_menus(ctx: &MenuContext) -> Vec<MenuDef> {
         act("pin_tab", "Pin Tab"),
         act("close_workspace", "Close Workspace"),
         act("rename_workspace", "Rename Workspace…"),
+        act("agents_setup", "Agents: Set Up MCP…"),
         act(
             "reveal_workspace",
             &format!("Reveal Workspace in {}", file_manager(ctx.platform)),
@@ -638,6 +639,7 @@ pub fn enabled(id: &str, ctx: &MenuContext) -> bool {
         | "new_environment"
         | "close_workspace"
         | "rename_workspace"
+        | "agents_setup"
         | "save"
         | "reveal_workspace"
         | "switch_environment"
@@ -743,6 +745,7 @@ pub fn why_disabled(id: &str, ctx: &MenuContext) -> &'static str {
             | "new_environment"
             | "close_workspace"
             | "rename_workspace"
+            | "agents_setup"
             | "reveal_workspace"
             | "switch_environment"
             | "switch_network_profile"
@@ -979,6 +982,7 @@ mod tests {
             "new_server",
             "close_workspace",
             "rename_workspace",
+            "agents_setup",
             "reveal_workspace",
             "switch_environment",
         ] {

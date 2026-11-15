@@ -198,6 +198,7 @@ impl Shell {
             || self.any_dialog_open()
             || self.quit_confirm
             || self.about_open
+            || self.agents_dialog.is_some()
             || self.sample_dialog.is_some()
             || self.any_combo_open()
             || self.any_dropdown_open()

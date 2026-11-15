@@ -36,6 +36,7 @@ pub fn start(opts: DevMcpOptions, window: WindowHandle<Shell>, cx: &mut App) {
         transport,
         socket: opts.socket.clone(),
         allow,
+        ..McpConfig::default()
     };
 
     let (bridge, mut rx) = GuiBridge::channel();
@@ -55,8 +56,7 @@ pub fn start(opts: DevMcpOptions, window: WindowHandle<Shell>, cx: &mut App) {
         std::sync::Arc::new(shared_store),
     );
     // Server lifecycle and traffic tools drive the engine the window hosts (M3).
-    fauxfield_mcp::control_tools::register_control_tools(
-        &mut registry,
+    let control_provider: fauxfield_mcp::control_tools::ControlProvider =
         std::sync::Arc::new(|mode| {
             let c = CONTROL.lock().unwrap_or_else(|p| p.into_inner()).clone();
             match (c, mode) {
@@ -64,8 +64,10 @@ pub fn start(opts: DevMcpOptions, window: WindowHandle<Shell>, cx: &mut App) {
                 (None, fauxfield_mcp::control_tools::ControlMode::AttachOnly) => Ok(None),
                 (None, _) => Err("no workspace is open; call ui.open_workspace".to_string()),
             }
-        }),
-    );
+        });
+    fauxfield_mcp::control_tools::register_control_tools(&mut registry, control_provider.clone());
+    // Agent sessions and calls show in the window like those of any other MCP process (M16).
+    registry.set_sink(fauxfield_mcp::control_tools::control_sink(control_provider));
     let events = EventBuffer::default();
     fauxfield_mcp::events::register(&mut registry, events.clone());
     let recorder = Recorder::default();

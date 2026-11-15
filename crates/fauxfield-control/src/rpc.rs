@@ -10,7 +10,10 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-use crate::api::{ControlApi, ControlError};
+use crate::{
+    agents::{AgentEvent, AgentSession},
+    api::{ControlApi, ControlError},
+};
 
 /// Newline-delimited JSON-RPC 2.0. Methods: `ping`, `status`, `start`, `stop`, `restart`,
 /// `traffic.get`, `test.send`, `shutdown`. Errors carry `{kind}` in `error.data`.
@@ -158,6 +161,23 @@ async fn dispatch(
             )
             .await
             .map(|r| json!({"recordings": r})),
+        "agent.attach" => api
+            .agent_attach(param(params, "id")?, param(params, "name")?)
+            .await
+            .map(|_| json!({})),
+        "agent.detach" => api
+            .agent_detach(param(params, "id")?)
+            .await
+            .map(|_| json!({})),
+        "agent.sessions" => api.agent_sessions().await.map(|s| json!({"sessions": s})),
+        "agent.record" => api
+            .agent_record(param(params, "event")?)
+            .await
+            .map(|_| json!({})),
+        "agent.log" => api
+            .agent_log(param(params, "client")?)
+            .await
+            .map(|l| json!({"events": l})),
         "shutdown" => api.shutdown().await.map(|_| json!({})),
         other => Err(ControlError::new(
             "method_not_found",
@@ -551,6 +571,31 @@ impl ControlApi for RemoteControl {
         self.call("state.reset", json!({"server": server, "dataset": dataset}))
             .await
             .map(|_| ())
+    }
+    async fn agent_attach(&self, id: String, name: String) -> Result<(), ControlError> {
+        self.call("agent.attach", json!({"id": id, "name": name}))
+            .await
+            .map(|_| ())
+    }
+    async fn agent_detach(&self, id: String) -> Result<(), ControlError> {
+        self.call("agent.detach", json!({"id": id}))
+            .await
+            .map(|_| ())
+    }
+    async fn agent_sessions(&self) -> Result<Vec<AgentSession>, ControlError> {
+        let v = self.call("agent.sessions", Value::Null).await?;
+        serde_json::from_value(v["sessions"].clone())
+            .map_err(|e| ControlError::new("transport", e.to_string()))
+    }
+    async fn agent_record(&self, event: AgentEvent) -> Result<(), ControlError> {
+        self.call("agent.record", json!({"event": event}))
+            .await
+            .map(|_| ())
+    }
+    async fn agent_log(&self, client: Option<String>) -> Result<Vec<AgentEvent>, ControlError> {
+        let v = self.call("agent.log", json!({"client": client})).await?;
+        serde_json::from_value(v["events"].clone())
+            .map_err(|e| ControlError::new("transport", e.to_string()))
     }
     async fn shutdown(&self) -> Result<(), ControlError> {
         self.call("shutdown", Value::Null).await.map(|_| ())

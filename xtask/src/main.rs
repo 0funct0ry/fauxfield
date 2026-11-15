@@ -5,55 +5,214 @@ use std::path::Path;
 const TEMPLATE_DOC: &str = "site/src/content/docs/reference/template-functions.md";
 const SERVER_SCHEMA: &str = "site/public/schema/v1/server.json";
 
+/// One generated file: the xtask command, its path and its current text.
+struct Gen {
+    cmd: &'static str,
+    path: &'static str,
+    text: fn() -> String,
+}
+
+const GENERATED: &[Gen] = &[
+    Gen {
+        cmd: "schema",
+        path: SERVER_SCHEMA,
+        text: || serde_json::to_string_pretty(&fauxfield_model::server_schema()).unwrap() + "\n",
+    },
+    Gen {
+        cmd: "template-docs",
+        path: TEMPLATE_DOC,
+        text: template_docs,
+    },
+    Gen {
+        cmd: "generator-docs",
+        path: GENERATOR_DOC,
+        text: generator_docs,
+    },
+    Gen {
+        cmd: "mcp-tools-docs",
+        path: MCP_DOC,
+        text: mcp_tools_docs,
+    },
+    Gen {
+        cmd: "cli-docs",
+        path: CLI_DOC,
+        text: cli_docs,
+    },
+];
+
+fn write(g: &Gen) {
+    let path = Path::new(g.path);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, (g.text)()).unwrap();
+    println!("wrote {}", g.path);
+}
+
+/// Whether the file on disk matches what the generator produces now.
+fn fresh(g: &Gen) -> bool {
+    std::fs::read_to_string(g.path).ok().as_deref() == Some((g.text)().as_str())
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let check = args.iter().any(|a| a == "--check");
     match args.first().map(String::as_str) {
-        Some("schema") => {
-            let check = args.iter().any(|a| a == "--check");
-            let text =
-                serde_json::to_string_pretty(&fauxfield_model::server_schema()).unwrap() + "\n";
-            let path = Path::new(SERVER_SCHEMA);
+        // `cargo xtask check` fails on any drift (CI).
+        Some("check") => {
+            let stale: Vec<&Gen> = GENERATED.iter().filter(|g| !fresh(g)).collect();
+            for g in &stale {
+                eprintln!("{} is out of date; run `cargo xtask {}`", g.path, g.cmd);
+            }
+            if !stale.is_empty() {
+                std::process::exit(1);
+            }
+            println!("generated files are up to date");
+        }
+        Some("all") => GENERATED.iter().for_each(write),
+        Some(cmd) if GENERATED.iter().any(|g| g.cmd == cmd) => {
+            let g = GENERATED.iter().find(|g| g.cmd == cmd).unwrap();
             if check {
-                if std::fs::read_to_string(path).ok().as_deref() != Some(text.as_str()) {
-                    eprintln!("{SERVER_SCHEMA} is out of date; run `cargo xtask schema`");
+                if !fresh(g) {
+                    eprintln!("{} is out of date; run `cargo xtask {}`", g.path, g.cmd);
                     std::process::exit(1);
                 }
-                return;
+            } else {
+                write(g);
             }
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, text).unwrap();
-            println!("wrote {SERVER_SCHEMA}");
-        }
-        Some("template-docs") => {
-            let text = template_docs();
-            if args.iter().any(|a| a == "--check") {
-                if std::fs::read_to_string(TEMPLATE_DOC).ok().as_deref() != Some(text.as_str()) {
-                    eprintln!("{TEMPLATE_DOC} is out of date; run `cargo xtask template-docs`");
-                    std::process::exit(1);
-                }
-                return;
-            }
-            std::fs::create_dir_all(Path::new(TEMPLATE_DOC).parent().unwrap()).unwrap();
-            std::fs::write(TEMPLATE_DOC, text).unwrap();
-            println!("wrote {TEMPLATE_DOC}");
-        }
-        Some("generator-docs") => {
-            let text = generator_docs();
-            if args.iter().any(|a| a == "--check") {
-                if std::fs::read_to_string(GENERATOR_DOC).ok().as_deref() != Some(text.as_str()) {
-                    eprintln!("{GENERATOR_DOC} is out of date; run `cargo xtask generator-docs`");
-                    std::process::exit(1);
-                }
-                return;
-            }
-            std::fs::write(GENERATOR_DOC, text).unwrap();
-            println!("wrote {GENERATOR_DOC}");
         }
         _ => {
-            eprintln!("usage: cargo xtask schema|template-docs|generator-docs [--check]");
+            eprintln!(
+                "usage: cargo xtask schema|template-docs|generator-docs|mcp-tools-docs|cli-docs [--check] | check | all"
+            );
             std::process::exit(2);
         }
     }
+}
+
+const MCP_DOC: &str = "site/src/content/docs/reference/mcp-tools.md";
+const CLI_DOC: &str = "site/src/content/docs/reference/cli.md";
+
+/// The CLI reference comes from the binary's own clap tree (`fauxfield docs-cli`).
+fn cli_docs() -> String {
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+    let out = std::process::Command::new(cargo)
+        .args([
+            "run",
+            "-q",
+            "-p",
+            "fauxfield",
+            "--no-default-features",
+            "--features",
+            "headless",
+            "--",
+            "docs-cli",
+        ])
+        .output()
+        .expect("run cargo");
+    assert!(
+        out.status.success(),
+        "docs-cli failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).expect("utf-8")
+}
+
+/// Every tool of the full registry (no UI tools), with class, hints and arguments, plus the
+/// resources and prompts.
+fn mcp_tools_docs() -> String {
+    use std::sync::Arc;
+
+    use fauxfield_mcp::{
+        control_tools::register_control_tools, resources, workspace_tools::register_workspace_tools,
+    };
+    let mut r = fauxfield_mcp::build_registry(&Default::default());
+    register_workspace_tools(&mut r, Arc::new(|| None));
+    register_control_tools(&mut r, Arc::new(|_| Ok(None)));
+    let mut o = String::from(
+        "---\ntitle: MCP tools\ndescription: Every tool, resource and prompt of the Fauxfield MCP server, with its class and arguments.\n---\n\n<!-- Generated by `cargo xtask mcp-tools-docs`; do not edit. -->\n\n",
+    );
+    o.push_str("`fauxfield mcp` selects classes with `--allow read,write,execute` (default all; `--read-only` is `--allow read`). A tool outside the allowed classes is not listed and is refused with a protocol error. Results never contain secret values.\n\n");
+    o.push_str("## Tools\n\n| Tool | Class | Read-only | Destructive | Idempotent | Purpose |\n|---|---|---|---|---|---|\n");
+    let mut tools: Vec<_> = r.all().iter().collect();
+    tools.sort_by_key(|t| (t.class.to_string(), t.name));
+    for t in &tools {
+        let h = t.hints();
+        let yn = |b: bool| if b { "yes" } else { "no" };
+        o.push_str(&format!(
+            "| `{}` | {} | {} | {} | {} | {} |\n",
+            t.name,
+            t.class,
+            yn(h.read_only),
+            yn(h.destructive),
+            yn(h.idempotent),
+            t.description.replace('|', "\\|").replace('\n', " ")
+        ));
+    }
+    o.push_str("\n## Arguments\n\n");
+    for t in &tools {
+        o.push_str(&format!("### `{}`\n\n", t.name));
+        let props = t.input_schema.get("properties").and_then(|p| p.as_object());
+        let required: Vec<&str> = t
+            .input_schema
+            .get("required")
+            .and_then(|r| r.as_array())
+            .map(|a| a.iter().filter_map(|x| x.as_str()).collect())
+            .unwrap_or_default();
+        match props {
+            Some(p) if !p.is_empty() => {
+                o.push_str("| Argument | Required | Description |\n|---|---|---|\n");
+                let mut names: Vec<_> = p.keys().collect();
+                names.sort();
+                for n in names {
+                    let d = p[n]
+                        .get("description")
+                        .and_then(|d| d.as_str())
+                        .unwrap_or("")
+                        .replace('|', "\\|")
+                        .replace('\n', " ");
+                    o.push_str(&format!(
+                        "| `{n}` | {} | {d} |\n",
+                        if required.contains(&n.as_str()) {
+                            "yes"
+                        } else {
+                            "no"
+                        }
+                    ));
+                }
+                o.push('\n');
+            }
+            _ => o.push_str("No arguments.\n\n"),
+        }
+    }
+    o.push_str("## Resources\n\n| URI | Description |\n|---|---|\n");
+    for res in resources::resources() {
+        o.push_str(&format!(
+            "| `{}` | {} |\n",
+            res.uri,
+            res.description.clone().unwrap_or_default()
+        ));
+    }
+    for t in resources::resource_templates() {
+        o.push_str(&format!(
+            "| `{}` | {} |\n",
+            t.uri_template,
+            t.description.clone().unwrap_or_default()
+        ));
+    }
+    o.push_str("\n## Prompts\n\n| Prompt | Argument | Description |\n|---|---|---|\n");
+    for p in resources::prompts() {
+        let arg = p
+            .arguments
+            .as_ref()
+            .and_then(|a| a.first())
+            .map(|a| a.name.clone())
+            .unwrap_or_default();
+        o.push_str(&format!(
+            "| `{}` | `{arg}` | {} |\n",
+            p.name,
+            p.description.clone().unwrap_or_default()
+        ));
+    }
+    o
 }
 
 const GENERATOR_DOC: &str = "site/src/content/docs/reference/seed-generators.md";
@@ -85,6 +244,9 @@ fn template_docs() -> String {
             o.push_str(&format!("| `{n}` | {} |\n", d.replace('|', "\\|")));
         }
         o.push('\n');
+        if title == "Functions" {
+            o.push_str("## Callback context\n\nInside a Callback (`url`, `headers`, `body`) the usual context is joined by `response` (`status`, `headers`, `body`, `json` of the Response that was sent) and, for `url` and `headers`, `callback` (`id`, `method` and `body`, the rendered body, so `hmac_sha256(key=vars.secret, data=callback.body)` signs what is sent). See the Callbacks guide.\n\n");
+        }
     }
     o
 }

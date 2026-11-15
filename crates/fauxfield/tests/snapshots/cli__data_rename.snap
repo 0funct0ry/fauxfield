@@ -4,6 +4,7 @@ expression: v
 ---
 {
   "live": false,
+  "ok": true,
   "renamed": {
     "from": "orders",
     "to": "purchases"
@@ -14,5 +15,6 @@ expression: v
     "moved_state": false,
     "rewritten_routes": []
   },
+  "schema": "fauxfield.data.rename/v1",
   "server": "example-api"
 }

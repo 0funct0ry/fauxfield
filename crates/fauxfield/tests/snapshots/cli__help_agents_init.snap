@@ -1,0 +1,21 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: out
+---
+Write MCP client config and an AGENTS.md section for this Workspace
+
+Usage: fauxfield agents init [OPTIONS]
+
+Options:
+      --claude            Configure Claude Code (.mcp.json)
+  -q, --quiet             Suppress informational output
+      --codex             Configure Codex (.codex/config.toml)
+      --no-color          Disable coloured output (also honoured: the NO_COLOR environment variable)
+      --cursor            Configure Cursor (.cursor/mcp.json)
+  -y, --yes               Write without asking
+      --dry-run           Print the diff and exit; nothing is written
+      --allow <ALLOW>     Tool classes the agent may use: read, write, execute [default: read write execute]
+      --command <PATH>    Command written into the client config (default: `fauxfield`; use an absolute path when the binary is not on PATH)
+  -w, --workspace <PATH>  Workspace folder (default: the nearest ancestor containing fauxfield.toml, else the current directory)
+      --json              Machine-readable output with a stable schema
+  -h, --help              Print help

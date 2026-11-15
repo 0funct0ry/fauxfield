@@ -82,6 +82,9 @@ pub enum Click {
     AboutCopy,
     /// About box: close it.
     AboutClose,
+    AgentsClient(String),
+    AgentsWrite,
+    AgentsCancel,
     /// About box: open a link (URL).
     AboutLink(String),
     /// M5 controls without their own variant: `<op>:<ids…>`, run by `Shell::press`.
@@ -117,6 +120,9 @@ impl Click {
                 | Click::BarSubmenu(_)
                 | Click::AboutCopy
                 | Click::AboutClose
+                | Click::AgentsClient(_)
+                | Click::AgentsWrite
+                | Click::AgentsCancel
                 | Click::AboutLink(_)
                 | Click::Tab(_)
                 | Click::CloseTab(_)
@@ -565,6 +571,9 @@ pub fn click_element(
         Click::BarSubmenu(i) => shell.bar_open_sub(i, cx),
         Click::AboutCopy => shell.copy_version_info(cx),
         Click::AboutClose => shell.close_about(cx),
+        Click::AgentsClient(id) => shell.agents_toggle_client(&id, cx),
+        Click::AgentsWrite => shell.agents_write(cx),
+        Click::AgentsCancel => shell.close_agents_dialog(cx),
         Click::AboutLink(url) => shell.open_link(&url, cx),
         Click::Press(op) => {
             if let Err(e) = shell.press(&op, node.bounds, window, cx) {

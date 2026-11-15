@@ -3,11 +3,14 @@ source: crates/fauxfield/tests/cli.rs
 expression: v
 ---
 {
+  "agents": [],
   "created": [
     "fauxfield.toml",
     "environments/local.toml",
     "servers/example-api.toml",
     ".gitignore"
   ],
-  "path": "<path>"
+  "ok": true,
+  "path": "<path>",
+  "schema": "fauxfield.init/v1"
 }

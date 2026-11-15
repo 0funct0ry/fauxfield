@@ -1,0 +1,9 @@
+schema = 1
+name = "agents-workspace"
+default_environment = "local"
+
+[variables]
+api_version = "v1"
+
+[defaults]
+host = "127.0.0.1"

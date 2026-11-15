@@ -5,6 +5,7 @@ expression: v
 {
   "deleted": "purchases",
   "live": false,
+  "ok": true,
   "references": {
     "actions": [],
     "free_text": [],
@@ -15,5 +16,6 @@ expression: v
   },
   "removed_seed": false,
   "removed_state": false,
+  "schema": "fauxfield.data.delete/v1",
   "server": "example-api"
 }

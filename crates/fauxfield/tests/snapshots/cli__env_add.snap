@@ -4,5 +4,7 @@ expression: v
 ---
 {
   "file": "environments/staging.toml",
-  "name": "staging"
+  "name": "staging",
+  "ok": true,
+  "schema": "fauxfield.env.add/v1"
 }

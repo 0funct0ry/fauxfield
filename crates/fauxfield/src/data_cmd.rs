@@ -156,7 +156,7 @@ pub enum DataAction {
 }
 
 fn fail(msg: &str) -> i32 {
-    eprintln!("error: {msg}");
+    crate::err!("{msg}");
     EXIT_RUNTIME
 }
 

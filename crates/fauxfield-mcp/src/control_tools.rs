@@ -155,7 +155,18 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-fn fail(e: impl std::fmt::Display) -> String {
+/// A tool error. When the host went away mid-session (`no_host`, a dropped connection) the
+/// message starts with `host_gone` and says to retry: the next call re-attaches to a live host
+/// or becomes the host (SPEC §11.1, M16).
+fn fail<E: std::fmt::Display + 'static>(e: E) -> String {
+    if let Some(c) = (&e as &dyn std::any::Any).downcast_ref::<fauxfield_control::ControlError>()
+        && matches!(c.kind.as_str(), "no_host" | "transport")
+    {
+        return format!(
+            "host_gone: the host for this workspace is no longer reachable ({}). Retry the call: it will re-attach to a running host or become the host.",
+            c.message
+        );
+    }
     e.to_string()
 }
 
@@ -432,11 +443,81 @@ pub fn register_control_tools(r: &mut Registry, provider: ControlProvider) {
                     status,
                     since_ms: a.since_seconds.map(|s| now_ms().saturating_sub(s * 1000)),
                     after_id: None,
-                    limit: Some(a.limit.unwrap_or(50).clamp(1, 1000)),
+                    limit: Some(a.limit.unwrap_or(50).clamp(1, crate::guard::TRAFFIC_LIMIT_MAX)),
                 };
                 let traffic = c.traffic(filter).await.map_err(fail)?;
                 Ok(json!({ "count": traffic.len(), "traffic": traffic }))
             })
         },
     ));
+}
+
+/// Forwards agent sessions and activity to the host through the control provider. When no host
+/// is running there is nothing to show them on, and the calls are dropped.
+pub fn control_sink(provider: ControlProvider) -> Arc<dyn crate::guard::AgentSink> {
+    struct Sink(ControlProvider);
+    impl Sink {
+        fn spawn<F>(&self, f: impl FnOnce(Arc<dyn ControlApi>) -> F)
+        where
+            F: Future<Output = ()> + Send + 'static,
+        {
+            if let Ok(Some(c)) = (self.0)(ControlMode::AttachOnly)
+                && let Ok(h) = tokio::runtime::Handle::try_current()
+            {
+                h.spawn(f(c));
+            }
+        }
+    }
+    impl crate::guard::AgentSink for Sink {
+        fn attach(&self, id: &str, name: &str) {
+            let (id, name) = (id.to_owned(), name.to_owned());
+            self.spawn(|c| async move {
+                let _ = c.agent_attach(id, name).await;
+            });
+        }
+        fn detach(&self, id: &str) {
+            let id = id.to_owned();
+            self.spawn(|c| async move {
+                let _ = c.agent_detach(id).await;
+            });
+        }
+        fn record(&self, a: &crate::guard::Activity) {
+            let e = fauxfield_control::AgentEvent {
+                ts_ms: a.ts_ms,
+                client: a.client.clone(),
+                tool: a.tool.clone(),
+                target: a.target.clone(),
+                outcome: serde_json::to_value(a.outcome)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_owned))
+                    .unwrap_or_default(),
+            };
+            self.spawn(|c| async move {
+                let _ = c.agent_record(e).await;
+            });
+        }
+    }
+    Arc::new(Sink(provider))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fail;
+    use fauxfield_control::ControlError;
+
+    #[test]
+    fn a_vanished_host_is_a_retryable_host_gone_error() {
+        for kind in ["no_host", "transport"] {
+            let m = fail(ControlError::new(kind, "closed"));
+            assert!(
+                m.starts_with("host_gone:") && m.contains("Retry the call"),
+                "{m}"
+            );
+        }
+        assert_eq!(
+            fail(ControlError::new("unknown_server", "no such server")),
+            "no such server"
+        );
+        assert_eq!(fail("plain".to_string()), "plain");
+    }
 }

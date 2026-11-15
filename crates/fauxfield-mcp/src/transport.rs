@@ -91,6 +91,12 @@ pub struct McpConfig {
     pub transport: TransportKind,
     pub socket: Option<PathBuf>,
     pub allow: AllowedClasses,
+    /// Port of the `http` transport (random free port when `None`).
+    pub port: Option<u16>,
+    /// Extra name globs whose variable values are redacted (`[mcp] redact`).
+    pub redact: Vec<String>,
+    /// Where the `http` transport writes `mcp-http.json` (`<workspace>/.fauxfield/run`).
+    pub run_dir: Option<PathBuf>,
 }
 
 impl Default for McpConfig {
@@ -99,6 +105,9 @@ impl Default for McpConfig {
             transport: TransportKind::Stdio,
             socket: None,
             allow: AllowedClasses::all(),
+            port: None,
+            redact: Vec::new(),
+            run_dir: None,
         }
     }
 }
@@ -109,6 +118,9 @@ pub struct McpSettings {
     pub transport: Option<TransportKind>,
     pub allow: Option<Vec<String>>,
     pub socket: Option<PathBuf>,
+    pub port: Option<u16>,
+    #[serde(default)]
+    pub redact: Vec<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -152,11 +164,14 @@ impl McpSettings {
             transport: transport.or(self.transport).unwrap_or(TransportKind::Stdio),
             socket: socket.or(self.socket),
             allow: allow.or(from_settings).unwrap_or_default(),
+            port: self.port,
+            redact: self.redact,
+            run_dir: None,
         })
     }
 }
 
-fn settings_path() -> Option<PathBuf> {
+pub fn settings_path() -> Option<PathBuf> {
     if let Some(p) = std::env::var_os("FAUXFIELD_SETTINGS") {
         return Some(PathBuf::from(p));
     }

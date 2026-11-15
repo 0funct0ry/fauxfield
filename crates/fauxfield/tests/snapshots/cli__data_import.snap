@@ -6,6 +6,8 @@ expression: v
   "dataset": "people",
   "format": "json",
   "live": false,
+  "ok": true,
   "rows": 1,
+  "schema": "fauxfield.data.import/v1",
   "warnings": []
 }

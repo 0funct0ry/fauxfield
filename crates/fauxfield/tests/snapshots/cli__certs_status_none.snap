@@ -4,7 +4,9 @@ expression: v
 ---
 {
   "exists": false,
+  "ok": true,
   "path": "<path>",
+  "schema": "fauxfield.certs.status/v1",
   "trust": "<trust>",
   "trust_command": "<trust_command>",
   "untrust_command": "<untrust_command>"

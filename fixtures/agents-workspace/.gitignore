@@ -1,0 +1,6 @@
+.fauxfield/
+# The m16-agents scenario writes these; they are not part of the fixture.
+.mcp.json
+.codex/
+.cursor/
+AGENTS.md

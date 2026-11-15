@@ -5,6 +5,8 @@ expression: v
 {
   "created": "orders",
   "live": false,
+  "ok": true,
   "rows": 0,
+  "schema": "fauxfield.data.create/v1",
   "server": "example-api"
 }

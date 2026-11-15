@@ -32,6 +32,8 @@ pub struct HostOptions {
     pub network: Option<fauxfield_engine::NetworkProfile>,
     /// Chaos fault rate for every Server at start (`run --chaos`).
     pub chaos: Option<f64>,
+    /// Fake-data seed for every Server (`run --seed`).
+    pub seed: Option<u64>,
 }
 
 /// The one host process per workspace (SPEC §3.1): engine, control socket, `host.json`, and
@@ -95,6 +97,7 @@ impl Host {
                 network: opts.network,
                 chaos: opts.chaos,
                 data_dir: None,
+                seed: opts.seed,
             },
         );
         let control = Arc::new(LocalControl::new(engine.clone()));

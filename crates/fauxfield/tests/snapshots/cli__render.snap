@@ -13,9 +13,11 @@ expression: v
     ]
   ],
   "json_error": null,
+  "ok": true,
   "render_ms": 0,
   "response": "<response>",
   "route": "<route>",
+  "schema": "fauxfield.render/v1",
   "server": "<server>",
   "status": 200
 }

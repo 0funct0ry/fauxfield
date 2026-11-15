@@ -1,0 +1,9 @@
+# UI state fixture (M16): an agent is attached. Any MCP client that connects to the dev-mcp
+# socket is attached while it stays connected, so this state needs the capturing client to be
+# the one that is connected: it waits for the status bar indicator and opens Agent activity.
+steps:
+  - reset
+  - wait_for: {condition: {pointer: /agents/attached, equals: [], not: true}}
+  - click_element: status.agent
+  - wait_for: {condition: {pointer: /agents/log_source, equals: agent}}
+  - wait_idle

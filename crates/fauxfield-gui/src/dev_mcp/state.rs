@@ -33,6 +33,8 @@ pub struct UiState {
     /// The Problems list itself (validation diagnostics).
     pub problem_list: Vec<ProblemState>,
     pub logs: usize,
+    /// Attached agents, the Agent activity log and the setup dialog (M16).
+    pub agents: AgentsState,
     /// `welcome` when no workspace is open, else `workspace`.
     pub view: &'static str,
     /// Files whose external edit collides with unsaved edits (merge banner shown when non-empty).
@@ -492,6 +494,41 @@ pub struct WorkspaceState {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct AgentsState {
+    pub attached: Vec<AgentAttachedState>,
+    pub activity: Vec<AgentActivityState>,
+    /// Logs source filter: `all`, `engine` or `agent`.
+    pub log_source: &'static str,
+    /// Row ids currently flashing because an agent changed them.
+    pub flashing: Vec<String>,
+    pub dialog: Option<AgentsDialogState>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct AgentAttachedState {
+    pub name: String,
+    pub since: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct AgentActivityState {
+    pub ts: u64,
+    pub client: String,
+    pub tool: String,
+    pub target: String,
+    pub outcome: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct AgentsDialogState {
+    pub clients: Vec<(String, bool)>,
+    pub allow: String,
+    pub files: Vec<(String, String)>,
+    pub selected: usize,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct RecentState {
     pub path: String,
     pub name: String,
@@ -870,6 +907,57 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
             })
             .collect(),
         logs: shell.logs.len(),
+        agents: AgentsState {
+            attached: shell
+                .agents_attached
+                .iter()
+                .map(|s| AgentAttachedState {
+                    name: s.name.clone(),
+                    since: s.since_ms,
+                })
+                .collect(),
+            activity: shell
+                .agent_log
+                .iter()
+                .map(|e| AgentActivityState {
+                    ts: e.ts_ms,
+                    client: e.client.clone(),
+                    tool: e.tool.clone(),
+                    target: e.target.clone(),
+                    outcome: e.outcome.clone(),
+                })
+                .collect(),
+            log_source: shell.log_source.value(),
+            flashing: shell.agent_flash.iter().map(|(id, _)| id.clone()).collect(),
+            dialog: shell.agents_dialog.as_ref().map(|d| AgentsDialogState {
+                clients: d
+                    .clients
+                    .iter()
+                    .map(|(c, on)| (c.id().to_string(), *on))
+                    .collect(),
+                allow: d.allow.clone(),
+                files: d
+                    .plan
+                    .as_ref()
+                    .map(|p| {
+                        p.files
+                            .iter()
+                            .map(|f| {
+                                (
+                                    f.path.clone(),
+                                    serde_json::to_value(f.action)
+                                        .ok()
+                                        .and_then(|v| v.as_str().map(str::to_owned))
+                                        .unwrap_or_default(),
+                                )
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                selected: d.selected,
+                error: d.plan.as_ref().err().filter(|e| !e.is_empty()).cloned(),
+            }),
+        },
         view: if shell.store.is_some() {
             "workspace"
         } else {

@@ -85,6 +85,7 @@ impl Shell {
                     Action("toast_action")
                 )
             }))
+            .children(self.render_agent_status(t, cx))
             .child({
                 let p = self.network_profile;
                 let col = if p == fauxfield_engine::NetworkProfile::None {

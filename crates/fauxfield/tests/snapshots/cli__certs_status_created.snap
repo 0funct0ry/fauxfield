@@ -7,7 +7,9 @@ expression: v
   "exists": true,
   "fingerprint": "<fingerprint>",
   "not_after": "<not_after>",
+  "ok": true,
   "path": "<path>",
+  "schema": "fauxfield.certs.status/v1",
   "trust": "<trust>",
   "trust_command": "<trust_command>",
   "untrust_command": "<untrust_command>"

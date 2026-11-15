@@ -3326,3 +3326,221 @@ fn deleting_a_callback_asks_first_and_help_popovers_toggle(cx: &mut TestAppConte
         Some("id")
     );
 }
+
+fn dir_listing(root: &std::path::Path) -> Vec<String> {
+    fn walk(d: &std::path::Path, root: &std::path::Path, out: &mut Vec<String>) {
+        for e in std::fs::read_dir(d).unwrap().flatten() {
+            let p = e.path();
+            out.push(p.strip_prefix(root).unwrap().to_string_lossy().into_owned());
+            if p.is_dir() {
+                walk(&p, root, out);
+            }
+        }
+    }
+    let mut v = vec![];
+    walk(root, root, &mut v);
+    v.sort();
+    v
+}
+
+fn open_real_workspace(view: &Entity<Shell>, cx: &mut VisualTestContext) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    fauxfield_store::init_workspace(dir.path()).unwrap();
+    let store = fauxfield_store::Store::open(dir.path()).unwrap();
+    let root = dir.path().to_path_buf();
+    view.update(cx, |s, _| {
+        s.ws.root = root;
+        s.store = Some(store);
+    });
+    dir
+}
+
+#[gpui::test]
+fn agents_dialog_cancel_writes_nothing_and_write_creates_files(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    let dir = open_real_workspace(&view, cx);
+    let before = dir_listing(dir.path());
+
+    view.update(cx, |s, cx| s.open_agents_dialog_with_home(None, cx));
+    cx.run_until_parked();
+    assert_eq!(read(&view, cx, |s| s.dialog_name()), Some("agents"));
+    // The detected default is Claude Code; the plan shows the files it would write.
+    let planned = read(&view, cx, |s| {
+        let d = s.agents_dialog.as_ref().unwrap();
+        d.plan
+            .as_ref()
+            .unwrap()
+            .files
+            .iter()
+            .map(|f| f.path.clone())
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(planned, [".mcp.json", "AGENTS.md", ".gitignore"]);
+
+    // Toggling a client re-plans.
+    view.update(cx, |s, cx| s.agents_toggle_client("cursor", cx));
+    let planned = read(&view, cx, |s| {
+        s.agents_dialog
+            .as_ref()
+            .unwrap()
+            .plan
+            .as_ref()
+            .unwrap()
+            .files
+            .len()
+    });
+    assert_eq!(planned, 4);
+
+    // Esc cancels and the directory tree is unchanged.
+    cx.simulate_keystrokes("escape");
+    assert!(read(&view, cx, |s| s.agents_dialog.is_none()));
+    assert_eq!(dir_listing(dir.path()), before);
+
+    // Enter writes, closes and toasts.
+    view.update(cx, |s, cx| s.open_agents_dialog_with_home(None, cx));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("enter");
+    assert!(read(&view, cx, |s| s.agents_dialog.is_none()));
+    assert!(dir.path().join(".mcp.json").is_file());
+    assert!(dir.path().join("AGENTS.md").is_file());
+    let toast = read(&view, cx, |s| s.notice.as_ref().map(|(_, m)| m.clone()));
+    assert_eq!(
+        toast.as_deref(),
+        Some("MCP configured for Claude Code. Restart it, then run /mcp.")
+    );
+    // Opening again finds nothing to do.
+    view.update(cx, |s, cx| s.open_agents_dialog_with_home(None, cx));
+    let noop = read(&view, cx, |s| {
+        s.agents_dialog
+            .as_ref()
+            .unwrap()
+            .plan
+            .as_ref()
+            .unwrap()
+            .is_noop()
+    });
+    assert!(noop);
+}
+
+#[gpui::test]
+fn attached_agents_show_in_the_status_bar_and_activity_log(cx: &mut TestAppContext) {
+    use crate::agents_ui::{LogSource, attached_label};
+    let (view, cx) = setup(cx, None);
+    let dir = open_real_workspace(&view, cx);
+    let host = fauxfield_control::Host::start(
+        dir.path(),
+        fauxfield_control::HostOptions {
+            watch: false,
+            publish: false,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let agents = host.control();
+    view.update(cx, |s, _| s.host = Some(host));
+
+    // Nothing attached: no indicator.
+    view.update(cx, |s, cx| s.poll_agents(cx));
+    assert_eq!(
+        read(&view, cx, |s| attached_label(&s.agents_attached)),
+        None
+    );
+
+    agents.agents().attach("s1", "Claude Code");
+    agents.agents().record(fauxfield_control::AgentEvent {
+        ts_ms: 1_000,
+        client: "Claude Code".into(),
+        tool: "upsert_route".into(),
+        target: "rte_1".into(),
+        outcome: "updated".into(),
+    });
+    view.update(cx, |s, cx| s.poll_agents(cx));
+    assert_eq!(
+        read(&view, cx, |s| attached_label(&s.agents_attached)).as_deref(),
+        Some("Claude Code attached")
+    );
+    assert_eq!(read(&view, cx, |s| s.agent_log.len()), 1);
+
+    // A second client turns the label into a count.
+    agents.agents().attach("s2", "codex");
+    view.update(cx, |s, cx| s.poll_agents(cx));
+    assert_eq!(
+        read(&view, cx, |s| attached_label(&s.agents_attached)).as_deref(),
+        Some("2 agents attached")
+    );
+
+    // Clicking the indicator opens Logs on Agent activity.
+    view.update(cx, |s, cx| s.show_agent_activity(cx));
+    assert_eq!(read(&view, cx, |s| s.log_source), LogSource::Agent);
+    assert_eq!(read(&view, cx, |s| s.layout.bottom_tab), BottomTab::Logs);
+    view.update(cx, |s, cx| s.copy_agent_log_markdown(cx));
+    let md = cx.read_from_clipboard().and_then(|c| c.text()).unwrap();
+    assert!(md.contains("`upsert_route`") && md.contains("rte_1") && md.contains("updated"));
+
+    // Disconnect: the indicator disappears.
+    agents.agents().detach("s1");
+    agents.agents().detach("s2");
+    view.update(cx, |s, cx| s.poll_agents(cx));
+    assert_eq!(
+        read(&view, cx, |s| attached_label(&s.agents_attached)),
+        None
+    );
+}
+
+#[gpui::test]
+fn agent_edits_flash_the_row_or_its_nearest_visible_ancestor(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    let dir = open_real_workspace(&view, cx);
+    let host = fauxfield_control::Host::start(
+        dir.path(),
+        fauxfield_control::HostOptions {
+            watch: false,
+            publish: false,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let agents = host.control();
+    view.update(cx, |s, _| s.host = Some(host));
+    let (server, route) = read(&view, cx, |s| {
+        let srv = s.ws.servers.iter().find(|x| !x.routes.is_empty()).unwrap();
+        (srv.id.clone(), srv.routes[0].id.clone())
+    });
+    let now = fauxfield_control::agents::now_ms();
+    let ev = |tool: &str, target: &str, ts: u64, outcome: &str| fauxfield_control::AgentEvent {
+        ts_ms: ts,
+        client: "Claude Code".into(),
+        tool: tool.into(),
+        target: target.into(),
+        outcome: outcome.into(),
+    };
+    // A read never flashes; an update of a Route does.
+    agents
+        .agents()
+        .record(ev("get_route", &route, now + 5, "read"));
+    view.update(cx, |s, cx| s.poll_agents(cx));
+    assert!(read(&view, cx, |s| s.agent_flash.is_empty()));
+    agents
+        .agents()
+        .record(ev("upsert_route", &route, now + 10, "updated"));
+    view.update(cx, |s, cx| s.poll_agents(cx));
+    let rows = |s: &Shell| crate::tree::flatten(&s.ws, &s.collapsed, &s.active_env, s.sidebar_tab);
+    let flashing = read(&view, cx, |s| s.flashing_rows(&rows(s)));
+    assert_eq!(flashing, std::collections::HashSet::from([route.clone()]));
+
+    // With the Server collapsed the Route row is out of sight: its Server flashes instead.
+    view.update(cx, |s, _| s.toggle_row(&server));
+    let flashing = read(&view, cx, |s| s.flashing_rows(&rows(s)));
+    assert_eq!(flashing, std::collections::HashSet::from([server.clone()]));
+
+    // Reduced motion keeps a static tag for 3 s instead of the 1.2 s fade.
+    assert_eq!(
+        read(&view, cx, |s| s.flash_hold()),
+        std::time::Duration::from_millis(1200)
+    );
+    view.update(cx, |s, _| s.reduced_motion = true);
+    assert_eq!(
+        read(&view, cx, |s| s.flash_hold()),
+        std::time::Duration::from_millis(3000)
+    );
+}

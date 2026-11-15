@@ -1,0 +1,22 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: out
+---
+List and inspect Servers
+
+Usage: fauxfield server [OPTIONS] <COMMAND>
+
+Commands:
+  list     List Servers
+  add      Create a Server file
+  rm       Delete a Server file (refused while a host is running unless --force)
+  show     Show one Server with its Routes
+  rename   Rename a Server; the file follows the slug, the ID stays
+  enable   Enable a Server
+  disable  Disable a Server
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+  -q, --quiet     Suppress informational output
+      --no-color  Disable coloured output (also honoured: the NO_COLOR environment variable)
+  -h, --help      Print help

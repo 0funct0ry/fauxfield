@@ -4,5 +4,7 @@ expression: v
 ---
 {
   "name": "My Mocks",
-  "root": "<root>"
+  "ok": true,
+  "root": "<root>",
+  "schema": "fauxfield.workspace.rename/v1"
 }

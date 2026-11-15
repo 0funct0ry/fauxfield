@@ -3,6 +3,8 @@
 
 pub mod actions;
 pub mod actions_ui;
+pub mod agents_dialog;
+pub mod agents_ui;
 pub mod assets;
 pub mod bottom_dock;
 pub mod callback_dialog;

@@ -36,7 +36,7 @@ pub struct TrustArgs {
 
 fn data_dir() -> Result<std::path::PathBuf, i32> {
     tls::default_data_dir().ok_or_else(|| {
-        eprintln!("error: no platform data directory");
+        crate::err!("no platform data directory");
         EXIT_RUNTIME
     })
 }
@@ -71,7 +71,7 @@ pub fn certs(action: CertsAction) -> i32 {
 
 fn trust(dd: &std::path::Path, a: TrustArgs, add: bool) -> i32 {
     if add && let Err(e) = tls::load_or_create_ca(dd) {
-        eprintln!("error: {e}");
+        crate::err!("{e}");
         return EXIT_RUNTIME;
     }
     let st = tls::ca_status(dd);
@@ -106,7 +106,7 @@ fn trust(dd: &std::path::Path, a: TrustArgs, add: bool) -> i32 {
             EXIT_OK
         }
         Err(e) => {
-            eprintln!("error: {e}");
+            crate::err!("{e}");
             EXIT_RUNTIME
         }
     }

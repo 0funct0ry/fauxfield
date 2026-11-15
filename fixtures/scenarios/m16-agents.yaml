@@ -1,0 +1,52 @@
+# M16 scenario: agents. "Agents: Set Up MCP…" shows a diff per file, Cancel writes nothing, Write
+# files writes them; then an MCP client (this scenario's own session) calls upsert_route, the
+# edited Route row flashes and the status bar shows the attached agent. Writes .mcp.json,
+# AGENTS.md and .gitignore changes into fixtures/agents-workspace (git-ignored there). Run it
+# against a dev-mcp build over the socket (`fauxfield mcp scenario`), so the session is attached.
+# Not yet run in CI.
+name: m16-agents
+size: default
+steps:
+  - state: [reset]
+  - open_workspace: fixtures/agents-workspace
+  - invoke: agents_setup
+  - wait_for: {condition: {pointer: /modal, equals: agents}}
+  - assert_find: {text: Set up MCP, ids: [agents.dialog, agents.client.claude, agents.client.codex, agents.client.cursor, agents.diff, agents.write, agents.cancel]}
+  - assert: {pointer: /agents/dialog/files/0/0, equals: .mcp.json}
+  - assert: {pointer: /agents/dialog/files/0/1, equals: create}
+  - screenshot: {name: m16-agents-dialog}
+  # Toggling a client re-plans: Cursor adds its file.
+  - click_element: {id: agents.client.cursor}
+  - wait_for_idle: {}
+  - assert: {pointer: /agents/dialog/files/1/0, equals: .cursor/mcp.json}
+  - click_element: {id: agents.client.cursor}
+  - wait_for_idle: {}
+  # Cancel writes nothing: opening again still plans to create the file.
+  - click_element: {id: agents.cancel}
+  - wait_for_idle: {}
+  - assert: {pointer: /modal, equals: agents, not: true}
+  - invoke: agents_setup
+  - wait_for: {condition: {pointer: /modal, equals: agents}}
+  - assert: {pointer: /agents/dialog/files/0/1, equals: create}
+  # Write files writes them: the next plan has nothing to do.
+  - click_element: {id: agents.write}
+  - wait_for_idle: {}
+  - assert: {pointer: /modal, equals: agents, not: true}
+  - invoke: agents_setup
+  - wait_for: {condition: {pointer: /modal, equals: agents}}
+  - assert: {pointer: /agents/dialog/files/0/1, equals: unchanged}
+  - click_element: {id: agents.cancel}
+  - wait_for_idle: {}
+  # An agent edit flashes the Route row and shows in the status bar and the activity log.
+  - call:
+      tool: upsert_route
+      arguments: {server: srv_kdkfm5py, route: rte_bhukgavf, name: Health (agent)}
+  - wait_for: {condition: {pointer: /agents/flashing, contains: rte_bhukgavf}, timeout_ms: 3000}
+  - screenshot: {name: m16-agent-flash}
+  - assert_find: {text: attached, ids: [status.agent]}
+  - click_element: {id: status.agent}
+  - wait_for_idle: {}
+  - assert: {pointer: /agents/log_source, equals: agent}
+  - assert: {pointer: /bottom_tab, equals: logs}
+  - screenshot: {name: m16-agent-activity}
+  - audit: {themes: [one-dark, one-light], sizes: [default, min]}

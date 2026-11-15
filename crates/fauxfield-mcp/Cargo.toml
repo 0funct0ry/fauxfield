@@ -25,6 +25,8 @@ toml.workspace = true
 thiserror.workspace = true
 regex.workspace = true
 serde_yaml_ng = "0.10"
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+getrandom.workspace = true
 base64 = "0.22"
 
 [dev-dependencies]

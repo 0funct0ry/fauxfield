@@ -22,6 +22,7 @@ expression: v
       "server": "Example API"
     }
   ],
+  "schema": "fauxfield.doctor/v1",
   "version": "<version>",
   "workspace": "<workspace>"
 }

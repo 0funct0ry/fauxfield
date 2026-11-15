@@ -4,5 +4,7 @@ expression: v
 ---
 {
   "default": true,
-  "id": "<id>"
+  "id": "<id>",
+  "ok": true,
+  "schema": "fauxfield.response.set-default/v1"
 }

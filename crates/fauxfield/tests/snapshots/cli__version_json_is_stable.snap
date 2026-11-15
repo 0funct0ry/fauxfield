@@ -9,7 +9,9 @@ expression: v
   "gpui": "0.2.2",
   "gui": "<bool>",
   "name": "fauxfield",
+  "ok": true,
   "profile": "<profile>",
+  "schema": "fauxfield.version/v1",
   "target": "<target>",
   "version": "<version>"
 }

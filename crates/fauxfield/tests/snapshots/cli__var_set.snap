@@ -4,7 +4,9 @@ expression: v
 ---
 {
   "key": "base",
+  "ok": true,
   "removed": false,
+  "schema": "fauxfield.var.set/v1",
   "scope": "environment",
   "value": "http://s"
 }

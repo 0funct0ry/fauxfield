@@ -16,5 +16,7 @@ expression: v
       "server": "Example API"
     }
   ],
-  "live": false
+  "live": false,
+  "ok": true,
+  "schema": "fauxfield.data.list/v1"
 }

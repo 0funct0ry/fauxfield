@@ -453,6 +453,16 @@ pub struct Shell {
     pub(crate) pending_action: Option<String>,
     pub(crate) problems: Vec<Problem>,
     pub(crate) logs: Vec<String>,
+    /// Agents attached to the host and the Agent activity log (M16), refreshed by the poll.
+    pub(crate) agents_attached: Vec<fauxfield_control::AgentSession>,
+    pub(crate) agent_log: Vec<fauxfield_control::AgentEvent>,
+    pub(crate) log_source: crate::agents_ui::LogSource,
+    pub(crate) log_session: Option<String>,
+    /// Rows an agent just changed: (row or entity id, when) for the 1.2 s flash (M16).
+    pub(crate) agent_flash: Vec<(String, std::time::Instant)>,
+    /// Activity at or before this time (ms) predates this window and never flashes.
+    pub(crate) agent_seen_ts: u64,
+    pub(crate) reduced_motion: bool,
     /// The host for the open workspace (engine, control socket). Declared before `rt` so it
     /// drops first.
     pub(crate) host: Option<fauxfield_control::Host>,
@@ -574,6 +584,7 @@ pub struct Shell {
     pub(crate) menu_sink: Box<dyn crate::menu_shell::MenuSink>,
     pub(crate) url_opener: Box<dyn crate::menu_shell::UrlOpener>,
     pub(crate) about_open: bool,
+    pub(crate) agents_dialog: Option<crate::agents_dialog::AgentsDialog>,
     pub(crate) sample_dialog: Option<crate::sample::SampleDraft>,
     pub(crate) sample_editors: Option<[gpui::Entity<crate::code_editor::CodeEditor>; 2]>,
     pub(crate) bar: crate::menubar::Bar,
@@ -756,6 +767,13 @@ impl Shell {
             pending_action: None,
             problems: store_problems,
             logs: Vec::new(),
+            agents_attached: Vec::new(),
+            agent_log: Vec::new(),
+            log_source: Default::default(),
+            log_session: None,
+            agent_flash: Vec::new(),
+            agent_seen_ts: fauxfield_control::agents::now_ms(),
+            reduced_motion: std::env::var_os("FAUXFIELD_REDUCED_MOTION").is_some(),
             host: None,
             rt: None,
             engine_events: None,
@@ -842,6 +860,7 @@ impl Shell {
             menu_sink: Box::new(crate::menu_shell::NativeSink),
             url_opener: Box::new(crate::menu_shell::SystemOpener),
             about_open: false,
+            agents_dialog: None,
             sample_dialog: None,
             sample_editors: None,
             bar: Default::default(),
@@ -907,6 +926,7 @@ impl Shell {
 
     fn poll_store(&mut self, cx: &mut Context<Self>) {
         self.poll_engine(cx);
+        self.poll_agents(cx);
         let Some(rx) = &self.store_events else { return };
         let mut changed = false;
         while let Ok(ev) = rx.try_recv() {
@@ -2154,6 +2174,15 @@ impl Shell {
             return;
         }
         if self.bar_mnemonic(ev, cx) {
+            cx.stop_propagation();
+            return;
+        }
+        if self.agents_dialog.is_some() && matches!(ev.keystroke.key.as_str(), "escape" | "enter") {
+            if ev.keystroke.key == "escape" {
+                self.close_agents_dialog(cx);
+            } else {
+                self.agents_write(cx);
+            }
             cx.stop_propagation();
             return;
         }
@@ -3626,6 +3655,7 @@ impl Render for Shell {
             CancelQuit => |this, _w, cx| this.cancel_quit(cx),
             Quit => |this, _w, cx| this.request_quit(cx),
             ShowAbout => |this, _w, cx| this.show_about(cx),
+            AgentsSetup => |this, _w, cx| this.open_agents_dialog(cx),
             HideApp => |_this, _w, cx| cx.hide(),
             HideOthers => |_this, _w, cx| cx.hide_other_apps(),
             ShowAllApps => |_this, _w, cx| cx.unhide_other_apps(),
@@ -3750,6 +3780,9 @@ impl Render for Shell {
             d.child(self.render_dialogs(&t, cx))
         })
         .when(self.about_open, |d| d.child(self.render_about(&t, cx)))
+        .when(self.agents_dialog.is_some(), |d| {
+            d.child(self.render_agents_dialog(&t, cx))
+        })
         .when(self.sample_dialog.is_some(), |d| {
             d.child(self.render_sample_dialog(&t, cx))
         })

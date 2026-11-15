@@ -62,6 +62,12 @@ pub enum Step {
     Invoke(String),
     /// `ui.command` object.
     Command(Map<String, Value>),
+    /// Call any registered tool (a product tool such as `upsert_route`), like an agent would.
+    Call {
+        tool: String,
+        #[serde(default)]
+        arguments: Map<String, Value>,
+    },
     /// `ui.menu` object, e.g. `{action: invoke, path: [File, Open Recent, demo]}`.
     Menu(Map<String, Value>),
     /// `ui.click_element`.
@@ -306,6 +312,7 @@ impl Run<'_> {
                 .await
                 .map(drop),
             Step::Command(m) => self.tool("ui.command", m.clone()).await.map(drop),
+            Step::Call { tool, arguments } => self.tool(tool, arguments.clone()).await.map(drop),
             Step::Menu(m) => self.tool("ui.menu", m.clone()).await.map(drop),
             Step::ClickElement(i) => self
                 .tool("ui.click_element", obj(json!({ "id": i.id() })))

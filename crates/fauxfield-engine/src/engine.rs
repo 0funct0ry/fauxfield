@@ -52,6 +52,8 @@ pub struct EngineConfig {
     pub chaos: Option<f64>,
     /// Where the dev CA lives (`<dir>/ca/`); default is the platform data dir (SPEC §5.8).
     pub data_dir: Option<PathBuf>,
+    /// Replaces every Server's `fake_seed`, so generated and fake data repeat (`fauxfield run --seed`).
+    pub seed: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -865,7 +867,7 @@ impl Engine {
         let input = crate::template::Input {
             context: ctx,
             root: &self.inner.cfg.root,
-            seed: s.fake_seed,
+            seed: self.inner.cfg.seed.or(s.fake_seed),
             route_id: "",
             counter: 0,
             seq: None,
@@ -1362,7 +1364,7 @@ async fn handle(
                     &engine.inner.vars.read().unwrap(),
                     Some(&r.id),
                 ),
-                seed: server_def.fake_seed,
+                seed: engine.inner.cfg.seed.or(server_def.fake_seed),
                 route_id: r.id.clone(),
                 counter: call,
                 seq: Some(rt.seq.clone()),
@@ -1490,7 +1492,7 @@ async fn handle(
                     &engine.inner.vars.read().unwrap(),
                     Some(&r.id),
                 ),
-                seed: server_def.fake_seed,
+                seed: engine.inner.cfg.seed.or(server_def.fake_seed),
                 route_id: r.id.clone(),
                 counter: call,
                 seq: Some(rt.seq.clone()),

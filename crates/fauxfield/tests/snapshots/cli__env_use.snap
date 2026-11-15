@@ -4,5 +4,7 @@ expression: v
 ---
 {
   "active": "staging",
-  "live": false
+  "live": false,
+  "ok": true,
+  "schema": "fauxfield.env.use/v1"
 }

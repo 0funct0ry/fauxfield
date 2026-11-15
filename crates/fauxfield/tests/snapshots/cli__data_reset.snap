@@ -5,6 +5,8 @@ expression: v
 {
   "dataset": null,
   "live": false,
+  "ok": true,
   "reset": true,
+  "schema": "fauxfield.data.reset/v1",
   "server": null
 }

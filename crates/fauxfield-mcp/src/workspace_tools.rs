@@ -1201,3 +1201,29 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
         Box::pin(async move { Ok(v) })
     }));
 }
+
+/// Values of variables whose names look secret (or match `extra` globs), across the manifest,
+/// every Environment, Server and Route. Feeds the redactor (SPEC §11.1).
+pub fn secret_values(store: &Store, extra: &[String]) -> Vec<String> {
+    use crate::guard::is_secret_name;
+    let snap = store.snapshot();
+    let mut out = Vec::new();
+    let mut take = |vars: &std::collections::BTreeMap<String, toml::Value>| {
+        for (k, v) in vars {
+            if is_secret_name(k, extra) {
+                out.push(fauxfield_model::vars::value_text(v));
+            }
+        }
+    };
+    take(&snap.manifest.variables);
+    for (_, e) in &snap.environments {
+        take(&e.variables);
+    }
+    for (_, s) in &snap.servers {
+        take(&s.variables);
+        for r in &s.routes {
+            take(&r.variables);
+        }
+    }
+    out
+}

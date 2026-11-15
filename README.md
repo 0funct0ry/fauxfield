@@ -19,6 +19,20 @@ automatically. For direct cargo use: `cargo run -p fauxfield --features runtime-
 
 Headless build (no GPU dependencies): `make build-headless`.
 
+## Agents
+
+Let a coding agent mock your APIs over MCP:
+
+```bash
+fauxfield agents init --claude    # writes .mcp.json and an AGENTS.md section after showing a diff
+fauxfield .                       # open the app to watch the agent work
+```
+
+Restart Claude Code and run `/mcp`, then ask it to "mock the endpoints this React page needs and
+start them". Use `fauxfield mcp . --read-only` for a read-only agent. See
+`site/src/content/docs/guides/agents.md`; the tool and CLI references are generated
+(`make docs-gen`, checked by `make docs-check`).
+
 ## Keys
 
 | Action                            | macOS                  | Linux / Windows                       |

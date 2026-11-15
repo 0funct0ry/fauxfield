@@ -1,0 +1,19 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: out
+---
+Print request logs from the running host
+
+Usage: fauxfield logs [OPTIONS]
+
+Options:
+      --follow            Keep printing new requests until interrupted
+  -q, --quiet             Suppress informational output
+      --no-color          Disable coloured output (also honoured: the NO_COLOR environment variable)
+      --server <SERVER>   Only these Servers (ID or name); repeatable
+      --status <STATUS>   Status filter: `404` or a class like `5xx`
+      --since <AGE>       Only requests newer than this, e.g. `30s`, `10m`, `2h`
+      --har <FILE>        Write the matching requests as a HAR 1.2 file instead of printing them
+  -w, --workspace <PATH>  Workspace folder (default: the nearest ancestor containing fauxfield.toml, else the current directory)
+      --json              Machine-readable output with a stable schema
+  -h, --help              Print help

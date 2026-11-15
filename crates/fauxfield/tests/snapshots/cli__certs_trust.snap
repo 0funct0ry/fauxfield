@@ -4,6 +4,8 @@ expression: v
 ---
 {
   "command": "<command>",
+  "ok": true,
   "ran": false,
+  "schema": "fauxfield.certs.trust/v1",
   "trust": "<trust>"
 }

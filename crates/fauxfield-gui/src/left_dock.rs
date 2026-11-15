@@ -16,6 +16,7 @@ impl Shell {
     pub(crate) fn render_left_dock(&self, t: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let tab = self.sidebar_tab;
         let rows = tree::flatten(&self.ws, &self.collapsed, &self.active_env, tab);
+        let flashing = self.flashing_rows(&rows);
         let count = self.sidebar_count(tab);
         let body: gpui::AnyElement = if rows.is_empty() {
             self.render_sidebar_empty(t, tab, cx).into_any_element()
@@ -29,7 +30,12 @@ impl Shell {
                     .overflow_y_scroll()
                     .flex()
                     .flex_col()
-                    .children(rows.iter().map(|r| self.render_tree_row(t, r, cx))),
+                    .children(rows.iter().map(|r| self.render_tree_row(
+                        t,
+                        r,
+                        flashing.contains(&r.id),
+                        cx
+                    ))),
                 "tree",
                 List,
                 "Workspace tree",
@@ -355,7 +361,13 @@ impl Shell {
         )
     }
 
-    fn render_tree_row(&self, t: &Theme, r: &TreeRow, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn render_tree_row(
+        &self,
+        t: &Theme,
+        r: &TreeRow,
+        flash: bool,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         let selected = self.selected.as_deref() == Some(r.id.as_str());
         let (hover, sel) = (t.element_hover, t.element_selected);
         let id = r.id.clone();
@@ -531,6 +543,7 @@ impl Shell {
                 .text_size(px(13.))
                 .text_color(if disabled { t.text_muted } else { t.text })
                 .when(selected, |d| d.bg(sel))
+                .when(flash && !self.reduced_motion, |d| d.bg(t.accent_bg()))
                 .hover(move |s| s.bg(hover))
                 .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| {
                     this.click_row(&id, ev.click_count(), cx)
@@ -568,6 +581,19 @@ impl Shell {
                 .child(chevron)
                 .child(lead)
                 .child(div().flex_1().truncate().child(r.label.clone()))
+                .when(flash, |d| {
+                    d.child(crate::dev_id!(
+                        div()
+                            .flex_none()
+                            .text_size(px(10.))
+                            .text_color(t.accent)
+                            .child("● agent"),
+                        format!("tree-agent-{}", r.id),
+                        Text,
+                        "agent",
+                        None
+                    ))
+                })
                 .children(match &r.kind {
                     RowKind::Server { port, enabled, .. } => Some(
                         div()

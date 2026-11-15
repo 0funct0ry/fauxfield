@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Notify;
 
+use crate::agents::{AgentEvent, AgentSession, AgentTracker};
+
 /// Error shared by the in-process and socket implementations. `kind` is stable:
 /// `unknown_server`, `port_in_use`, `bind`, `not_running`, `request`, `no_host`, `transport`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, thiserror::Error)]
@@ -165,6 +167,16 @@ pub trait ControlApi: Send + Sync {
         recording: u64,
         callback: Option<String>,
     ) -> Result<Vec<Recording>, ControlError>;
+    /// An agent (MCP client) attached or sent a heartbeat. Sessions expire after
+    /// [`crate::agents::SESSION_TTL_MS`] without one.
+    async fn agent_attach(&self, id: String, name: String) -> Result<(), ControlError>;
+    async fn agent_detach(&self, id: String) -> Result<(), ControlError>;
+    /// Agents currently attached, from every process.
+    async fn agent_sessions(&self) -> Result<Vec<AgentSession>, ControlError>;
+    /// Record one agent tool call in the Agent activity log.
+    async fn agent_record(&self, event: AgentEvent) -> Result<(), ControlError>;
+    /// The Agent activity log, newest last; `client` filters by client name.
+    async fn agent_log(&self, client: Option<String>) -> Result<Vec<AgentEvent>, ControlError>;
     /// Asks the host to exit (graceful drain happens in the host).
     async fn shutdown(&self) -> Result<(), ControlError>;
 }
@@ -174,6 +186,7 @@ pub trait ControlApi: Send + Sync {
 pub struct LocalControl {
     engine: Engine,
     shutdown: Arc<Notify>,
+    agents: Arc<AgentTracker>,
 }
 
 impl LocalControl {
@@ -181,7 +194,13 @@ impl LocalControl {
         LocalControl {
             engine,
             shutdown: Arc::new(Notify::new()),
+            agents: Arc::new(AgentTracker::default()),
         }
+    }
+
+    /// The tracker behind the `agent_*` methods (the GUI reads it directly).
+    pub fn agents(&self) -> &AgentTracker {
+        &self.agents
     }
 
     pub fn engine(&self) -> &Engine {
@@ -439,6 +458,24 @@ impl ControlApi for LocalControl {
             .await?)
     }
 
+    async fn agent_attach(&self, id: String, name: String) -> Result<(), ControlError> {
+        self.agents.attach(&id, &name);
+        Ok(())
+    }
+    async fn agent_detach(&self, id: String) -> Result<(), ControlError> {
+        self.agents.detach(&id);
+        Ok(())
+    }
+    async fn agent_sessions(&self) -> Result<Vec<AgentSession>, ControlError> {
+        Ok(self.agents.sessions())
+    }
+    async fn agent_record(&self, event: AgentEvent) -> Result<(), ControlError> {
+        self.agents.record(event);
+        Ok(())
+    }
+    async fn agent_log(&self, client: Option<String>) -> Result<Vec<AgentEvent>, ControlError> {
+        Ok(self.agents.log(client.as_deref()))
+    }
     async fn shutdown(&self) -> Result<(), ControlError> {
         self.shutdown.notify_one();
         Ok(())

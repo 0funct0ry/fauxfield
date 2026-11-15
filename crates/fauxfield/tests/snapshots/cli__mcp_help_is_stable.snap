@@ -15,8 +15,12 @@ Arguments:
   [PATH]  Workspace folder to serve tools over
 
 Options:
-      --transport <TRANSPORT>  Transport: stdio, unix, pipe (Windows), both, or http (http arrives in M16)
+  -q, --quiet                  Suppress informational output
+      --no-color               Disable coloured output (also honoured: the NO_COLOR environment variable)
+      --transport <TRANSPORT>  Transport: stdio, unix, pipe (Windows), both, or http (streamable HTTP on 127.0.0.1)
       --socket <PATH>          Unix socket path, or a pipe name on Windows (default: per-user runtime dir, mcp-<pid>.sock; \\\\.\\pipe\\fauxfield-mcp-<pid>)
+      --host <ADDR>            Bind address for --transport http. Only loopback is accepted (default 127.0.0.1)
+      --port <PORT>            Port for --transport http (default: a random free port). Binds 127.0.0.1 only
       --allow <CLASSES>        Tool classes to expose: read, write, execute (default: all)
       --read-only              Shorthand for --allow read
   -h, --help                   Print help

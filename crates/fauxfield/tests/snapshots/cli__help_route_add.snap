@@ -1,0 +1,27 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: out
+---
+Add a Route to a Server file (a running host hot-reloads)
+
+Usage: fauxfield route add [OPTIONS] [SERVER] [METHOD] [PATH]
+
+Arguments:
+  [SERVER]  Server (ID, name, or file slug)
+  [METHOD]  HTTP method (case-insensitive) or ANY
+  [PATH]    Path or pattern (`/users/:id`, `/files/*rest`, or a regex with --match regex)
+
+Options:
+  -q, --quiet                Suppress informational output
+      --status <STATUS>      Status of the default Response (100-599)
+      --body <BODY>          Body of the default Response
+      --no-color             Disable coloured output (also honoured: the NO_COLOR environment variable)
+      --body-file <FILE>     Read the default Response body from a file
+      --from-json <FILE|->   Full Route definition as JSON (same schema as the MCP `upsert_route` tool); `-` reads stdin
+      --match <MODE>         Match mode; omitted means inferred and nothing is written [possible values: exact, param, regex]
+      --folder <FOLDER>      Folder (ID or unique name)
+      --name <NAME>          Route name
+      --priority <PRIORITY>  Priority (higher wins; default 0)
+  -w, --workspace <PATH>     Workspace folder (default: the nearest ancestor containing fauxfield.toml, else the current directory)
+      --json                 Machine-readable output with a stable schema
+  -h, --help                 Print help

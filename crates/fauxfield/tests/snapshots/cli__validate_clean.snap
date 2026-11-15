@@ -1,10 +1,11 @@
 ---
 source: crates/fauxfield/tests/cli.rs
-expression: out
+expression: v
 ---
 {
   "diagnostics": [],
   "errors": 0,
   "ok": true,
+  "schema": "fauxfield.validate/v1",
   "warnings": 0
 }

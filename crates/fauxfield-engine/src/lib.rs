@@ -6,6 +6,7 @@ mod cors;
 mod data;
 mod engine;
 pub mod generate;
+pub mod har;
 pub mod import;
 mod problem;
 mod recording;

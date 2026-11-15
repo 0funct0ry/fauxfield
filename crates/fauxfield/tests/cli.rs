@@ -265,10 +265,16 @@ fn route_add_variants_are_stable() {
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["match"], "regex");
     assert_eq!(v["priority"], -2);
-    let (code, _, err) = add(&["get", "/x", "--folder", "nope"]);
-    assert_eq!((code, err.contains("unknown folder")), (2, true));
-    let (code, _, err) = add(&["get", "/a/*x/b"]);
-    assert_eq!((code, err.contains("last segment")), (3, true));
+    // Under --json a failure is one error document on stdout (SPEC §10).
+    let (code, out, _) = add(&["get", "/x", "--folder", "nope"]);
+    assert_eq!((code, out.contains("unknown folder")), (2, true));
+    let e: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        (e["schema"].as_str(), e["ok"].as_bool()),
+        (Some("fauxfield.error/v1"), Some(false))
+    );
+    let (code, out, _) = add(&["get", "/a/*x/b"]);
+    assert_eq!((code, out.contains("last segment")), (3, true));
     // duplicate pattern: succeeds with a shadow warning
     let (code, out, _) = add(&["get", "/users/:id"]);
     assert_eq!(code, 0);
@@ -732,4 +738,243 @@ values = ["admin", "user"]
     assert!(!server.contains("generator"), "{server}");
     let (code, _, _) = run(&["data", "generate", "example-api", "users", "-w", p]);
     assert_eq!(code, 1, "no generator any more");
+}
+
+#[test]
+fn agents_init_dry_run_yes_rerun_and_usage() {
+    let dir = workspace();
+    let p = dir.path().to_str().unwrap();
+    let files = |d: &std::path::Path| {
+        let mut v: Vec<String> = std::fs::read_dir(d)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        v.sort();
+        v
+    };
+    let before = files(dir.path());
+    // No client flag and no TTY: usage error 2.
+    let (code, _, err) = run(&["agents", "init", "-w", p]);
+    assert_eq!(code, 2);
+    assert!(err.contains("no client chosen"), "{err}");
+    // Bad class: usage error 2.
+    let (code, _, _) = run(&["agents", "init", "--claude", "--allow", "root", "-w", p]);
+    assert_eq!(code, 2);
+    // --dry-run prints the diff and writes nothing.
+    let (code, out, _) = run(&["agents", "init", "--claude", "--dry-run", "-w", p]);
+    assert_eq!(code, 0);
+    assert!(out.contains("+++ b/.mcp.json"), "{out}");
+    assert_eq!(files(dir.path()), before);
+    // --json without --yes and no TTY: refuses rather than hanging.
+    let (code, _, _) = run(&["agents", "init", "--claude", "--json", "-w", p]);
+    assert_eq!(code, 2);
+    assert_eq!(files(dir.path()), before);
+    // --yes writes; the JSON payload lists the plan.
+    let (code, out, _) = run(&["agents", "init", "--claude", "--yes", "--json", "-w", p]);
+    assert_eq!(code, 0, "{out}");
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["schema"], "fauxfield.agents.init/v1");
+    assert_eq!(v["written"], true);
+    let acts: Vec<_> = v["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| (f["path"].as_str().unwrap(), f["action"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        acts,
+        [
+            (".mcp.json", "create"),
+            ("AGENTS.md", "create"),
+            (".gitignore", "unchanged")
+        ]
+    );
+    assert!(dir.path().join(".mcp.json").is_file());
+    // Re-running changes nothing.
+    let (code, out, _) = run(&["agents", "init", "--claude", "--yes", "-w", p]);
+    assert_eq!(code, 0);
+    assert!(out.contains("Already configured"), "{out}");
+}
+
+#[test]
+fn json_failures_are_one_error_document_with_the_right_exit_code() {
+    let dir = workspace();
+    let p = dir.path().to_str().unwrap();
+    // No host: exit 4 and a host_not_running document on stdout, nothing on stdout otherwise.
+    let (code, out, _) = run(&["status", "--json", "-w", p]);
+    assert_eq!(code, 4);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["schema"], "fauxfield.error/v1");
+    assert_eq!(
+        (v["ok"].as_bool(), v["code"].as_str()),
+        (Some(false), Some("host_not_running"))
+    );
+    // A stub command for a later milestone: exit 1, never a silent no-op.
+    for (cmd, ms) in [
+        ("record", "M12"),
+        ("import", "M15"),
+        ("export", "M15"),
+        ("template", "M15"),
+    ] {
+        let (code, out, _) = run(&[cmd, "x", "--json"]);
+        assert_eq!(code, 1, "{cmd}");
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["code"], "not_available");
+        assert!(v["message"].as_str().unwrap().contains(ms), "{cmd}");
+    }
+    // Unknown route and server: usage error 2.
+    let (code, _, _) = run(&["route", "show", "nope", "-w", p]);
+    assert_eq!(code, 2);
+    let (code, _, _) = run(&["server", "show", "nope", "-w", p]);
+    assert_eq!(code, 2);
+}
+
+#[test]
+fn server_and_route_management_round_trip() {
+    let dir = workspace();
+    let p = dir.path().to_str().unwrap();
+    let json = |args: &[&str]| {
+        let mut a = args.to_vec();
+        a.extend_from_slice(&["-w", p, "--json"]);
+        let (code, out, err) = run(&a);
+        assert_eq!(code, 0, "{args:?}: {out}{err}");
+        serde_json::from_str::<serde_json::Value>(&out).unwrap()
+    };
+    let added = json(&["server", "add", "Shop", "--port", "4100"]);
+    assert_eq!(added["schema"], "fauxfield.server.add/v1");
+    let r = json(&[
+        "route", "add", "shop", "GET", "/orders", "--status", "201", "--body", "[1]",
+    ]);
+    let rid = r["id"].as_str().unwrap().to_owned();
+    let shown = json(&["route", "show", &rid]);
+    assert_eq!(shown["route"]["responses"][0]["status"], 201);
+    assert_eq!(shown["route"]["responses"][0]["body"], "[1]");
+    assert_eq!(json(&["server", "disable", "shop"])["enabled"], false);
+    assert_eq!(json(&["server", "enable", "shop"])["enabled"], true);
+    assert_eq!(
+        json(&["server", "rename", "shop", "Store"])["name"],
+        "Store"
+    );
+    json(&["route", "rm", &rid]);
+    let (code, _, _) = run(&["route", "show", &rid, "-w", p]);
+    assert_eq!(code, 2);
+    json(&["server", "rm", "store"]);
+    let list = json(&["server", "list"]);
+    assert!(
+        list["servers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|s| s["name"] != "Store")
+    );
+}
+
+#[test]
+fn help_output_is_stable() {
+    for (name, args) in [
+        ("help_top", vec!["--help"]),
+        ("help_server", vec!["server", "--help"]),
+        ("help_route_add", vec!["route", "add", "--help"]),
+        ("help_agents_init", vec!["agents", "init", "--help"]),
+        ("help_theme", vec!["theme", "--help"]),
+        ("help_logs", vec!["logs", "--help"]),
+    ] {
+        let (code, out, _) = run(&args);
+        assert_eq!(code, 0, "{args:?}");
+        insta::assert_snapshot!(name, out);
+    }
+}
+
+#[test]
+fn completions_exist_for_all_five_shells_and_parse() {
+    for sh in ["bash", "zsh", "fish", "powershell", "elvish"] {
+        let (code, out, _) = run(&["completions", sh]);
+        assert_eq!(code, 0, "{sh}");
+        for word in ["fauxfield", "agents", "theme", "route"] {
+            assert!(out.contains(word), "{sh} completions lack `{word}`");
+        }
+        // Syntax-check where the shell is installed.
+        let checker: Option<(&str, &[&str])> = match sh {
+            "bash" => Some(("bash", &["-n"])),
+            "zsh" => Some(("zsh", &["-n"])),
+            "fish" => Some(("fish", &["--no-execute"])),
+            _ => None,
+        };
+        if let Some((bin, flags)) = checker
+            && std::process::Command::new(bin)
+                .arg("--version")
+                .output()
+                .is_ok()
+        {
+            let dir = tempfile::tempdir().unwrap();
+            let f = dir.path().join(format!("fauxfield.{sh}"));
+            std::fs::write(&f, &out).unwrap();
+            let st = std::process::Command::new(bin)
+                .args(flags)
+                .arg(&f)
+                .output()
+                .unwrap();
+            assert!(
+                st.status.success(),
+                "{sh}: {}",
+                String::from_utf8_lossy(&st.stderr)
+            );
+        }
+    }
+    let (code, _, _) = run(&["completions", "nushell"]);
+    assert_eq!(code, 2);
+}
+
+/// Pins every `--json` schema id. A payload that changes incompatibly needs a new version in
+/// `output::SCHEMA_VERSION` (or a per-command bump) and an accepted snapshot; additive fields do not.
+#[test]
+fn json_schema_ids_are_pinned() {
+    let (code, out, _) = run(&["docs-cli"]);
+    assert_eq!(code, 0);
+    let ids = out
+        .lines()
+        .find(|l| l.starts_with("Schema ids: "))
+        .unwrap()
+        .trim_start_matches("Schema ids: ")
+        .replace("`, `", "\n")
+        .replace('`', "");
+    insta::assert_snapshot!("json_schema_ids", ids);
+}
+
+#[test]
+fn theme_list_and_set_write_settings_without_clobbering() {
+    let dir = tempfile::tempdir().unwrap();
+    let settings = dir.path().join("settings.toml");
+    std::fs::write(&settings, "# mine\nui_font_size = 13\n").unwrap();
+    let theme = |args: &[&str]| {
+        let out = Command::cargo_bin("fauxfield")
+            .unwrap()
+            .args(args)
+            .env("FAUXFIELD_SETTINGS", &settings)
+            .output()
+            .unwrap();
+        (
+            out.status.code().unwrap(),
+            String::from_utf8(out.stdout).unwrap(),
+        )
+    };
+    let (code, out) = theme(&["theme", "list", "--json"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["schema"], "fauxfield.theme.list/v1");
+    let names: Vec<_> = v["themes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["One Dark", "One Light"]);
+    let (code, _) = theme(&["theme", "set", "one light"]);
+    assert_eq!(code, 0);
+    let text = std::fs::read_to_string(&settings).unwrap();
+    assert!(text.contains("# mine") && text.contains("ui_font_size = 13"));
+    assert!(text.contains("light = \"One Light\"") && text.contains("mode = \"light\""));
+    let (code, _) = theme(&["theme", "set", "nope"]);
+    assert_eq!(code, 2);
 }

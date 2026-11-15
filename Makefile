@@ -375,12 +375,20 @@ schema: ## Regenerate the server-file JSON Schema (site/public/schema/v1/server.
 	$(CARGO) xtask schema
 
 
+.PHONY: docs-check docs-gen
+docs-check: ## Fail when a generated reference page or schema is out of date (M16)
+	$(CARGO) xtask check
+
+docs-gen: ## Regenerate every generated reference page and the schema (M16)
+	$(CARGO) xtask all
+
+
 ##@ Aggregates
 
 .PHONY: ci ci-release verify
 
 # Mirrors .github/workflows/ci.yml: fmt, clippy, tests, release build, headless build.
-ci: fmt-check clippy test build-release build-headless verify-headless ## Run what CI runs (fmt, clippy, tests, release + headless builds)
+ci: fmt-check clippy test docs-check build-release build-headless verify-headless ## Run what CI runs (fmt, clippy, tests, release + headless builds)
 
 ci-release: lint-release test-release build-release ## Like ci, but lints and tests with the release profile
 

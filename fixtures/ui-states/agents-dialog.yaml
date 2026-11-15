@@ -1,0 +1,6 @@
+# UI state fixture (M16): the "Agents: Set Up MCP…" modal over the example workspace.
+steps:
+  - reset
+  - invoke: agents_setup
+  - wait_for: {condition: {pointer: /modal, equals: agents}}
+  - wait_idle

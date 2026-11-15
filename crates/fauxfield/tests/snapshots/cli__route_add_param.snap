@@ -7,8 +7,10 @@ expression: v
   "id": "<id>",
   "match": null,
   "method": "GET",
+  "ok": true,
   "path": "/users/:id",
   "priority": 0,
+  "schema": "fauxfield.route.add/v1",
   "server": "<srv>",
   "warnings": []
 }

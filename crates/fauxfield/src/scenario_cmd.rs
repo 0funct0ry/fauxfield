@@ -42,14 +42,14 @@ pub fn run(args: ScenarioArgs) -> i32 {
     let text = match std::fs::read_to_string(&args.file) {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("error: cannot read {}: {e}", args.file.display());
+            crate::err!("cannot read {}: {e}", args.file.display());
             return EXIT_UNREACHABLE;
         }
     };
     let scenario = match fauxfield_mcp::scenario::Scenario::from_yaml(&text) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("error: {}: {e}", args.file.display());
+            crate::err!("{}: {e}", args.file.display());
             return EXIT_UNREACHABLE;
         }
     };
@@ -59,7 +59,7 @@ pub fn run(args: ScenarioArgs) -> i32 {
     {
         Ok(rt) => rt,
         Err(e) => {
-            eprintln!("error: cannot start runtime: {e}");
+            crate::err!("cannot start runtime: {e}");
             return EXIT_UNREACHABLE;
         }
     };

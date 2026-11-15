@@ -2,6 +2,7 @@
 //! JSON-RPC 2.0 control socket. The GUI uses [`LocalControl`] in-process; the CLI and MCP use
 //! [`RemoteControl`] over the socket. Must not depend on GPUI.
 
+pub mod agents;
 mod api;
 pub mod build_info;
 mod host;
@@ -10,6 +11,7 @@ mod reload;
 mod rpc;
 mod runtime;
 
+pub use agents::{AgentEvent, AgentSession, AgentTracker};
 pub use api::{ControlApi, ControlError, LocalControl};
 pub use host::{HostInfo, HostLock, control_socket_path, read_host};
 pub use reload::{attach_store, attach_store_with_env};

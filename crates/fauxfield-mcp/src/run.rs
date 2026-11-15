@@ -30,12 +30,24 @@ pub async fn serve(config: McpConfig) -> Result<(), String> {
 
 /// `registry` lets tests add tools; `None` uses the core set.
 pub async fn serve_with(config: McpConfig, registry: Option<Registry>) -> Result<(), String> {
-    if config.transport == TransportKind::Http {
-        return Err("the http transport is not available until M16".into());
-    }
     config.transport.check_platform()?;
     let registry = Arc::new(registry.unwrap_or_else(|| build_registry(&config)));
     let handler = FauxfieldServer::new(registry, config.allow);
+    if config.transport == TransportKind::Http {
+        let bound = crate::http::bind(handler, config.port, config.run_dir.as_deref()).await?;
+        eprintln!(
+            "MCP HTTP listening at {}\nBearer token: {}{}",
+            bound.url(),
+            bound.token,
+            bound
+                .info_file
+                .as_ref()
+                .map(|p| format!("\nConnection info: {}", p.display()))
+                .unwrap_or_default()
+        );
+        bound.serve(shutdown_signal()).await;
+        return Ok(());
+    }
 
     #[cfg(unix)]
     let socket = if config.transport.uses_native_socket() {

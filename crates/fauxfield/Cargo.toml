@@ -24,6 +24,7 @@ fauxfield-gui = { workspace = true, optional = true }
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 serde_json.workspace = true
+toml_edit.workspace = true
 fauxfield-mcp.workspace = true
 fauxfield-model.workspace = true
 fauxfield-store.workspace = true

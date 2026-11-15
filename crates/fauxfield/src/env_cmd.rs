@@ -72,7 +72,7 @@ pub enum VarAction {
 }
 
 fn fail(msg: &str) -> i32 {
-    eprintln!("error: {msg}");
+    crate::err!("{msg}");
     EXIT_RUNTIME
 }
 
@@ -174,12 +174,12 @@ pub fn env(action: EnvAction) -> i32 {
 fn scope_of(t: &VarTarget, need: bool) -> Result<Option<Scope>, i32> {
     match t.scope.as_deref() {
         None if need => {
-            eprintln!("error: --scope is required (global, environment, server, route, runtime)");
+            crate::err!("--scope is required (global, environment, server, route, runtime)");
             Err(EXIT_USAGE)
         }
         None => Ok(None),
         Some(s) => Scope::parse(s).map(Some).ok_or_else(|| {
-            eprintln!("error: unknown scope `{s}` (global, environment, server, route, runtime)");
+            crate::err!("unknown scope `{s}` (global, environment, server, route, runtime)");
             EXIT_USAGE
         }),
     }

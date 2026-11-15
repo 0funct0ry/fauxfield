@@ -35,6 +35,14 @@ pub struct Cli {
     #[arg(long)]
     pub mcp_stdio: bool,
 
+    /// Suppress informational output.
+    #[arg(short = 'q', long, global = true)]
+    pub quiet: bool,
+
+    /// Disable coloured output (also honoured: the NO_COLOR environment variable).
+    #[arg(long, global = true)]
+    pub no_color: bool,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -50,6 +58,9 @@ pub enum Command {
     Init {
         /// Folder to create the workspace in (default: the current directory).
         path: Option<PathBuf>,
+        /// Also write MCP client config and an AGENTS.md section (same as `agents init`).
+        #[arg(long)]
+        agents: bool,
         /// Machine-readable output with a stable schema.
         #[arg(long)]
         json: bool,
@@ -120,6 +131,27 @@ pub enum Command {
     Logs(crate::host_cmd::LogsArgs),
     /// Run the MCP server for agents (SPEC §11.1). Logs go to stderr; stdout is protocol-only.
     Mcp(McpArgs),
+    /// Set up coding agents (MCP client config, AGENTS.md).
+    Agents {
+        #[command(subcommand)]
+        action: crate::agents_cmd::AgentsAction,
+    },
+    /// List and choose the color theme.
+    Theme {
+        #[command(subcommand)]
+        action: crate::theme_cmd::ThemeAction,
+    },
+    /// Record traffic from an upstream into a Server (arrives in M12).
+    Record(StubArgs),
+    /// Import an OpenAPI document (arrives in M15).
+    Import(StubArgs),
+    /// Export an OpenAPI document (arrives in M15).
+    Export(StubArgs),
+    /// List and apply Templates (arrives in M15).
+    Template(StubArgs),
+    /// Print the CLI reference page as Markdown (used by `cargo xtask cli-docs`).
+    #[command(hide = true)]
+    DocsCli,
     /// Print version information.
     Version {
         /// Machine-readable output with a stable schema.
@@ -133,6 +165,16 @@ pub enum Command {
     },
 }
 
+/// A command whose milestone has not landed: it parses anything and exits 1.
+#[derive(clap::Args, Debug)]
+pub struct StubArgs {
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]
+    pub rest: Vec<String>,
+    /// Machine-readable output with a stable schema.
+    #[arg(long)]
+    pub json: bool,
+}
+
 #[derive(clap::Args, Debug)]
 #[command(args_conflicts_with_subcommands = true)]
 pub struct McpArgs {
@@ -140,12 +182,18 @@ pub struct McpArgs {
     pub action: Option<McpAction>,
     /// Workspace folder to serve tools over.
     pub path: Option<PathBuf>,
-    /// Transport: stdio, unix, pipe (Windows), both, or http (http arrives in M16).
+    /// Transport: stdio, unix, pipe (Windows), both, or http (streamable HTTP on 127.0.0.1).
     #[arg(long, value_parser = parse_transport)]
     pub transport: Option<fauxfield_mcp::TransportKind>,
     /// Unix socket path, or a pipe name on Windows (default: per-user runtime dir, mcp-<pid>.sock; \\\\.\\pipe\\fauxfield-mcp-<pid>).
     #[arg(long, value_name = "PATH")]
     pub socket: Option<PathBuf>,
+    /// Bind address for --transport http. Only loopback is accepted (default 127.0.0.1).
+    #[arg(long, value_name = "ADDR")]
+    pub host: Option<String>,
+    /// Port for --transport http (default: a random free port). Binds 127.0.0.1 only.
+    #[arg(long, value_name = "PORT")]
+    pub port: Option<u16>,
     /// Tool classes to expose: read, write, execute (default: all).
     #[arg(
         long,
@@ -208,10 +256,14 @@ pub fn run() -> i32 {
         let unix = cli.mcp_socket.is_some();
         return open_dev(cli.path, cli.mcp_socket.flatten(), cli.mcp_stdio, unix);
     }
+    crate::output::init(&std::env::args().collect::<Vec<_>>());
     match cli.command {
         None => open(cli.path),
         Some(Command::Open { path }) => open(path),
-        Some(Command::Init { path, json }) => crate::workspace_cmd::init(path, json),
+        Some(Command::Init { path, agents, json }) => {
+            crate::workspace_cmd::init(path, agents, json)
+        }
+        Some(Command::Agents { action }) => crate::agents_cmd::agents(action),
         Some(Command::Validate(a)) => crate::workspace_cmd::validate(&a),
         Some(Command::Workspace { action }) => crate::workspace_cmd::workspace(action),
         Some(Command::Server { action }) => crate::workspace_cmd::server(action),
@@ -230,9 +282,15 @@ pub fn run() -> i32 {
         Some(Command::Stop(a)) => crate::host_cmd::stop(a),
         Some(Command::Logs(a)) => crate::host_cmd::logs(a),
         Some(Command::Mcp(args)) => mcp(args),
+        Some(Command::Theme { action }) => crate::theme_cmd::theme(action),
+        Some(Command::DocsCli) => crate::docs_cmd::docs_cli(),
+        Some(Command::Record(_)) => crate::output::not_available("fauxfield record", "M12"),
+        Some(Command::Import(_)) => crate::output::not_available("fauxfield import", "M15"),
+        Some(Command::Export(_)) => crate::output::not_available("fauxfield export", "M15"),
+        Some(Command::Template(_)) => crate::output::not_available("fauxfield template", "M15"),
         Some(Command::Version { json }) => {
             if json {
-                println!("{}", serde_json::to_string_pretty(&version_json()).unwrap());
+                crate::output::print_json(&version_json());
             } else {
                 let b = build_info();
                 println!("fauxfield {}", b.version);
@@ -259,6 +317,12 @@ fn mcp(args: McpArgs) -> i32 {
     if let Err(code) = check_path(&args.path) {
         return code;
     }
+    if let Some(h) = &args.host
+        && let Err(e) = fauxfield_mcp::http::check_host(h)
+    {
+        crate::err!("{e}");
+        return EXIT_USAGE;
+    }
     let allow = if args.read_only {
         Ok(Some(AllowedClasses::read_only()))
     } else {
@@ -269,11 +333,21 @@ fn mcp(args: McpArgs) -> i32 {
     };
     let config = allow
         .and_then(|allow| McpSettings::load_default()?.resolve(args.transport, args.socket, allow))
+        .map(|mut c| {
+            c.port = args.port.or(c.port);
+            let root = args.path.clone().or_else(|| {
+                std::env::current_dir()
+                    .ok()
+                    .and_then(|d| fauxfield_store::discover(&d))
+            });
+            c.run_dir = root.map(|r| r.join(".fauxfield").join("run"));
+            c
+        })
         .and_then(|c| c.transport.check_platform().map(|()| c));
     let config = match config {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("error: {e}");
+            crate::err!("{e}");
             return EXIT_USAGE;
         }
     };
@@ -288,7 +362,7 @@ fn mcp(args: McpArgs) -> i32 {
     {
         Ok(rt) => rt,
         Err(e) => {
-            eprintln!("error: cannot start runtime: {e}");
+            crate::err!("cannot start runtime: {e}");
             return EXIT_RUNTIME;
         }
     };
@@ -298,7 +372,7 @@ fn mcp(args: McpArgs) -> i32 {
     let code = match rt.block_on(fauxfield_mcp::serve_with(config, registry)) {
         Ok(()) => EXIT_OK,
         Err(e) => {
-            eprintln!("error: {e}");
+            crate::err!("{e}");
             EXIT_RUNTIME
         }
     };
@@ -368,6 +442,16 @@ fn workspace_registry(
         Ok(store) => {
             let provider = control_provider(store.root(), hosted);
             let mut r = fauxfield_mcp::build_registry(config);
+            let redact = config.redact.clone();
+            let secrets_store = store.clone();
+            r.set_redactor(fauxfield_mcp::guard::Redactor::new(
+                std::sync::Arc::new(move || {
+                    fauxfield_mcp::workspace_tools::secret_values(&secrets_store, &redact)
+                }),
+                config.redact.clone(),
+            ));
+            r.set_jail(store.root());
+            r.set_sink(fauxfield_mcp::control_tools::control_sink(provider.clone()));
             fauxfield_mcp::control_tools::register_control_tools(&mut r, provider);
             fauxfield_mcp::workspace_tools::register_workspace_tools(
                 &mut r,

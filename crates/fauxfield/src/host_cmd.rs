@@ -44,6 +44,9 @@ pub struct RunArgs {
     /// Chaos switch: inject random faults into this fraction (0 to 1) of requests on every Server.
     #[arg(long, value_name = "RATE", value_parser = parse_rate)]
     pub chaos: Option<f64>,
+    /// Seed for fake and generated data on every Server, so a run repeats exactly.
+    #[arg(long, value_name = "N")]
+    pub seed: Option<u64>,
     /// Hot-reload external edits (default when attached to a terminal).
     #[arg(long, overrides_with = "no_watch")]
     pub watch: bool,
@@ -75,17 +78,17 @@ pub struct LogsArgs {
     /// Keep printing new requests until interrupted.
     #[arg(long)]
     pub follow: bool,
-    /// Only this Server (ID, name, or slug).
+    /// Only these Servers (ID or name); repeatable.
     #[arg(long, value_name = "SERVER")]
-    pub server: Option<String>,
+    pub server: Vec<String>,
     /// Status filter: `404` or a class like `5xx`.
     #[arg(long, value_name = "STATUS")]
     pub status: Option<String>,
     /// Only requests newer than this, e.g. `30s`, `10m`, `2h`.
     #[arg(long, value_name = "AGE")]
     pub since: Option<String>,
-    /// HAR export (arrives in M12).
-    #[arg(long, hide = true, value_name = "FILE")]
+    /// Write the matching requests as a HAR 1.2 file instead of printing them.
+    #[arg(long, value_name = "FILE", conflicts_with = "follow")]
     pub har: Option<PathBuf>,
     #[command(flatten)]
     pub ws: crate::workspace_cmd::WsArgs,
@@ -146,7 +149,7 @@ pub fn run(a: RunArgs) -> i32 {
     if let Some(p) = &a.path
         && !p.is_dir()
     {
-        eprintln!("error: {} is not a folder", p.display());
+        crate::err!("{} is not a folder", p.display());
         return EXIT_RUNTIME;
     }
     let root = root_of(&crate::workspace_cmd::WsArgs {
@@ -164,19 +167,20 @@ pub fn run(a: RunArgs) -> i32 {
             publish: true,
             network: a.network,
             chaos: a.chaos,
+            seed: a.seed,
         },
     ) {
         Ok(h) => h,
         Err(HostError::Already(info)) => {
-            eprintln!(
-                "error: this workspace is already hosted by pid {} (a running app or `fauxfield run`). \
+            crate::err!(
+                "this workspace is already hosted by pid {} (a running app or `fauxfield run`). \
                  Use `fauxfield status`, or `fauxfield stop` first.",
                 info.pid
             );
             return EXIT_RUNTIME;
         }
         Err(HostError::Other(e)) => {
-            eprintln!("error: {e}");
+            crate::err!("{e}");
             return EXIT_RUNTIME;
         }
     };
@@ -188,7 +192,7 @@ pub fn run(a: RunArgs) -> i32 {
         .collect();
     if !errors.is_empty() {
         for d in &errors {
-            eprintln!("error: {}", d.message);
+            crate::err!("{}", d.message);
         }
         eprintln!(
             "{} validation error(s); fix them (see `fauxfield validate`).",
@@ -203,7 +207,7 @@ pub fn run(a: RunArgs) -> i32 {
             .iter()
             .any(|s| s.id == *want || s.name == *want || slug(&s.name) == *want)
         {
-            eprintln!("error: no server `{want}`; see `fauxfield server list`");
+            crate::err!("no server `{want}`; see `fauxfield server list`");
             return EXIT_USAGE;
         }
     }
@@ -220,7 +224,7 @@ pub fn run(a: RunArgs) -> i32 {
     let mut code = EXIT_OK;
     if a.server.is_empty() {
         for (_, e) in engine.start_all() {
-            eprintln!("error: {e}");
+            crate::err!("{e}");
             code = if matches!(e, EngineError::PortInUse { .. }) {
                 EXIT_PORT_IN_USE
             } else {
@@ -230,7 +234,7 @@ pub fn run(a: RunArgs) -> i32 {
     } else {
         for s in &a.server {
             if let Err(e) = engine.start(s) {
-                eprintln!("error: {e}");
+                crate::err!("{e}");
                 code = if matches!(e, EngineError::PortInUse { .. }) {
                     EXIT_PORT_IN_USE
                 } else {
@@ -294,8 +298,8 @@ pub(crate) fn attach(root: &Path) -> Result<(fauxfield_control::HostInfo, Remote
             Ok((info, c))
         }
         None => {
-            eprintln!(
-                "error: no host is running for {}. Start one with `fauxfield run` or the app.",
+            crate::err!(
+                "no host is running for {}. Start one with `fauxfield run` or the app.",
                 root.display()
             );
             Err(EXIT_NO_HOST)
@@ -304,7 +308,7 @@ pub(crate) fn attach(root: &Path) -> Result<(fauxfield_control::HostInfo, Remote
 }
 
 pub(crate) fn control_failed(e: ControlError) -> i32 {
-    eprintln!("error: {e}");
+    crate::err!("{e}");
     if e.kind == "no_host" {
         EXIT_NO_HOST
     } else {
@@ -323,19 +327,15 @@ pub fn status(a: StatusArgs) -> i32 {
         Err(e) => return control_failed(e),
     };
     if a.ws.json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({
-                "host": {
-                    "pid": info.pid,
-                    "version": info.version,
-                    "workspace": info.workspace,
-                    "started_at": info.started_at,
-                },
-                "servers": servers,
-            }))
-            .unwrap()
-        );
+        crate::output::print_json(&json!({
+            "host": {
+                "pid": info.pid,
+                "version": info.version,
+                "workspace": info.workspace,
+                "started_at": info.started_at,
+            },
+            "servers": servers,
+        }));
     } else {
         println!(
             "host pid {} (fauxfield {}), started {}",
@@ -382,10 +382,7 @@ pub fn stop(a: StopArgs) -> i32 {
         }
     }
     if a.ws.json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({"servers": servers})).unwrap()
-        );
+        crate::output::print_json(&json!({"servers": servers}));
     } else {
         println!("stopped");
     }
@@ -410,14 +407,10 @@ fn parse_age(s: &str) -> Result<Duration, String> {
 }
 
 pub fn logs(a: LogsArgs) -> i32 {
-    if a.har.is_some() {
-        eprintln!("error: --har arrives in M12");
-        return EXIT_USAGE;
-    }
     let status = match a.status.as_deref().map(parse_status).transpose() {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("error: {e}");
+            crate::err!("{e}");
             return EXIT_USAGE;
         }
     };
@@ -430,7 +423,7 @@ pub fn logs(a: LogsArgs) -> i32 {
                 .saturating_sub(d.as_millis() as u64)
         }),
         Err(e) => {
-            eprintln!("error: {e}");
+            crate::err!("{e}");
             return EXIT_USAGE;
         }
     };
@@ -446,17 +439,49 @@ pub fn logs(a: LogsArgs) -> i32 {
     };
     let rt = rt();
     let mut filter = TrafficFilter {
-        server: a.server.clone(),
+        // One Server filters in the engine (ID, name or slug); several filter below by ID or name.
+        server: match a.server.as_slice() {
+            [one] => Some(one.clone()),
+            _ => None,
+        },
         status,
         since_ms,
         ..Default::default()
     };
+    let several = a.server.len() > 1;
+    let wanted = |r: &fauxfield_engine::Recording| {
+        !several || a.server.iter().any(|s| *s == r.server_id || *s == r.server)
+    };
+    if let Some(file) = &a.har {
+        let list = match rt.block_on(c.traffic(filter.clone())) {
+            Ok(l) => l.into_iter().filter(&wanted).collect::<Vec<_>>(),
+            Err(e) => return control_failed(e),
+        };
+        let har = fauxfield_engine::har::to_har(&list);
+        if let Err(e) = std::fs::write(
+            file,
+            serde_json::to_string_pretty(&har).unwrap_or_default() + "\n",
+        ) {
+            crate::err!("cannot write {}: {e}", file.display());
+            return EXIT_RUNTIME;
+        }
+        if a.ws.json {
+            crate::output::print_json(
+                &serde_json::json!({ "file": file.to_string_lossy(), "entries": list.len() }),
+            );
+        } else {
+            println!("Wrote {} entries to {}", list.len(), file.display());
+        }
+        return EXIT_OK;
+    }
     loop {
         match rt.block_on(c.traffic(filter.clone())) {
             Ok(list) => {
                 for r in &list {
-                    println!("{}", log_line(r, format));
                     filter.after_id = Some(r.id);
+                    if wanted(r) {
+                        println!("{}", log_line(r, format));
+                    }
                 }
             }
             Err(e) => return control_failed(e),

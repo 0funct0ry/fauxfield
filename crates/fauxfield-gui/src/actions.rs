@@ -135,6 +135,7 @@ actions!(
         CancelQuit,
         Quit,
         ShowAbout,
+        AgentsSetup,
         HideApp,
         HideOthers,
         ShowAllApps,
@@ -543,6 +544,7 @@ pub static ACTIONS: &[ActionInfo] = &[
     ),
     row!("quit", "Application: Quit", Quit),
     row!("show_about", "Application: About Fauxfield", ShowAbout),
+    row!("agents_setup", "Agents: Set Up MCP…", AgentsSetup),
     #[cfg(target_os = "macos")]
     row!("hide_app", "Application: Hide Fauxfield", HideApp),
     #[cfg(target_os = "macos")]

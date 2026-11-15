@@ -6,6 +6,8 @@ expression: v
   "default": false,
   "id": "<id>",
   "name": "Teapot",
+  "ok": true,
   "route": "<route>",
+  "schema": "fauxfield.response.add/v1",
   "status": 418
 }

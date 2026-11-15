@@ -4,6 +4,8 @@ expression: v
 ---
 {
   "key": "base",
+  "ok": true,
+  "schema": "fauxfield.var.get/v1",
   "scope": "environment",
   "secret": false,
   "source": "file",

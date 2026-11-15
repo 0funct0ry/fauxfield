@@ -141,3 +141,25 @@ fn default_registry_has_exactly_the_core_tools() {
     n.sort();
     assert_eq!(n, ["ping", "server_info"]);
 }
+
+/// Every tool the generated AGENTS.md section names exists in the real registry, so the
+/// instructions cannot drift from the tools (M16).
+#[test]
+fn agents_md_tool_names_exist_in_the_registry() {
+    use fauxfield_mcp::{
+        control_tools::register_control_tools,
+        workspace_tools::{fixed_store, register_workspace_tools},
+    };
+    let dir = tempfile::tempdir().unwrap();
+    fauxfield_store::init_workspace(dir.path()).unwrap();
+    let store = fauxfield_store::Store::open(dir.path()).unwrap();
+    let mut r = Registry::new();
+    register_workspace_tools(&mut r, fixed_store(store));
+    register_control_tools(&mut r, Arc::new(|_| Ok(None)));
+    for name in fauxfield_store::agents::TOOL_NAMES {
+        assert!(
+            r.tool(name).is_some(),
+            "AGENTS.md names unknown tool `{name}`"
+        );
+    }
+}

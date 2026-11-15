@@ -28,6 +28,8 @@ pub enum ToastAction {
     EnableAndStart(String),
     /// Put back the rows of the last Dataset delete (M10.07).
     UndoRowDelete,
+    /// Copy a command to the clipboard ("Copy command" after Agents setup, M16).
+    CopyText(String),
 }
 
 /// A button shown beside the status-bar message.
