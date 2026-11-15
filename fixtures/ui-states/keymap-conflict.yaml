@@ -1,0 +1,12 @@
+# UI state fixture (M17.02): the record-binding modal showing a conflict (Cmd+K belongs to
+# Quick Search; the recording is for Run All).
+steps:
+  - reset
+  - invoke: open_settings
+  - wait_for: {condition: {pointer: /active_tab, equals: settings}}
+  - click_element: {id: settings.category.5}
+  - wait_idle
+  - click_element: {id: keymap.record.run_all}
+  - wait_for: {condition: {pointer: /modal, equals: keymap_record}}
+  - key: secondary-k
+  - wait_idle

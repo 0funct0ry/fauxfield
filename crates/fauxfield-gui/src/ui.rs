@@ -223,6 +223,30 @@ pub fn checkbox(t: &Theme, on: bool) -> Div {
         .when(on, |d| d.child(icon("check", 10., t.background)))
 }
 
+/// A 28x16 on/off switch (Settings rows, the theme selector's follow-system option). The
+/// caller adds the id, `on_click` and the dev id.
+pub fn switch(t: &Theme, on: bool) -> Div {
+    div()
+        .w(px(28.))
+        .h(px(16.))
+        .flex_none()
+        .rounded(px(8.))
+        .border_1()
+        .border_color(if on { t.border_focused } else { t.border })
+        .bg(if on { t.border_focused } else { t.surface })
+        .flex()
+        .flex_row()
+        .items_center()
+        .px(px(2.))
+        .when(on, |d| d.justify_end())
+        .child(
+            div()
+                .size(px(10.))
+                .rounded(px(5.))
+                .bg(if on { t.background } else { t.text_muted }),
+        )
+}
+
 /// A checkbox with a label: one clickable row (the caller adds `on_click` and the dev id).
 pub fn checkbox_row(
     t: &Theme,

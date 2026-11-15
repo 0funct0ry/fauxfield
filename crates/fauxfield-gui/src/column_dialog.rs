@@ -249,6 +249,7 @@ impl Shell {
         );
         let toggle = |op: &'static str, on: bool, text: &'static str| {
             let id = format!("column-{op}");
+            #[allow(clippy::let_and_return)]
             let b = toolbar_button(t, eid(id.clone()))
                 .h(px(22.))
                 .px(px(8.))

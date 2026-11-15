@@ -37,9 +37,6 @@ pub enum InlineTarget {
     /// One-line description under the Response name.
     Description(String),
     /// Sample request dialog fields (route id).
-    SampleMethod(String),
-    SampleQuery(String),
-    SampleCookies(String),
     /// A text field of action step `row` of a Response (Actions sub-tab, M10.06).
     ActionField {
         response: String,
@@ -337,21 +334,6 @@ impl Shell {
                         s.set_str(&T::Response(id.clone()), "body_file", Some(&v))?;
                         s.set_str(&T::Response(id), "body", None)
                     });
-                }
-            }
-            InlineTarget::SampleMethod(_) => {
-                if let Some(d) = self.sample_dialog.as_mut() {
-                    d.sample.method = v.to_ascii_uppercase();
-                }
-            }
-            InlineTarget::SampleQuery(_) => {
-                if let Some(d) = self.sample_dialog.as_mut() {
-                    d.sample.query = v;
-                }
-            }
-            InlineTarget::SampleCookies(_) => {
-                if let Some(d) = self.sample_dialog.as_mut() {
-                    d.sample.cookies = v;
                 }
             }
             InlineTarget::Description(id) => {

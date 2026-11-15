@@ -1,0 +1,6 @@
+# UI state fixture (M17.02): the Settings tab on the Appearance category.
+steps:
+  - reset
+  - invoke: open_settings
+  - wait_for: {condition: {pointer: /active_tab, equals: settings}}
+  - wait_idle

@@ -83,16 +83,6 @@ impl Shell {
         ed.update(cx, |e, cx| e.set_diagnostics(d, cx));
     }
 
-    /// The saved sample request of `route`, read from `ui.json` once per Route.
-    fn preview_sample(&mut self, route: &str) -> crate::sample::Sample {
-        if let Some(s) = self.preview_samples.get(route) {
-            return s.clone();
-        }
-        let s = self.sample_of(route);
-        self.preview_samples.insert(route.to_string(), s.clone());
-        s
-    }
-
     /// Called every frame for the selected Response: when anything the preview depends on
     /// changed, restart the debounce timer.
     pub(crate) fn ensure_preview(&mut self, response: &str, cx: &mut Context<Self>) {
@@ -107,7 +97,7 @@ impl Shell {
             .body_editors
             .get(response)
             .map(|e| e.read(cx).text().to_string());
-        let sample = self.preview_sample(&route_id);
+        let sample = crate::sample::Sample::default();
         let mut h = DefaultHasher::new();
         (
             &resp.id,
@@ -156,7 +146,7 @@ impl Shell {
         let Some((route_id, _, _)) = self.find_response(response) else {
             return;
         };
-        let sample = self.preview_sample(&route_id);
+        let sample = crate::sample::Sample::default();
         let Some((vs, vr)) = self.ws.find_route(&route_id) else {
             return;
         };

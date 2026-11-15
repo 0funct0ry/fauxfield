@@ -35,6 +35,8 @@ pub struct UiState {
     pub logs: usize,
     /// Attached agents, the Agent activity log and the setup dialog (M16).
     pub agents: AgentsState,
+    /// The Settings tab and keymap editor, when the tab state exists (M17.02).
+    pub settings: Option<SettingsUiState>,
     /// `welcome` when no workspace is open, else `workspace`.
     pub view: &'static str,
     /// Files whose external edit collides with unsaved edits (merge banner shown when non-empty).
@@ -211,7 +213,6 @@ pub struct RouteState {
     pub pinned: bool,
     pub sub_tab: usize,
     pub selected_response: usize,
-    pub sample_dialog: bool,
     /// Route headers in file order (M6).
     pub headers: Vec<(String, String)>,
     pub responses: Vec<ResponseState>,
@@ -494,6 +495,41 @@ pub struct WorkspaceState {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct SettingRowState {
+    pub key: String,
+    pub label: String,
+    pub value: String,
+    pub modified: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct KeymapRowState {
+    pub action: String,
+    pub keys: String,
+    pub source: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct RecordState {
+    pub action: String,
+    pub keys: String,
+    pub conflicts: Vec<String>,
+    pub resolution: &'static str,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct SettingsUiState {
+    pub category: String,
+    pub search: String,
+    pub vim_list_navigation: bool,
+    pub rows: Vec<SettingRowState>,
+    pub keymap: Vec<KeymapRowState>,
+    pub keymap_search: String,
+    pub record: Option<RecordState>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct AgentsState {
     pub attached: Vec<AgentAttachedState>,
     pub activity: Vec<AgentActivityState>,
@@ -732,7 +768,7 @@ fn tab_dirty(shell: &Shell, kind: TabKind, id: &str) -> bool {
         return false;
     };
     let file = match kind {
-        TabKind::Environment | TabKind::Dataset => return false,
+        TabKind::Environment | TabKind::Dataset | TabKind::Settings => return false,
         TabKind::Server => shell.ws.find_server(id).map(|s| s.file.clone()),
         TabKind::Route => shell.ws.find_route(id).map(|(s, _)| s.file.clone()),
         TabKind::Folder => shell.ws.find_folder(id).map(|(s, _)| s.file.clone()),
@@ -907,6 +943,7 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
             })
             .collect(),
         logs: shell.logs.len(),
+        settings: shell.settings_ui_state(cx),
         agents: AgentsState {
             attached: shell
                 .agents_attached
@@ -1241,7 +1278,6 @@ fn route_state(shell: &Shell) -> Option<RouteState> {
         }),
         sub_tab: shell.route_sub.get(&r.id).copied().unwrap_or(0),
         selected_response: shell.resp_sel.get(&r.id).copied().unwrap_or(0),
-        sample_dialog: shell.sample_dialog.is_some(),
         headers: r.headers.clone(),
         preview: shell.preview.as_ref().map(|(id, p)| PreviewState {
             response_id: id.clone(),

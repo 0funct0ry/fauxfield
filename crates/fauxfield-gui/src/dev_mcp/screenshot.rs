@@ -78,6 +78,8 @@ macro_rules! fixtures {
 
 fixtures!(
     "route-tab",
+    "settings-appearance",
+    "keymap-conflict",
     "response-body-editor",
     "server-tab",
     "environment-tab",

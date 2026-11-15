@@ -511,6 +511,7 @@ impl Shell {
             }),
         );
         let toggle = |id: &str, on: bool, text: &str, op: &'static str| {
+            #[allow(clippy::let_and_return)]
             let b = crate::ui::checkbox_row(t, eid(id.to_string()), on, text.to_string())
                 .on_click(cx.listener(move |this, _, w, cx| this.export_op(op, "", w, cx)));
             crate::dev_id!(
@@ -532,6 +533,7 @@ impl Shell {
                 );
                 let mv = |text: &'static str, op: &'static str| {
                     let id = format!("export-{op}-{i}");
+                    #[allow(clippy::let_and_return)]
                     let b =
                         btn(t, id.clone(), text.into()).on_click(cx.listener(
                             move |this, _, w, cx| this.export_op(op, &i.to_string(), w, cx),

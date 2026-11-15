@@ -75,8 +75,7 @@ status = 401
 
 Every request in Traffic records which Responses were evaluated, which rules passed and the value
 compared (Inspector, *Response selection*). The Rules sub-tab edits all rules of a Route in one table,
-*Add error preset* creates RFC 9457 `application/problem+json` Responses, and *Sample…* sets the
-request Send test fires. `fauxfield response add <route>` and `fauxfield response set-default
+*Add error preset* creates RFC 9457 `application/problem+json` Responses. `fauxfield response add <route>` and `fauxfield response set-default
 <response>` do the same from the CLI.
 
 ## CLI
@@ -113,7 +112,7 @@ arguments, for example `now(format=...)`.
 Set `fake_seed = 42` on the Server for identical output across runs (the RNG derives from the seed,
 the Route ID and the call number); without it the output is random and the tree shows a dice icon.
 A Route header is added to every Response; a Response header of the same name wins. Syntax errors are
-underlined in the editor, a preview renders against the sample request, and a failing template returns
+underlined in the editor, a preview renders against the Route's own request, and a failing template returns
 500 with the error in Traffic. See [Template functions and fake kinds](/reference/template-functions/).
 
 ```bash

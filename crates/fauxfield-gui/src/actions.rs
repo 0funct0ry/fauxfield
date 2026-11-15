@@ -43,7 +43,6 @@ actions!(
         SendTest,
         AddDatasetAction,
         Save,
-        EditSampleRequest,
         Duplicate,
         ResetState,
         CopyDatasetCell,
@@ -136,6 +135,20 @@ actions!(
         Quit,
         ShowAbout,
         AgentsSetup,
+        OpenSettings,
+        SettingsFocusSearch,
+        SettingsOpenFile,
+        SettingsResetSection,
+        KeymapOpenFile,
+        ListNext,
+        ListPrev,
+        ListFirst,
+        ListLast,
+        ListCollapse,
+        ListExpand,
+        ListFilter,
+        ListOpen,
+        ListLeave,
         HideApp,
         HideOthers,
         ShowAllApps,
@@ -275,11 +288,6 @@ pub static ACTIONS: &[ActionInfo] = &[
         AddDatasetAction
     ),
     row!("save", "File: Save", Save),
-    row!(
-        "edit_sample_request",
-        "Route: Edit Sample Request…",
-        EditSampleRequest
-    ),
     row!("duplicate", "Edit: Duplicate Response or Route", Duplicate),
     row!("reset_state", "Dataset: Reset State", ResetState),
     row!("copy_dataset_cell", "Dataset: Copy Cell", CopyDatasetCell),
@@ -545,6 +553,36 @@ pub static ACTIONS: &[ActionInfo] = &[
     row!("quit", "Application: Quit", Quit),
     row!("show_about", "Application: About Fauxfield", ShowAbout),
     row!("agents_setup", "Agents: Set Up MCP…", AgentsSetup),
+    row!("open_settings", "Open Settings", OpenSettings),
+    row!(
+        "settings_focus_search",
+        "Settings: Search",
+        SettingsFocusSearch
+    ),
+    row!(
+        "settings_open_file",
+        "Settings: Open settings.toml",
+        SettingsOpenFile
+    ),
+    row!(
+        "settings_reset_section",
+        "Settings: Reset Section",
+        SettingsResetSection
+    ),
+    row!(
+        "keymap_open_file",
+        "Keymap: Open keymap.toml",
+        KeymapOpenFile
+    ),
+    row!("list_next", "List: Next Row", ListNext),
+    row!("list_prev", "List: Previous Row", ListPrev),
+    row!("list_first", "List: First Row", ListFirst),
+    row!("list_last", "List: Last Row", ListLast),
+    row!("list_collapse", "List: Collapse Row", ListCollapse),
+    row!("list_expand", "List: Expand Row", ListExpand),
+    row!("list_filter", "List: Filter", ListFilter),
+    row!("list_open", "List: Open Row", ListOpen),
+    row!("list_leave", "List: Leave List", ListLeave),
     #[cfg(target_os = "macos")]
     row!("hide_app", "Application: Hide Fauxfield", HideApp),
     #[cfg(target_os = "macos")]
@@ -579,6 +617,29 @@ pub static ACTIONS: &[ActionInfo] = &[
     row!("edit_paste", "Edit: Paste", EditPaste),
     row!("edit_select_all", "Edit: Select All", EditSelectAll),
 ];
+
+/// Whether `id` is an action of the app, the code editor or the data table (the keymap editor
+/// lists all of them).
+pub fn is_known(id: &str) -> bool {
+    find(id).is_some()
+        || crate::code_editor::actions::binder(id).is_some()
+        || crate::data_table::actions::binder(id).is_some()
+}
+
+/// Every action id the keymap editor lists: app actions, editor keys and data table keys.
+pub fn all_ids() -> Vec<&'static str> {
+    ACTIONS
+        .iter()
+        .map(|a| a.id)
+        .chain(crate::code_editor::actions::IDS.iter().copied())
+        .chain(crate::data_table::actions::IDS.iter().copied())
+        .collect()
+}
+
+/// A readable label for any action id (palette label, else the id).
+pub fn label_of(id: &str) -> String {
+    find(id).map_or_else(|| id.to_string(), |a| a.label.to_string())
+}
 
 pub fn find(id: &str) -> Option<&'static ActionInfo> {
     ACTIONS.iter().find(|a| a.id == id)

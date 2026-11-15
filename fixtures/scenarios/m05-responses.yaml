@@ -1,4 +1,4 @@
-# M5 scenario: multiple responses per Route, the Rules sub-tab, the sample request dialog.
+# M5 scenario: multiple responses per Route, the Rules sub-tab.
 # Needs the example workspace as the launch workspace (scripts/smoke-ui.sh copies it).
 name: m05-responses
 size: default
@@ -32,17 +32,6 @@ steps:
   - click_element: {id: rule-remove-rsp_users_get_1-0}
   - wait_for_idle: {}
   - assert: {pointer: /route/responses/0/rules, equals: 0}
-  # Open and cancel the sample request dialog.
-  - click_element: {id: subtab-rt_users_get-Responses}
-  - wait_for_idle: {}
-  - invoke: edit_sample_request
-  - wait_for_idle: {}
-  - wait_for: {condition: {pointer: /route/sample_dialog, equals: true}}
-  - assert: {pointer: /modal, equals: sample_request}
-  - assert_find: {text: sample-headers, ids: [sample-headers]}
-  - click_element: {id: sample-cancel}
-  - wait_for_idle: {}
-  - assert: {pointer: /route/sample_dialog, equals: false}
   - audit:
       themes: [one-dark, one-light]
       max_errors: 0

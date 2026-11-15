@@ -54,6 +54,7 @@ pub mod schema_dialog;
 pub mod schema_draft;
 pub mod search;
 pub mod server_dialog;
+pub mod settings_ui;
 pub mod shell;
 pub mod status_bar;
 pub mod tabs;
@@ -126,10 +127,17 @@ fn launch(
         .run(move |cx: &mut App| {
             assets::load_fonts(cx).expect("bundled fonts load");
             let dirs = directories::ProjectDirs::from("dev", "fauxfield", "fauxfield");
+            let settings_path = fauxfield_store::settings::settings_path();
             let opts = ShellOptions {
                 layout_path: dirs.as_ref().map(|d| d.data_dir().join("layout.json")),
-                config_dir: dirs.as_ref().map(|d| d.config_dir().to_path_buf()),
-                settings_path: fauxfield_store::settings::settings_path(),
+                // keymap.toml lives beside settings.toml (SPEC §13), so one directory (and
+                // `$FAUXFIELD_SETTINGS`) isolates both.
+                config_dir: settings_path
+                    .as_deref()
+                    .and_then(|p| p.parent())
+                    .map(PathBuf::from)
+                    .or_else(|| dirs.as_ref().map(|d| d.config_dir().to_path_buf())),
+                settings_path,
                 workspace: workspace.clone(),
                 recent_path: recent_file(dirs.as_ref()),
                 port_offset: 0,

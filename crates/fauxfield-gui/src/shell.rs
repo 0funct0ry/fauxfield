@@ -409,7 +409,7 @@ pub struct Shell {
     layout_path: Option<PathBuf>,
     pub(crate) keymap: Keymap,
     pub(crate) commands: Vec<CommandEntry>,
-    chord: ChordState,
+    pub(crate) chord: ChordState,
     pub(crate) collapsed: HashSet<String>,
     /// Folder IDs already seen, so `collapsed = true` only applies when a Folder first appears.
     pub(crate) known_folders: HashSet<String>,
@@ -422,6 +422,17 @@ pub struct Shell {
     pub(crate) theme_setting: ThemeSetting,
     pub(crate) os_dark: bool,
     theme_problems: Vec<Problem>,
+    pub(crate) settings_problems: Vec<Problem>,
+    pub(crate) keymap_problems: Vec<Problem>,
+    /// The Settings tab state (created on first open, or when a saved Settings tab restores).
+    pub(crate) settings: Option<crate::settings_ui::SettingsState>,
+    /// Where keymap.toml lives.
+    pub(crate) config_dir: Option<PathBuf>,
+    /// One [`crate::keymap::Source`] per binding of `keymap`.
+    pub(crate) keymap_sources: Vec<crate::keymap::Source>,
+    /// `vim_list_navigation` (the vim preset layer is on).
+    pub(crate) vim_list: bool,
+    pub(crate) tree_focus: gpui::FocusHandle,
     settings_dirty: Arc<AtomicBool>,
     _settings_watch: Option<fauxfield_store::settings::ConfigWatcher>,
     recent: Vec<String>,
@@ -611,7 +622,6 @@ pub struct Shell {
     /// Hash of everything the preview depends on, as of the last scheduled render.
     pub(crate) preview_key: u64,
     /// Saved sample request per Route (read from ui.json once).
-    pub(crate) preview_samples: HashMap<String, crate::sample::Sample>,
     /// (editor revision, template flag) the body editor's diagnostics were computed for.
     pub(crate) body_diag: HashMap<String, (u64, bool)>,
     /// Response pane sub-tab per Response (0 Body, 1 Headers); runtime-only.
@@ -627,8 +637,6 @@ pub struct Shell {
     pub(crate) url_opener: Box<dyn crate::menu_shell::UrlOpener>,
     pub(crate) about_open: bool,
     pub(crate) agents_dialog: Option<crate::agents_dialog::AgentsDialog>,
-    pub(crate) sample_dialog: Option<crate::sample::SampleDraft>,
-    pub(crate) sample_editors: Option<[gpui::Entity<crate::code_editor::CodeEditor>; 2]>,
     pub(crate) bar: crate::menubar::Bar,
     /// Dev-mcp actions waiting for the frames that re-register their handlers.
     #[cfg(feature = "dev-mcp")]
@@ -672,24 +680,55 @@ impl Shell {
             .as_deref()
             .map(Layout::load)
             .unwrap_or_default();
-        let (keymap, keymap_error) = Keymap::load(opts.config_dir.as_deref());
-        let mut problems = actions::install(cx, &keymap);
-        problems.extend(keymap_error);
         let settings_file = opts.settings_path.clone();
+        let vim_list = settings_file
+            .as_deref()
+            .and_then(|p| fauxfield_store::settings::Settings::load(p).ok())
+            .and_then(|s| s.vim_list_navigation)
+            .unwrap_or(false);
+        let built = crate::settings_ui::resolve_keymap(opts.config_dir.as_deref(), vim_list, cx);
+        let keymap_file = opts.config_dir.as_ref().map(|d| d.join("keymap.toml"));
+        let keymap_problems: Vec<Problem> = built
+            .issues
+            .iter()
+            .map(|m| {
+                crate::settings_ui::config_problem(
+                    "keymap.invalid",
+                    m.clone(),
+                    keymap_file
+                        .as_deref()
+                        .unwrap_or(std::path::Path::new("keymap.toml")),
+                )
+            })
+            .collect();
+        let keymap = built.keymap.clone();
+        let mut problems: Vec<String> = built.issues.clone();
         let (editor_settings, editor_notes) =
             crate::code_editor::EditorSettings::load(settings_file.as_deref());
         problems.extend(editor_notes);
         let editor_settings_for_ws = editor_settings.clone();
 
-        let settings = settings_file
+        let (settings, settings_issues) = settings_file
             .as_deref()
-            .map(fauxfield_store::settings::Settings::load)
+            .map(fauxfield_store::settings::Settings::load_with_issues)
             .transpose()
             .unwrap_or_else(|e| {
                 problems.push(e);
                 None
             })
             .unwrap_or_default();
+        let settings_problems: Vec<Problem> = settings_issues
+            .iter()
+            .map(|i| {
+                crate::settings_ui::config_problem(
+                    "settings.invalid",
+                    format!("{}: {}; the default is in effect", i.key, i.message),
+                    settings_file
+                        .as_deref()
+                        .unwrap_or(std::path::Path::new("settings.toml")),
+                )
+            })
+            .collect();
         let theme_setting = settings.theme;
         let theme_dir = settings_file
             .as_deref()
@@ -710,6 +749,9 @@ impl Shell {
             let flag = settings_dirty.clone();
             let mut paths = vec![f.clone()];
             paths.extend(theme_dir.clone());
+            if let Some(k) = opts.config_dir.as_ref() {
+                paths.push(k.join("keymap.toml"));
+            }
             fauxfield_store::settings::watch(&paths, Duration::from_millis(30), move || {
                 flag.store(true, Ordering::SeqCst)
             })
@@ -724,32 +766,19 @@ impl Shell {
             .collect();
         let tabs = TabSet::from_saved(saved, layout.active_tab.as_deref());
 
-        let chords: Vec<(String, String)> = keymap
-            .chords()
-            .filter_map(|b| {
-                let keys: Option<Vec<String>> =
-                    b.keys.split_whitespace().map(actions::canonical).collect();
-                Some((keys?.join(" "), b.action.clone()))
-            })
-            .collect();
-        let prefixes: Vec<&str> = chords
-            .iter()
-            .filter_map(|(k, _)| k.split_whitespace().next())
-            .collect();
-        let singles: Vec<(String, String)> = keymap
-            .bindings
-            .iter()
-            .filter(|b| !b.is_chord())
-            .filter_map(|b| Some((actions::canonical(&b.keys)?, b.action.clone())))
-            .filter(|(k, _)| prefixes.contains(&k.as_str()))
-            .collect();
-
         let focus = cx.focus_handle();
         window.focus(&focus);
         let layout_sidebar_tab = layout.sidebar_tab.clone();
         let mut shell = Shell {
-            commands: actions::commands(&keymap),
-            chord: ChordState::new(&chords, &singles),
+            commands: built.commands,
+            chord: built.chord,
+            keymap_sources: built.sources,
+            keymap_problems,
+            settings_problems,
+            settings: None,
+            config_dir: opts.config_dir.clone(),
+            vim_list,
+            tree_focus: cx.focus_handle(),
             tabs,
             layout,
             layout_path: opts.layout_path,
@@ -916,7 +945,6 @@ impl Shell {
             preview: None,
             preview_closed: false,
             preview_key: 0,
-            preview_samples: HashMap::new(),
             body_diag: HashMap::new(),
             resp_sub: HashMap::new(),
             ds_read: HashMap::new(),
@@ -928,8 +956,6 @@ impl Shell {
             url_opener: Box::new(crate::menu_shell::SystemOpener),
             about_open: false,
             agents_dialog: None,
-            sample_dialog: None,
-            sample_editors: None,
             bar: Default::default(),
             #[cfg(feature = "dev-mcp")]
             dev_pending: 0,
@@ -942,6 +968,14 @@ impl Shell {
             shell.notify(format!("Could not open workspace: {e}"), cx);
         }
         // Saved tab titles may be stale (files edited while the app was closed).
+        if shell
+            .tabs
+            .tabs()
+            .iter()
+            .any(|t| t.kind == TabKind::Settings)
+        {
+            shell.ensure_settings(cx);
+        }
         shell.refresh_tab_titles();
         shell.attach_store(cx);
         cx.observe_window_appearance(window, |this, window, cx| {
@@ -1054,7 +1088,6 @@ impl Shell {
         self.ws = Workspace::from_snapshot(&snap);
         // Variables, seeds and headers may have changed: render the preview again.
         self.preview_key = 0;
-        self.preview_samples.clear();
         self.apply_start_collapsed();
         for s in &mut self.ws.servers {
             s.running = running.contains(&s.id);
@@ -1070,7 +1103,7 @@ impl Shell {
                 .unwrap_or_default();
         }
         self.problems = Workspace::problems(&snap);
-        self.problems.extend(self.theme_problems.clone());
+        self.problems.extend(self.config_problems());
         self.conflicts = store.conflicts();
         let ws = &self.ws;
         let before = self.tabs.tabs().len();
@@ -1118,7 +1151,7 @@ impl Shell {
         self.known_folders.clear();
         self.apply_start_collapsed();
         self.problems = Workspace::problems(&snap);
-        self.problems.extend(self.theme_problems.clone());
+        self.problems.extend(self.config_problems());
         self.store = Some(store);
         self.tabs = TabSet::from_saved(vec![], None);
         self.selected = None;
@@ -1281,6 +1314,7 @@ impl Shell {
             TabKind::Folder => self.ws.find_folder(id).map(|(_, f)| f.name.clone()),
             TabKind::Environment => self.ws.find_environment(id).map(|e| e.name.clone()),
             TabKind::Dataset => self.ws.find_dataset(id).map(|d| d.name.clone()),
+            TabKind::Settings => Some("Settings".into()),
         }
     }
 
@@ -1781,7 +1815,6 @@ impl Shell {
             let n = name.to_string();
             self.store_op(cx, |s| s.set_default_environment(Some(&n)));
             self.preview_key = 0;
-            self.preview_samples.clear();
             self.notify(format!("Environment: {name}"), cx);
         }
     }
@@ -2085,6 +2118,25 @@ impl Shell {
         }
     }
 
+    /// Theme, settings and keymap Problems (everything read from the config directory).
+    pub(crate) fn config_problems(&self) -> Vec<Problem> {
+        let mut v = self.theme_problems.clone();
+        v.extend(self.settings_problems.clone());
+        v.extend(self.keymap_problems.clone());
+        v
+    }
+
+    pub(crate) fn rebuild_config_problems(&mut self) {
+        self.problems.retain(|p| {
+            !matches!(
+                p.code.as_str(),
+                "theme.invalid" | "settings.invalid" | "keymap.invalid"
+            )
+        });
+        let extra = self.config_problems();
+        self.problems.extend(extra);
+    }
+
     /// Re-reads `settings.toml` and the user themes after the watcher fired.
     pub(crate) fn reload_settings(&mut self, cx: &mut Context<Self>) {
         let Some(path) = self.settings_path.clone() else {
@@ -2095,12 +2147,27 @@ impl Shell {
             .iter()
             .map(theme_problem)
             .collect();
-        match fauxfield_store::settings::Settings::load(&path) {
-            Ok(s) => self.theme_setting = s.theme,
+        match fauxfield_store::settings::Settings::load_with_issues(&path) {
+            Ok((s, issues)) => {
+                let vim = s.vim_list_navigation.unwrap_or(false);
+                self.theme_setting = s.theme;
+                self.settings_problems = issues
+                    .iter()
+                    .map(|i| {
+                        crate::settings_ui::config_problem(
+                            "settings.invalid",
+                            format!("{}: {}; the default is in effect", i.key, i.message),
+                            &path,
+                        )
+                    })
+                    .collect();
+                self.vim_list = vim;
+                self.reload_keymap(cx);
+            }
             Err(e) => self.notify(e, cx),
         }
-        self.problems.retain(|p| p.code != "theme.invalid");
-        self.problems.extend(self.theme_problems.clone());
+        self.rebuild_config_problems();
+        self.refresh_settings_view(cx);
         if self.theme_before_preview.is_none() {
             let t = resolve_theme(&self.theme_setting, self.os_dark);
             cx.set_global(t);
@@ -2373,6 +2440,10 @@ impl Shell {
             cx.stop_propagation();
             return;
         }
+        if self.record_key(ev, cx) {
+            cx.stop_propagation();
+            return;
+        }
         if self.agents_dialog.is_some() && matches!(ev.keystroke.key.as_str(), "escape" | "enter") {
             if ev.keystroke.key == "escape" {
                 self.close_agents_dialog(cx);
@@ -2384,11 +2455,6 @@ impl Shell {
         }
         if self.about_open && matches!(ev.keystroke.key.as_str(), "escape" | "enter") {
             self.close_about(cx);
-            cx.stop_propagation();
-            return;
-        }
-        if self.sample_dialog.is_some() && ev.keystroke.key == "escape" && self.inline.is_none() {
-            self.close_sample_dialog(cx);
             cx.stop_propagation();
             return;
         }
@@ -3442,6 +3508,7 @@ fn tab_exists(ws: &Workspace, kind: TabKind, id: &str) -> bool {
         TabKind::Folder => ws.find_folder(id).is_some(),
         TabKind::Environment => ws.find_environment(id).is_some(),
         TabKind::Dataset => ws.find_dataset(id).is_some(),
+        TabKind::Settings => id == "settings",
     }
 }
 
@@ -3727,7 +3794,6 @@ impl Render for Shell {
                 Some(id) => this.duplicate_row(&id, cx),
                 None => this.notify("Select something to duplicate.".into(), cx),
             },
-            EditSampleRequest => |this, _w, cx| this.open_sample_dialog(cx),
             ResetState => |this, _w, cx| this.reset_state_action(cx),
             CopyDatasetCell => |this, _w, cx| this.active_dataset_row_action(DsRowAction::CopyCell, cx),
             CopyDatasetRow => |this, _w, cx| {
@@ -3852,6 +3918,20 @@ impl Render for Shell {
             Quit => |this, _w, cx| this.request_quit(cx),
             ShowAbout => |this, _w, cx| this.show_about(cx),
             AgentsSetup => |this, _w, cx| this.open_agents_dialog(cx),
+            OpenSettings => |this, _w, cx| this.open_settings(cx),
+            SettingsFocusSearch => |this, w, cx| this.settings_focus_search(w, cx),
+            SettingsOpenFile => |this, _w, cx| this.settings_open_file(cx),
+            SettingsResetSection => |this, _w, cx| this.settings_reset_section(cx),
+            KeymapOpenFile => |this, _w, cx| this.keymap_open_file(cx),
+            ListNext => |this, _w, cx| this.list_move(crate::settings_ui::ListMove::Next, cx),
+            ListPrev => |this, _w, cx| this.list_move(crate::settings_ui::ListMove::Prev, cx),
+            ListFirst => |this, _w, cx| this.list_move(crate::settings_ui::ListMove::First, cx),
+            ListLast => |this, _w, cx| this.list_move(crate::settings_ui::ListMove::Last, cx),
+            ListCollapse => |this, _w, cx| this.list_move(crate::settings_ui::ListMove::Collapse, cx),
+            ListExpand => |this, _w, cx| this.list_move(crate::settings_ui::ListMove::Expand, cx),
+            ListFilter => |this, w, cx| this.open_picker(PickerKind::Search, w, cx),
+            ListOpen => |this, _w, cx| this.list_move(crate::settings_ui::ListMove::Open, cx),
+            ListLeave => |this, w, cx| { w.focus(&this.focus); cx.notify(); },
             HideApp => |_this, _w, cx| cx.hide(),
             HideOthers => |_this, _w, cx| cx.hide_other_apps(),
             ShowAllApps => |_this, _w, cx| cx.unhide_other_apps(),
@@ -3979,9 +4059,10 @@ impl Render for Shell {
         .when(self.agents_dialog.is_some(), |d| {
             d.child(self.render_agents_dialog(&t, cx))
         })
-        .when(self.sample_dialog.is_some(), |d| {
-            d.child(self.render_sample_dialog(&t, cx))
-        })
+        .when(
+            self.settings.as_ref().is_some_and(|s| s.record.is_some()),
+            |d| d.child(self.render_record_dialog(&t, cx)),
+        )
         .when(self.bar_visible() && self.bar.open.is_some(), |d| {
             d.child(self.render_bar_backdrop(cx))
         })

@@ -86,6 +86,23 @@ impl Shell {
                 )
             }))
             .children(self.render_agent_status(t, cx))
+            .child(crate::dev_id!(
+                toolbar_button(t, "status-settings")
+                    .child(icon("settings", 12., t.icon_muted))
+                    .tooltip(crate::ui::tooltip(format!(
+                        "Settings ({})",
+                        if cfg!(target_os = "macos") {
+                            "Cmd+,"
+                        } else {
+                            "Ctrl+,"
+                        }
+                    )))
+                    .on_click(cx.listener(|this, _, _, cx| this.open_settings(cx))),
+                "status.settings",
+                Button,
+                "Settings",
+                Action("open_settings")
+            ))
             .child({
                 let name = t.name.clone();
                 let chord = if cfg!(target_os = "macos") {

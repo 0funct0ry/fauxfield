@@ -12,6 +12,8 @@ pub enum TabKind {
     Environment,
     /// A Dataset; the tab id is `<server id>:<name>`.
     Dataset,
+    /// The singleton Settings tab (id `settings`).
+    Settings,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

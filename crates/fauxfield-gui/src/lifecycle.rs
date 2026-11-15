@@ -301,7 +301,7 @@ impl Shell {
         }
         if let Some(store) = &self.store {
             let _ = store.flush();
-            // Merge, so keys owned elsewhere (sample_requests) survive.
+            // Merge, so keys owned elsewhere survive.
             let mut state = fauxfield_store::load_ui_state(&store.root());
             if !state.is_object() {
                 state = serde_json::json!({});
@@ -410,12 +410,12 @@ impl Shell {
             Some("export_dataset")
         } else if self.seed_dialog.is_some() {
             Some("seed_data")
+        } else if self.settings.as_ref().is_some_and(|s| s.record.is_some()) {
+            Some("keymap_record")
         } else if self.agents_dialog.is_some() {
             Some("agents")
         } else if self.about_open {
             Some("about")
-        } else if self.sample_dialog.is_some() {
-            Some("sample_request")
         } else {
             None
         }

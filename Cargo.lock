@@ -2235,6 +2235,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "toml 0.8.23",
+ "toml_edit 0.22.27",
  "tree-sitter",
  "tree-sitter-json",
  "tree-sitter-md",
@@ -8643,7 +8644,9 @@ dependencies = [
  "fauxfield-engine",
  "fauxfield-mcp",
  "fauxfield-model",
+ "fauxfield-store",
  "serde_json",
+ "toml 0.8.23",
 ]
 
 [[package]]

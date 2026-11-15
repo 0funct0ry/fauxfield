@@ -3,7 +3,7 @@ source: crates/fauxfield-gui/src/dev_mcp/tree.rs
 expression: a
 ---
 {
-  "frame_nodes": 87,
+  "frame_nodes": 89,
   "elements": [
     {
       "id": "title-bar",
@@ -2094,7 +2094,7 @@ expression: a
       "bounds": {
         "x": 226.0,
         "y": 1069.5,
-        "w": 1454.0,
+        "w": 1329.0,
         "h": 0.0
       },
       "meta": {
@@ -2107,6 +2107,56 @@ expression: a
       "parent": "status-bar"
     },
     {
+      "id": "status.settings",
+      "role": "button",
+      "label": "Settings",
+      "enabled": true,
+      "visible": true,
+      "clipped": false,
+      "focused": false,
+      "z": 0,
+      "order": 84,
+      "bounds": {
+        "x": 1559.0,
+        "y": 1059.5,
+        "w": 24.0,
+        "h": 20.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": true,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": "built-in"
+      },
+      "parent": "status-bar"
+    },
+    {
+      "id": "status-theme",
+      "role": "button",
+      "label": "Theme: One Light",
+      "enabled": true,
+      "visible": true,
+      "clipped": false,
+      "focused": false,
+      "z": 0,
+      "order": 85,
+      "bounds": {
+        "x": 1587.0,
+        "y": 1059.5,
+        "w": 93.0,
+        "h": 20.0
+      },
+      "meta": {
+        "interactive": true,
+        "action": true,
+        "tooltip": false,
+        "truncates": false,
+        "keyboard": "built-in"
+      },
+      "parent": "status-bar"
+    },
+    {
       "id": "status-network",
       "role": "button",
       "label": "Network: None",
@@ -2115,7 +2165,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 84,
+      "order": 86,
       "bounds": {
         "x": 1684.0,
         "y": 1059.5,
@@ -2140,7 +2190,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 85,
+      "order": 87,
       "bounds": {
         "x": 1810.0,
         "y": 1059.5,
@@ -2165,7 +2215,7 @@ expression: a
       "clipped": false,
       "focused": false,
       "z": 0,
-      "order": 86,
+      "order": 88,
       "bounds": {
         "x": 1878.0,
         "y": 1059.5,

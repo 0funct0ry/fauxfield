@@ -1757,17 +1757,6 @@ fn m5_rules_modes_reorder_presets_and_sample(cx: &mut TestAppContext) {
             .description),
         "Only for admins"
     );
-
-    // Sample request round trip through ui.json.
-    view.update(cx, |s, cx| {
-        s.open_tab("rt_users_get", TabKind::Route, "Get user", false);
-        s.open_sample_dialog(cx);
-        s.sample_dialog.as_mut().unwrap().sample.query = "role=admin".into();
-    });
-    view.update_in(cx, |s, w, cx| s.save_sample(false, w, cx));
-    let q = read(&view, cx, |s| s.sample_of("rt_users_get").query);
-    assert_eq!(q, "role=admin");
-    assert!(read(&view, cx, |s| s.sample_dialog.is_none()));
 }
 
 #[test]
@@ -1795,19 +1784,6 @@ fn sample_builds_the_test_request() {
             .iter()
             .any(|(k, v)| k == "cookie" && v == "sid=abc")
     );
-}
-
-#[gpui::test]
-fn edit_sample_request_action_opens_the_dialog(cx: &mut TestAppContext) {
-    let (view, cx) = setup(cx, None);
-    view.update(cx, |s, cx| {
-        s.open_tab("rt_users_get", TabKind::Route, "Get user", false);
-        cx.notify();
-    });
-    cx.run_until_parked();
-    view.update_in(cx, |s, w, cx| s.run_action_id("edit_sample_request", w, cx));
-    cx.run_until_parked();
-    assert!(read(&view, cx, |s| s.sample_dialog.is_some()));
 }
 
 #[gpui::test]
@@ -3554,4 +3530,189 @@ fn agent_edits_flash_the_row_or_its_nearest_visible_ancestor(cx: &mut TestAppCon
         read(&view, cx, |s| s.flash_hold()),
         std::time::Duration::from_millis(3000)
     );
+}
+
+fn setup_config(
+    cx: &mut TestAppContext,
+) -> (Entity<Shell>, &mut VisualTestContext, tempfile::TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let d = dir.path().to_path_buf();
+    let (view, cx) = cx.add_window_view(|w, cx| {
+        Shell::new(
+            ShellOptions {
+                layout_path: None,
+                config_dir: Some(d.clone()),
+                settings_path: Some(d.join("settings.toml")),
+                ..crate::view::test_options()
+            },
+            w,
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    (view, cx, dir)
+}
+
+#[gpui::test]
+fn settings_tab_is_a_singleton_opened_by_keystroke(cx: &mut TestAppContext) {
+    let (view, cx, _dir) = setup_config(cx);
+    cx.simulate_keystrokes("secondary-,");
+    cx.simulate_keystrokes("secondary-,");
+    let (n, active) = read(&view, cx, |s| {
+        (
+            s.tabs
+                .tabs()
+                .iter()
+                .filter(|t| t.kind == TabKind::Settings)
+                .count(),
+            s.tabs.active().map(|t| t.kind),
+        )
+    });
+    assert_eq!((n, active), (1, Some(TabKind::Settings)));
+}
+
+#[gpui::test]
+fn settings_write_keeps_comments_and_external_edits_show(cx: &mut TestAppContext) {
+    let (view, cx, dir) = setup_config(cx);
+    let path = dir.path().join("settings.toml");
+    std::fs::write(&path, "# keep me\nfuture = 1\n").unwrap();
+    view.update(cx, |s, cx| {
+        s.open_settings(cx);
+        s.settings_set("ui_scale", Some(toml::Value::Float(1.5)), cx);
+    });
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        text.contains("# keep me") && text.contains("future") && text.contains("ui_scale = 1.5")
+    );
+    assert_eq!(
+        read(&view, cx, |s| s
+            .settings
+            .as_ref()
+            .unwrap()
+            .raw
+            .get("ui_scale")
+            .cloned()),
+        Some(toml::Value::Float(1.5))
+    );
+    // An invalid value written outside the app becomes a Problem; the default stays.
+    std::fs::write(&path, "ui_scale = 9\n").unwrap();
+    view.update(cx, |s, cx| s.reload_settings(cx));
+    let probs = read(&view, cx, |s| {
+        s.problems
+            .iter()
+            .filter(|p| p.code == "settings.invalid")
+            .map(|p| p.message.clone())
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(probs.len(), 1, "{probs:?}");
+    assert!(probs[0].contains("ui_scale"));
+    // Reset removes the key.
+    view.update(cx, |s, cx| s.settings_set("ui_scale", None, cx));
+    assert!(!std::fs::read_to_string(&path).unwrap().contains("ui_scale"));
+    assert!(read(&view, cx, |s| s
+        .problems
+        .iter()
+        .all(|p| p.code != "settings.invalid")));
+}
+
+#[gpui::test]
+fn keymap_record_conflict_resolution_writes_only_user_overrides(cx: &mut TestAppContext) {
+    let (view, cx, dir) = setup_config(cx);
+    let km = dir.path().join("keymap.toml");
+    view.update(cx, |s, cx| {
+        s.keymap_start_record("run_all", cx);
+        // quick_search owns secondary-k; Save is blocked until a resolution is chosen.
+        s.record_stroke("secondary-k".into(), std::time::Instant::now(), cx);
+        s.keymap_save_record(cx);
+    });
+    assert!(!km.exists(), "unresolved conflict must not write");
+    let conflicts = read(&view, cx, |s| {
+        s.settings
+            .as_ref()
+            .unwrap()
+            .record
+            .as_ref()
+            .unwrap()
+            .conflicts
+            .clone()
+    });
+    assert_eq!(conflicts.len(), 1);
+    assert_eq!(conflicts[0].0, "quick_search");
+    view.update(cx, |s, cx| {
+        s.keymap_set_resolution(crate::settings_ui::Resolution::AllowBoth, cx);
+        s.keymap_save_record(cx);
+    });
+    let text = std::fs::read_to_string(&km).unwrap();
+    assert!(text.contains("run_all") && text.contains("secondary-k") && text.contains("context"));
+    assert!(!text.contains("quick_search"), "{text}");
+    let bound = read(&view, cx, |s| {
+        s.keymap.binding_for("run_all").map(str::to_owned)
+    });
+    assert_eq!(bound.as_deref(), Some("secondary-k"));
+    // Reset drops the override and the default returns.
+    view.update(cx, |s, cx| s.keymap_write("run_all", &[], cx));
+    assert!(
+        !std::fs::read_to_string(&km)
+            .map(|t| t.contains("run_all"))
+            .unwrap_or(false)
+    );
+    assert_eq!(
+        read(&view, cx, |s| s
+            .keymap
+            .binding_for("run_all")
+            .map(str::to_owned))
+        .as_deref(),
+        Some("secondary-shift-r")
+    );
+}
+
+#[gpui::test]
+fn vim_preset_follows_the_setting_and_bad_keymap_entries_are_problems(cx: &mut TestAppContext) {
+    let (view, cx, dir) = setup_config(cx);
+    assert!(read(&view, cx, |s| s
+        .keymap
+        .binding_for("list_next")
+        .is_none()));
+    view.update(cx, |s, cx| {
+        s.settings_set("vim_list_navigation", Some(toml::Value::Boolean(true)), cx)
+    });
+    assert_eq!(
+        read(&view, cx, |s| s
+            .keymap
+            .binding_for("list_next")
+            .map(str::to_owned))
+        .as_deref(),
+        Some("j")
+    );
+    std::fs::write(
+        dir.path().join("keymap.toml"),
+        "[[binding]]\naction='nope'\nkeys='x'\n",
+    )
+    .unwrap();
+    view.update(cx, |s, cx| s.reload_settings(cx));
+    assert!(read(&view, cx, |s| s
+        .problems
+        .iter()
+        .any(|p| p.code == "keymap.invalid")));
+}
+
+#[test]
+fn every_action_appears_in_the_keymap_editor() {
+    let ids = crate::actions::all_ids();
+    for a in ACTIONS {
+        assert!(ids.contains(&a.id), "{}", a.id);
+    }
+    for id in crate::code_editor::actions::IDS
+        .iter()
+        .chain(crate::data_table::actions::IDS)
+    {
+        assert!(ids.contains(id), "{id}");
+    }
+    // The bundled keymap and the vim preset only name actions the editor lists.
+    for src in [crate::keymap::DEFAULT_KEYMAP, crate::keymap::VIM_KEYMAP] {
+        let k = crate::keymap::Keymap::parse_for(src, crate::keymap::Platform::Macos).unwrap();
+        for b in k.bindings {
+            assert!(ids.contains(&b.action.as_str()), "{}", b.action);
+        }
+    }
 }

@@ -59,6 +59,7 @@ fn tab_icon(kind: TabKind) -> &'static str {
         TabKind::Folder => "folder",
         TabKind::Environment => "layers",
         TabKind::Dataset => "table",
+        TabKind::Settings => "settings",
     }
 }
 
@@ -124,6 +125,7 @@ impl Shell {
             TabKind::Folder => t.icon_muted,
             TabKind::Environment => t.modified,
             TabKind::Dataset => t.modified,
+            TabKind::Settings => t.icon_muted,
         };
         crate::dev_id!(
             div()
@@ -226,6 +228,7 @@ impl Shell {
                 Some(d) => self.render_dataset_tab(t, &d, cx).into_any_element(),
                 None => self.render_empty(t).into_any_element(),
             },
+            TabKind::Settings => self.render_settings_tab(t, cx).into_any_element(),
         }
     }
 
@@ -345,17 +348,6 @@ impl Shell {
                         }),
                     )
                     .child(div().flex_1())
-                    .child(crate::dev_id!(
-                        toolbar_button(t, "route-sample")
-                            .child("Sample…")
-                            .on_click(cx.listener(|this, _, w, cx| {
-                                this.run_action_id("edit_sample_request", w, cx)
-                            })),
-                        format!("route-sample-{}", r.id),
-                        Button,
-                        "Edit sample request",
-                        Action("edit_sample_request")
-                    ))
                     .child(crate::dev_id!(
                         toolbar_button(t, "route-send")
                             .child(icon("play", 12., t.created))

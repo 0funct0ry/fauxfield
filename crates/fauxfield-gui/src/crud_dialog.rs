@@ -266,6 +266,7 @@ impl Shell {
             .map(|(i, (op, text, _))| {
                 let id = format!("crud-op-{op}");
                 let on = d.ops[i];
+                #[allow(clippy::let_and_return)]
                 let b = crate::ui::checkbox_row(t, eid(id.clone()), on, *text)
                     .on_click(cx.listener(move |this, _, w, cx| this.crud_op("toggle", op, w, cx)));
                 crate::dev_id!(b, id, Button, *text, Press(format!("crud-toggle:{op}")))

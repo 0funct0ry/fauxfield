@@ -740,3 +740,7 @@ keys = "secondary-alt-c"
 [[binding]]
 action = "edit_dataset_schema"
 keys = "secondary-alt-s"
+
+[[binding]]
+action = "open_settings"
+keys = "secondary-,"

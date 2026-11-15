@@ -174,6 +174,22 @@ pub struct MenuDef {
 
 /// Actions that are deliberately not in the menu, each with the reason.
 pub const NOT_IN_MENU: &[(&str, &str)] = &[
+    ("settings_focus_search", "Settings tab and palette"),
+    ("settings_open_file", "Settings tab footer and palette"),
+    ("settings_reset_section", "Settings tab footer and palette"),
+    (
+        "keymap_open_file",
+        "Settings tab, Keymap category and palette",
+    ),
+    ("list_next", "Vim list navigation preset and palette"),
+    ("list_prev", "Vim list navigation preset and palette"),
+    ("list_first", "Vim list navigation preset and palette"),
+    ("list_last", "Vim list navigation preset and palette"),
+    ("list_collapse", "Vim list navigation preset and palette"),
+    ("list_expand", "Vim list navigation preset and palette"),
+    ("list_filter", "Vim list navigation preset and palette"),
+    ("list_open", "Vim list navigation preset and palette"),
+    ("list_leave", "Vim list navigation preset and palette"),
     ("send_ws_message", "WebSocket tab and palette"),
     ("new_dataset_from_table", "Dataset tab toolbar and palette"),
     ("import_dataset_file", "Datasets tab and palette"),
@@ -388,6 +404,8 @@ pub fn build_menus(ctx: &MenuContext) -> Vec<MenuDef> {
             entries: vec![
                 act("show_about", "About Fauxfield"),
                 MenuEntry::Separator,
+                act("open_settings", "Settings…"),
+                MenuEntry::Separator,
                 MenuEntry::Services,
                 MenuEntry::Separator,
                 act("hide_app", "Hide Fauxfield"),
@@ -421,6 +439,8 @@ pub fn build_menus(ctx: &MenuContext) -> Vec<MenuDef> {
         ),
     ];
     if !mac {
+        file.push(MenuEntry::Separator);
+        file.push(act("open_settings", "Settings…"));
         file.push(MenuEntry::Separator);
         file.push(act("quit", "Quit"));
     }
@@ -539,7 +559,6 @@ pub fn build_menus(ctx: &MenuContext) -> Vec<MenuDef> {
         mnemonic: Some('R'),
         entries: vec![
             act("send_test", "Send Test Request"),
-            act("edit_sample_request", "Edit Sample Request…"),
             MenuEntry::Separator,
             act("edit_route_method", "Edit Method…"),
             act("edit_route_path", "Edit Path…"),
@@ -653,7 +672,7 @@ pub fn enabled(id: &str, ctx: &MenuContext) -> bool {
         | "show_sidebar_environments"
         | "show_sidebar_datasets" => ctx.workspace_open,
         "new_route" | "new_folder" => ctx.current_server.is_some(),
-        "create_workspace" | "open_folder" | "clear_recent" => true,
+        "create_workspace" | "open_folder" | "clear_recent" | "open_settings" => true,
         "close_tab" => !ctx.tab_titles.is_empty(),
         "pin_tab" => ctx.active_tab_is_preview,
         "undo" => ctx.can_undo,
@@ -670,7 +689,6 @@ pub fn enabled(id: &str, ctx: &MenuContext) -> bool {
         "copy_as_curl" | "mock_this_route" | "refire_callback" => ctx.traffic_row_selected,
         "copy_dataset_cell" | "copy_dataset_row" | "delete_dataset_row" => ctx.dataset_row_target,
         "send_test"
-        | "edit_sample_request"
         | "edit_route_method"
         | "edit_route_path"
         | "new_response"
@@ -869,7 +887,7 @@ mod tests {
             ));
         }
         let mac = build_menus(&MenuContext::welcome(Platform::Macos));
-        assert!(matches!(mac[0].entries[2], MenuEntry::Services));
+        assert!(matches!(mac[0].entries[4], MenuEntry::Services));
         let file = mac.iter().find(|m| m.title == "File").unwrap();
         assert!(!menu_ids(std::slice::from_ref(file)).contains(&"quit"));
     }
@@ -936,6 +954,7 @@ mod tests {
             "open_documentation",
             "open_release_notes",
             "report_issue",
+            "open_settings",
         ];
         want.sort_unstable();
         // Clear Recent is disabled-by-absence with no recents (the submenu has one dead row).

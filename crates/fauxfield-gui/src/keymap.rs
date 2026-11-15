@@ -6,6 +6,32 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 pub const DEFAULT_KEYMAP: &str = include_str!("../assets/keymap/default.toml");
+/// Vim-style list navigation (SPEC §20.34): data, scoped to list, tree and table focus.
+pub const VIM_KEYMAP: &str = include_str!("../assets/keymap/vim.toml");
+
+/// Where a resolved binding comes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Source {
+    Default,
+    Vim,
+    User,
+}
+
+impl Source {
+    pub fn label(self) -> &'static str {
+        match self {
+            Source::Default => "default",
+            Source::Vim => "vim preset",
+            Source::User => "user",
+        }
+    }
+}
+
+/// A problem found while reading keymap.toml (`keymap.invalid` Problems).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeymapIssue {
+    pub message: String,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct BindingDef {
@@ -146,6 +172,73 @@ impl Keymap {
         }
     }
 
+    /// Layers defaults < vim preset (when `vim`) < user. Returns the resolved keymap, one
+    /// [`Source`] per binding (same order) and the issues found in the user layer (unknown
+    /// actions, bad keys; those bindings are dropped).
+    pub fn layered(
+        platform: Platform,
+        vim: bool,
+        user_src: Option<&str>,
+        known_action: impl Fn(&str) -> bool,
+    ) -> (Keymap, Vec<Source>, Vec<KeymapIssue>) {
+        let mut issues = Vec::new();
+        let mut rows: Vec<(BindingDef, Source)> = Keymap::bundled_for(platform)
+            .bindings
+            .into_iter()
+            .map(|b| (b, Source::Default))
+            .collect();
+        if vim {
+            let preset = Keymap::parse_for(VIM_KEYMAP, platform).expect("vim preset parses");
+            // The preset adds bindings; it never removes a default of the same keys+context.
+            for b in preset.bindings {
+                if !rows
+                    .iter()
+                    .any(|(r, _)| r.keys == b.keys && r.context == b.context)
+                {
+                    rows.push((b, Source::Vim));
+                }
+            }
+        }
+        if let Some(src) = user_src {
+            match Keymap::parse_for(src, platform) {
+                Err(e) => issues.push(KeymapIssue {
+                    message: format!("keymap.toml: {e:#}"),
+                }),
+                Ok(user) => {
+                    let mut cleared: Vec<(String, Option<String>)> = Vec::new();
+                    for u in user.bindings {
+                        if !known_action(&u.action) {
+                            issues.push(KeymapIssue {
+                                message: format!("keymap.toml: unknown action {:?}", u.action),
+                            });
+                            continue;
+                        }
+                        if !u.keys.is_empty() && !valid_keys(&u.keys) {
+                            issues.push(KeymapIssue {
+                                message: format!(
+                                    "keymap.toml: invalid keys {:?} for {:?}",
+                                    u.keys, u.action
+                                ),
+                            });
+                            continue;
+                        }
+                        // The first user entry for an action replaces every lower-layer
+                        // binding of it; later entries (other contexts) add.
+                        if !cleared.iter().any(|(a, _)| *a == u.action) {
+                            rows.retain(|(b, _)| b.action != u.action);
+                            cleared.push((u.action.clone(), None));
+                        }
+                        if !u.keys.is_empty() {
+                            rows.push((u, Source::User));
+                        }
+                    }
+                }
+            }
+        }
+        let (bindings, sources) = rows.into_iter().unzip();
+        (Keymap { bindings }, sources, issues)
+    }
+
     /// The first binding of an action, as written (`secondary-shift-p`).
     pub fn binding_for(&self, action: &str) -> Option<&str> {
         self.bindings
@@ -157,6 +250,91 @@ impl Keymap {
     pub fn chords(&self) -> impl Iterator<Item = &BindingDef> {
         self.bindings.iter().filter(|b| b.is_chord())
     }
+}
+
+/// Whether every stroke of `keys` is a well-formed key spec (modifiers then a key).
+pub fn valid_keys(keys: &str) -> bool {
+    let mut any = false;
+    for stroke in keys.split_whitespace() {
+        any = true;
+        let parts: Vec<&str> = stroke.split('-').collect();
+        let (mods, key) = parts.split_at(parts.len() - 1);
+        let key = if key[0].is_empty() { "-" } else { key[0] };
+        if key.is_empty()
+            || !mods.iter().all(|m| {
+                matches!(
+                    *m,
+                    "secondary" | "cmd" | "ctrl" | "shift" | "alt" | "fn" | ""
+                )
+            })
+        {
+            return false;
+        }
+    }
+    any
+}
+
+/// Writes the user's overrides for `action` into keymap.toml text (`toml_edit`, comments kept):
+/// removes its entries, then appends one `[[binding]]` per `(keys, context)`. An empty `keys`
+/// is a Clear. An empty `entries` list resets the action to the lower layers.
+pub fn write_user_bindings(
+    text: &str,
+    action: &str,
+    entries: &[(String, Option<String>)],
+) -> Result<String> {
+    use toml_edit::{ArrayOfTables, DocumentMut, Item, Table, value};
+    let mut doc: DocumentMut = text.parse().context("keymap.toml is not valid TOML")?;
+    let item = doc
+        .entry("binding")
+        .or_insert_with(|| Item::ArrayOfTables(ArrayOfTables::new()));
+    let arr = item
+        .as_array_of_tables_mut()
+        .context("`binding` in keymap.toml must be [[binding]] tables")?;
+    let keep: Vec<usize> = (0..arr.len())
+        .filter(|i| {
+            arr.get(*i)
+                .and_then(|t| t.get("action"))
+                .and_then(|v| v.as_str())
+                != Some(action)
+        })
+        .collect();
+    let mut kept = ArrayOfTables::new();
+    for i in keep {
+        kept.push(arr.get(i).unwrap().clone());
+    }
+    for (keys, ctx) in entries {
+        let mut t = Table::new();
+        t.insert("action", value(action));
+        t.insert("keys", value(keys.as_str()));
+        if let Some(c) = ctx {
+            t.insert("context", value(c.as_str()));
+        }
+        kept.push(t);
+    }
+    if kept.is_empty() {
+        doc.remove("binding");
+    } else {
+        *item_mut(&mut doc) = Item::ArrayOfTables(kept);
+    }
+    Ok(doc.to_string())
+}
+
+fn item_mut(doc: &mut toml_edit::DocumentMut) -> &mut toml_edit::Item {
+    doc.entry("binding").or_insert(toml_edit::Item::None)
+}
+
+/// Bindings in `keymap` that share `keys` (and an overlapping context) with another action.
+pub fn conflicts<'a>(
+    keymap: &'a Keymap,
+    action: &str,
+    keys: &str,
+    context: Option<&str>,
+) -> Vec<&'a BindingDef> {
+    keymap
+        .bindings
+        .iter()
+        .filter(|b| b.action != action && b.keys == keys && b.context.as_deref() == context)
+        .collect()
 }
 
 /// Renders `secondary-shift-p` for display: `⌘⇧P` on macOS, `Ctrl+Shift+P` elsewhere.
@@ -203,6 +381,69 @@ fn display_stroke(stroke: &str, mac: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn layering_sources_and_issues() {
+        let known = |a: &str| a != "nope";
+        let user = "[[binding]]\naction='quick_search'\nkeys='secondary-p'\n\
+                    [[binding]]\naction='nope'\nkeys='x'\n\
+                    [[binding]]\naction='close_tab'\nkeys=''\n\
+                    [[binding]]\naction='run_all'\nkeys='ctrl-bogus-'\n";
+        let (k, src, issues) = Keymap::layered(Platform::Macos, true, Some(user), known);
+        assert_eq!(k.bindings.len(), src.len());
+        assert_eq!(k.binding_for("quick_search"), Some("secondary-p"));
+        let i = k
+            .bindings
+            .iter()
+            .position(|b| b.action == "quick_search")
+            .unwrap();
+        assert_eq!(src[i], Source::User);
+        assert_eq!(k.binding_for("close_tab"), None);
+        assert_eq!(issues.len(), 2, "{issues:?}");
+        assert!(k.bindings.iter().zip(&src).any(|(_, s)| *s == Source::Vim));
+        let (_, src2, _) = Keymap::layered(Platform::Macos, false, None, known);
+        assert!(!src2.contains(&Source::Vim));
+    }
+
+    #[test]
+    fn vim_preset_is_scoped_to_list_tree_table() {
+        let p = Keymap::parse_for(VIM_KEYMAP, Platform::Macos).unwrap();
+        assert!(!p.bindings.is_empty());
+        for b in &p.bindings {
+            let c = b.context.as_deref().unwrap_or("");
+            assert!(
+                c.split("||")
+                    .all(|x| matches!(x.trim(), "List" | "Tree" | "Table")),
+                "{b:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn write_user_bindings_keeps_comments_and_resets() {
+        let t = "# mine\n[[binding]]\naction='undo'\nkeys='secondary-z'\n";
+        let t = write_user_bindings(t, "quick_search", &[("secondary-p".into(), None)]).unwrap();
+        assert!(t.contains("# mine") && t.contains("secondary-p"));
+        let t = write_user_bindings(
+            &t,
+            "quick_search",
+            &[("secondary-o".into(), Some("Tree".into()))],
+        )
+        .unwrap();
+        assert!(!t.contains("secondary-p") && t.contains("context = \"Tree\""));
+        let t = write_user_bindings(&t, "quick_search", &[]).unwrap();
+        assert!(!t.contains("quick_search") && t.contains("undo"));
+        let t = write_user_bindings(&t, "undo", &[]).unwrap();
+        assert!(!t.contains("binding"));
+    }
+
+    #[test]
+    fn conflict_detection_respects_context() {
+        let k = Keymap::bundled_for(Platform::Macos);
+        assert_eq!(conflicts(&k, "x", "secondary-k", None).len(), 1);
+        assert!(conflicts(&k, "x", "secondary-k", Some("Tree")).is_empty());
+        assert!(conflicts(&k, "quick_search", "secondary-k", None).is_empty());
+    }
 
     #[test]
     fn bundled_has_every_spec_binding() {

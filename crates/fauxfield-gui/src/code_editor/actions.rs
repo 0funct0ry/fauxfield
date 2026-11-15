@@ -56,6 +56,53 @@ actions!(
 /// TOML carries the keys; this table feeds `crate::actions::ACTIONS`.
 pub const PALETTE_VISIBLE: &[&str] = &["ed_go_to_line", "ed_toggle_soft_wrap", "ed_format_body"];
 
+/// Every editor action id (the keymap editor lists them).
+pub const IDS: &[&str] = &[
+    "ed_left",
+    "ed_right",
+    "ed_up",
+    "ed_down",
+    "ed_select_left",
+    "ed_select_right",
+    "ed_select_up",
+    "ed_select_down",
+    "ed_word_left",
+    "ed_word_right",
+    "ed_select_word_left",
+    "ed_select_word_right",
+    "ed_line_start",
+    "ed_line_end",
+    "ed_select_line_start",
+    "ed_select_line_end",
+    "ed_doc_start",
+    "ed_doc_end",
+    "ed_select_doc_start",
+    "ed_select_doc_end",
+    "ed_backspace",
+    "ed_delete",
+    "ed_delete_word_left",
+    "ed_delete_word_right",
+    "ed_delete_to_line_start",
+    "ed_delete_to_line_end",
+    "ed_cut",
+    "ed_copy",
+    "ed_paste",
+    "ed_select_all",
+    "ed_undo",
+    "ed_redo",
+    "ed_toggle_comment",
+    "ed_move_line_up",
+    "ed_move_line_down",
+    "ed_duplicate_line",
+    "ed_delete_line",
+    "ed_go_to_line",
+    "ed_match_bracket",
+    "ed_show_completions",
+    "ed_toggle_soft_wrap",
+    "ed_format_body",
+    "ed_escape",
+];
+
 /// Binding constructors for every editor action id (`ed_*`), used by `crate::actions::install`.
 pub fn binder(id: &str) -> Option<fn(&str, Option<&str>) -> KeyBinding> {
     Some(match id {
@@ -104,4 +151,14 @@ pub fn binder(id: &str) -> Option<fn(&str, Option<&str>) -> KeyBinding> {
         "ed_escape" => |k, c| KeyBinding::new(k, Escape, c),
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod ids_tests {
+    #[test]
+    fn ids_match_binder() {
+        for id in super::IDS {
+            assert!(super::binder(id).is_some(), "{id}");
+        }
+    }
 }

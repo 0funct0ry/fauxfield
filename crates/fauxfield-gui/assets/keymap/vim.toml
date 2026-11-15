@@ -1,0 +1,46 @@
+# Vim-style list navigation preset (SPEC §20.34). Applies only while a list, tree or table has
+# focus; text inputs and editors are untouched. Enabled by `vim_list_navigation = true`.
+[[binding]]
+action = "list_next"
+keys = "j"
+context = "List || Tree || Table"
+
+[[binding]]
+action = "list_prev"
+keys = "k"
+context = "List || Tree || Table"
+
+[[binding]]
+action = "list_first"
+keys = "g g"
+context = "List || Tree || Table"
+
+[[binding]]
+action = "list_last"
+keys = "shift-g"
+context = "List || Tree || Table"
+
+[[binding]]
+action = "list_collapse"
+keys = "h"
+context = "Tree"
+
+[[binding]]
+action = "list_expand"
+keys = "l"
+context = "Tree"
+
+[[binding]]
+action = "list_filter"
+keys = "/"
+context = "List || Tree || Table"
+
+[[binding]]
+action = "list_open"
+keys = "enter"
+context = "List || Tree || Table"
+
+[[binding]]
+action = "list_leave"
+keys = "escape"
+context = "List || Tree || Table"

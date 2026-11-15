@@ -8,6 +8,19 @@ actions!(
     [Up, Down, Left, Right, Home, End, PageUp, PageDown, Escape]
 );
 
+/// Every data table action id (the keymap editor lists them).
+pub const IDS: &[&str] = &[
+    "dt_up",
+    "dt_down",
+    "dt_left",
+    "dt_right",
+    "dt_home",
+    "dt_end",
+    "dt_page_up",
+    "dt_page_down",
+    "dt_escape",
+];
+
 pub fn binder(id: &str) -> Option<fn(&str, Option<&str>) -> KeyBinding> {
     Some(match id {
         "dt_up" => |k, c| KeyBinding::new(k, Up, c),

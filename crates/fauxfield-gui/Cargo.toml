@@ -24,6 +24,7 @@ serde.workspace = true
 serde_json.workspace = true
 chrono = "0.4"
 toml.workspace = true
+toml_edit.workspace = true
 indexmap.workspace = true
 fauxfield-model.workspace = true
 fauxfield-store.workspace = true

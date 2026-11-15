@@ -1,0 +1,44 @@
+# M17.02 scenario: Settings tab and keymap editor. Run against a dev-mcp build with an isolated
+# config directory (`FAUXFIELD_SETTINGS=$(mktemp -d)/settings.toml`), because it writes
+# settings.toml and keymap.toml there. Not yet run in CI.
+name: m17-settings
+size: default
+steps:
+  - state: [reset]
+  - invoke: open_settings
+  - wait_for: {condition: {pointer: /active_tab, equals: settings}}
+  - assert_find: {text: Appearance, ids: [settings.tab, settings.search, settings.category.0]}
+  # Search filters by label, description and TOML key.
+  - click_element: {id: settings.search}
+  - type_text: theme
+  - wait_for_idle: {}
+  - assert: {pointer: /settings/rows/0/key, equals: theme.mode}
+  # (Changing the dark theme through its ComboBox writes theme.dark and applies at once.)
+  - assert: {pointer: /settings/rows/2/modified, equals: false}
+  - screenshot: {name: m17-settings-search}
+  - key: escape
+  # Keymap: toggle the vim preset and see it layered in.
+  - click_element: {id: settings.category.5}
+  - wait_for_idle: {}
+  - click_element: {id: settings.vim_list_navigation}
+  - wait_for_idle: {}
+  - assert: {pointer: /settings/vim_list_navigation, equals: true}
+  # Record a binding that conflicts, then resolve it with Allow both.
+  - click_element: {id: keymap.record.run_all}
+  - wait_for: {condition: {pointer: /modal, equals: keymap_record}}
+  - key: secondary-k
+  - wait_for_idle: {}
+  - assert: {pointer: /settings/record/conflicts/0, equals: quick_search}
+  - screenshot: {name: m17-keymap-conflict}
+  - click_element: {id: keymap.keymap-both}
+  - click_element: {id: keymap.save}
+  - wait_for_idle: {}
+  - assert: {pointer: /modal, equals: keymap_record, not: true}
+  # Reset drops the override.
+  - click_element: {id: keymap.reset.run_all}
+  - wait_for_idle: {}
+  - audit:
+      states: [settings-appearance, keymap-conflict]
+      themes: [one-dark, one-light]
+      sizes: [default, min]
+      max_errors: 0

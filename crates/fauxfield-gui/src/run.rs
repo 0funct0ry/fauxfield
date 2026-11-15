@@ -428,7 +428,7 @@ impl Shell {
         if !server.running {
             return self.notify(format!("Start {} first (Cmd/Ctrl+R).", server.name), cx);
         }
-        let req: TestRequest = self.sample_of(&route.id).request(&server, &route);
+        let req: TestRequest = crate::sample::Sample::default().request(&server, &route);
         let engine = host.engine().clone();
         let id = server.id.clone();
         let (tx, rx) = tokio::sync::oneshot::channel();

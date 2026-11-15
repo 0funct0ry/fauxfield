@@ -644,7 +644,6 @@ impl Shell {
                 self.ds_banner_dismissed.insert(id.replace('|', ":"));
                 cx.notify();
             }
-            "sample-cancel" => self.close_sample_dialog(cx),
             other if other.starts_with("ws-") => self.ws_op(&other["ws-".len()..], &id, idx, cx),
             other if other.starts_with("schema-") => {
                 let arg = if id.is_empty() {
@@ -666,14 +665,16 @@ impl Shell {
             other if other.starts_with("crud-") => {
                 self.crud_op(&other["crud-".len()..], &id, window, cx)
             }
-            "sample-save" => self.save_sample(false, window, cx),
-            "sample-send" => self.save_sample(true, window, cx),
             other
                 if other.starts_with("action-")
                     || other.starts_with("dsread-")
                     || other == "body-source-dataset" =>
             {
                 return self.action_press(other, &id, idx, cx, window);
+            }
+            "set-cat" | "set-toggle" | "set-reset" | "km-record" | "km-clear" | "km-reset"
+            | "km-save" | "km-cancel" | "km-resolve" | "km-stroke" => {
+                self.press_settings(name, &id, cx)?
             }
             other => return Err(format!("unknown press op {other:?}")),
         }

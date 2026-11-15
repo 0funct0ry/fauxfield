@@ -675,6 +675,7 @@ impl Shell {
                 let toggle = |on: bool, text: &'static str, op: &'static str, tip: &'static str| {
                     let _ = tip;
                     let id = format!("schema-{op}-{i}");
+                    #[allow(clippy::let_and_return)]
                     let b = toolbar_button(t, eid(id.clone()))
                         .h(px(22.))
                         .w(px(24.))
@@ -690,6 +691,7 @@ impl Shell {
                 let act = |text: &'static str, op: &'static str, tip: &'static str, dim: bool| {
                     let _ = tip;
                     let id = format!("schema-{op}-{i}");
+                    #[allow(clippy::let_and_return)]
                     let b = toolbar_button(t, eid(id.clone()))
                         .h(px(22.))
                         .w(px(22.))
@@ -757,6 +759,7 @@ impl Shell {
             .iter()
             .map(|s| {
                 let id = format!("schema-starter-{}", s.replace([' ', '+'], ""));
+                #[allow(clippy::let_and_return)]
                 let b = mk_btn(id.clone(), (*s).into()).on_click(
                     cx.listener(move |this, _, w, cx| this.schema_op("starter", s, w, cx)),
                 );

@@ -45,6 +45,12 @@ impl Shell {
         };
         div()
             .id("left-dock")
+            .key_context("Tree")
+            .track_focus(&self.tree_focus)
+            .on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(|this, _, w, _| w.focus(&this.tree_focus)),
+            )
             .on_drop(cx.listener(|this, p: &gpui::ExternalPaths, w, cx| {
                 this.import_dropped(p.paths().to_vec(), w, cx)
             }))
