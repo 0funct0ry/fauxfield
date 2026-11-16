@@ -69,6 +69,7 @@ pub mod title_bar;
 pub mod traffic;
 pub mod tree;
 pub mod ui;
+mod update_ui;
 pub mod view;
 pub mod ws_ui;
 

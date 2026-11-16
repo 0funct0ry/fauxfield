@@ -1,0 +1,9 @@
+PackageIdentifier: 0funct0ry.Fauxfield
+PackageVersion: __VERSION__
+InstallerType: wix
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/0funct0ry/fauxfield/releases/download/v__VERSION__/fauxfield-x86_64-pc-windows-msvc.msi
+    InstallerSha256: __MSI_SHA256__
+ManifestType: installer
+ManifestVersion: 1.6.0

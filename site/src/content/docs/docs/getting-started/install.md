@@ -40,6 +40,20 @@ docker run -p 3001:3001 -v "$PWD:/workspace" ghcr.io/0funct0ry/fauxfield
 
 The image runs `fauxfield run /workspace` with the headless build.
 
+## Updates
+
+Fauxfield never updates itself. If you opt in (**Settings → Advanced → Check for updates**, or
+`check_for_updates = true` in `settings.toml`; off by default) it asks GitHub for the latest release
+once a day and shows an "Update available" notice in the status bar that opens the release page.
+**Help → Check for Updates…** and `fauxfield version --check` do the same on demand. Nothing is
+downloaded or installed, and no other data is sent.
+
+## Verify a download
+
+Every release file has a `.sha256` file and a GitHub artifact attestation
+(`gh attestation verify <file> --repo 0funct0ry/fauxfield`); an SBOM (`*.cdx.json`) is attached to
+each release.
+
 ## Check it works
 
 ```bash

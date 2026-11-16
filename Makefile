@@ -78,8 +78,8 @@ RUNTIME_SHADERS ?=
 # Extra arguments for the UI scenario runner (`smoke-ui`, from M1.7).
 SMOKE_ARGS ?=
 
-# Where `make dist` writes archives.
-DIST_DIR ?= dist
+# Where `make dist-local` writes archives.
+DIST_DIR ?= target/dist-local
 
 # Binaries that `make dist`, `make size` and `make install` care about.
 BINARIES := fauxfield
@@ -202,7 +202,7 @@ Variables (override as `make <target> VAR=value`)
   JOBS=<n>                 Limit cargo parallelism.
   CARGO_FLAGS="..."        Any other flags for every cargo call (e.g. --offline).
   SMOKE_ARGS="..."         Extra flags for the UI scenario runner (smoke-ui, from M1.7).
-  DIST_DIR=<dir>           Output directory for `make dist` (default: dist).
+  DIST_DIR=<dir>           Output directory for `make dist-local` (default: target/dist-local).
 
 Examples
   make build                       Debug build of the whole workspace.
@@ -416,7 +416,7 @@ verify: lint test ## Quick pre-commit check: lint + tests (debug)
 
 ##@ Install and package
 
-.PHONY: install uninstall dist
+.PHONY: install uninstall dist dist-local dist-plan docker
 
 install: ## Install the release `fauxfield` binary into ~/.cargo/bin
 	$(CARGO) install --path crates/$(BIN_PACKAGE) --locked $(call pkg_features,fauxfield) --force
@@ -426,8 +426,8 @@ uninstall: ## Remove the installed `fauxfield` binary
 
 # Produces dist/fauxfield-<version>-<triple>.tar.gz plus a .sha256 next to it. The archive holds
 # the release binaries and any of LICENSE, README.md, CHANGELOG.md that exist. This is a local
-# convenience archive; signed installers and cargo-dist arrive in M19.
-dist: build-release ## Package release binaries into dist/fauxfield-<version>-<triple>.tar.gz (+ sha256)
+# convenience archive; the real release goes through cargo-dist (`make dist`, RELEASING.md).
+dist-local: build-release ## Package release binaries into dist/fauxfield-<version>-<triple>.tar.gz (+ sha256)
 	@set -e; \
 	triple="$(if $(TARGET),$(TARGET),$(HOST_TRIPLE))"; \
 	name="fauxfield-$(VERSION)-$$triple"; \
@@ -443,6 +443,16 @@ dist: build-release ## Package release binaries into dist/fauxfield-<version>-<t
 	rm -rf "$$stage"; \
 	( cd "$(DIST_DIR)" && shasum -a 256 "$$name.tar.gz" > "$$name.tar.gz.sha256" ); \
 	ls -lh "$(DIST_DIR)/$$name.tar.gz"
+
+dist: ## Build this host's release artifacts with cargo-dist into target/distrib (M19)
+	cargo dist build --artifacts=local
+
+dist-plan: ## Show what a release would build (cargo dist plan) and check the generated CI is current
+	cargo dist plan
+	cargo dist generate --check
+
+docker: ## Build the headless Docker image fauxfield:dev
+	docker build -t fauxfield:dev .
 
 
 ##@ Website

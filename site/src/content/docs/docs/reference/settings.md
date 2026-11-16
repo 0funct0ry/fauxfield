@@ -74,4 +74,5 @@ Settings live in `settings.toml` in the config directory (`~/.config/fauxfield` 
 | Key | Default | Description |
 |---|---|---|
 | `telemetry` | `false` | There is no telemetry in v1.0; the key is reserved. |
+| `check_for_updates` | `false` | Once a day, ask GitHub for the latest release and show a status-bar notice when one is newer. Off by default; nothing is ever downloaded or installed. |
 

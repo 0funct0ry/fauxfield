@@ -1,5 +1,6 @@
 ---
 source: crates/fauxfield/tests/cli.rs
+assertion_line: 103
 expression: v
 ---
 {
@@ -16,6 +17,7 @@ expression: v
   "certs": [],
   "gui": "<bool>",
   "ok": true,
+  "platform": "<platform>",
   "ports": [
     {
       "available": "<bool>",
@@ -28,6 +30,7 @@ expression: v
     "errors": [],
     "missing_keys": 18
   },
+  "update_check": "<bool>",
   "version": "<version>",
   "workspace": "<workspace>"
 }

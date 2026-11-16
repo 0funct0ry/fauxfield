@@ -9,6 +9,7 @@ mod recent;
 pub mod settings;
 mod store;
 mod templates;
+pub mod update;
 mod vars;
 mod watch;
 

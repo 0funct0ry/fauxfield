@@ -1,0 +1,184 @@
+# Release artifacts that cargo-dist does not build (M19): signed + notarised dmg, deb, rpm,
+# AppImage, static musl headless tarball, SBOM, winget manifest, Homebrew cask. Runs after the
+# cargo-dist `release.yml` has created the GitHub Release. See RELEASING.md for the secrets.
+name: Release extras
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to attach to (for example v1.0.0 or v1.0.0-rc.1)
+        required: true
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  macos-dmg:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.TAG }}" }
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build universal app
+        run: |
+          rustup target add x86_64-apple-darwin aarch64-apple-darwin
+          for t in aarch64-apple-darwin x86_64-apple-darwin; do
+            cargo build --release --locked -p fauxfield --features runtime-shaders --target $t
+          done
+          mkdir -p stage/Fauxfield.app/Contents/{MacOS,Resources}
+          lipo -create -output stage/Fauxfield.app/Contents/MacOS/fauxfield \
+            target/aarch64-apple-darwin/release/fauxfield target/x86_64-apple-darwin/release/fauxfield
+          VER="${TAG#v}"
+          sed "s/__VERSION__/$VER/g" packaging/macos/Info.plist > stage/Fauxfield.app/Contents/Info.plist
+          [ -f packaging/macos/Fauxfield.icns ] && cp packaging/macos/Fauxfield.icns stage/Fauxfield.app/Contents/Resources/ || true
+      - name: Sign, notarise, package
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          set -e
+          ver="${TAG#v}"
+          if [ -n "$MACOS_CERT_P12" ]; then
+            echo "$MACOS_CERT_P12" | base64 --decode > cert.p12
+            security create-keychain -p ci ci.keychain
+            security default-keychain -s ci.keychain
+            security unlock-keychain -p ci ci.keychain
+            security import cert.p12 -k ci.keychain -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple: -s -k ci ci.keychain
+            codesign --force --options runtime --timestamp --sign "$MACOS_SIGN_IDENTITY" stage/Fauxfield.app
+          else
+            echo "::warning::no signing certificate configured; the dmg is NOT signed or notarised"
+          fi
+          ln -s /Applications stage/Applications
+          hdiutil create -volname Fauxfield -srcfolder stage -ov -format UDZO "Fauxfield-$ver-macos-universal.dmg"
+          if [ -n "$MACOS_CERT_P12" ]; then
+            codesign --force --timestamp --sign "$MACOS_SIGN_IDENTITY" "Fauxfield-$ver-macos-universal.dmg"
+            xcrun notarytool submit "Fauxfield-$ver-macos-universal.dmg" --wait \
+              --apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" --password "$NOTARY_PASSWORD"
+            xcrun stapler staple "Fauxfield-$ver-macos-universal.dmg"
+          fi
+          shasum -a 256 "Fauxfield-$ver-macos-universal.dmg" > "Fauxfield-$ver-macos-universal.dmg.sha256"
+      - uses: actions/attest-build-provenance@v2
+        with: { subject-path: "Fauxfield-*.dmg" }
+      - run: gh release upload "$TAG" Fauxfield-*.dmg Fauxfield-*.dmg.sha256 --clobber
+
+  linux-packages:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.TAG }}" }
+      - uses: dtolnay/rust-toolchain@stable
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-x11-dev libwayland-dev libvulkan-dev libasound2-dev libfontconfig-dev libxcb1-dev libssl-dev fuse libfuse2
+      - run: cargo install cargo-deb cargo-generate-rpm --locked
+      - name: Build deb and rpm
+        run: |
+          cargo build --release --locked -p fauxfield
+          cargo deb -p fauxfield --no-build --no-strip
+          cargo generate-rpm -p crates/fauxfield
+      - name: AppImage
+        run: |
+          ver="${TAG#v}"
+          mkdir -p AppDir/usr/bin
+          cp target/release/fauxfield AppDir/usr/bin/
+          cp packaging/linux/fauxfield.desktop AppDir/
+          cp packaging/linux/fauxfield.png AppDir/fauxfield.png 2>/dev/null || true
+          ln -sf usr/bin/fauxfield AppDir/AppRun
+          curl -fsSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir "Fauxfield-$ver-x86_64.AppImage"
+      - name: Checksums
+        run: |
+          mkdir out
+          cp target/debian/*.deb target/generate-rpm/*.rpm Fauxfield-*.AppImage out/
+          cd out && for f in *; do sha256sum "$f" > "$f.sha256"; done
+      - uses: actions/attest-build-provenance@v2
+        with: { subject-path: "out/*" }
+      - run: gh release upload "$TAG" out/* --clobber
+
+  headless-musl:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.TAG }}" }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: x86_64-unknown-linux-musl }
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build and package
+        run: |
+          cargo build --release --locked -p fauxfield --no-default-features --features headless --target x86_64-unknown-linux-musl
+          n="fauxfield-headless-${TAG#v}-x86_64-unknown-linux-musl"
+          mkdir "$n" && cp target/x86_64-unknown-linux-musl/release/fauxfield LICENSE README.md "$n/"
+          tar -czf "$n.tar.gz" "$n"
+          sha256sum "$n.tar.gz" > "$n.tar.gz.sha256"
+      - uses: actions/attest-build-provenance@v2
+        with: { subject-path: "fauxfield-headless-*.tar.gz" }
+      - run: gh release upload "$TAG" fauxfield-headless-*.tar.gz* --clobber
+
+  sbom:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.TAG }}" }
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install cargo-cyclonedx --locked
+      - run: |
+          cargo cyclonedx --format json --all
+          cp crates/fauxfield/fauxfield.cdx.json "fauxfield-${TAG#v}.cdx.json"
+      - uses: actions/attest-build-provenance@v2
+        with: { subject-path: "fauxfield-*.cdx.json" }
+      - run: gh release upload "$TAG" fauxfield-*.cdx.json --clobber
+
+  notes:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.TAG }}" }
+      - name: Release notes from CHANGELOG.md
+        run: |
+          scripts/release-notes.sh "$TAG" > notes.md
+          gh release edit "$TAG" --notes-file notes.md
+
+  winget-and-cask:
+    needs: [macos-dmg, linux-packages]
+    runs-on: ubuntu-22.04
+    # Skipped for pre-releases; needs TAP_TOKEN (push to 0funct0ry/homebrew-tap) and WINGET_TOKEN.
+    if: ${{ !contains(github.event.release.tag_name || inputs.tag, '-') }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.TAG }}" }
+      - name: Render winget manifest and Homebrew cask
+        run: |
+          ver="${TAG#v}"
+          base="https://github.com/0funct0ry/fauxfield/releases/download/$TAG"
+          curl -fsSL "$base/fauxfield-x86_64-pc-windows-msvc.msi.sha256" -o msi.sha || true
+          msi_sha="$(cut -d' ' -f1 msi.sha 2>/dev/null || echo UNKNOWN)"
+          curl -fsSL "$base/Fauxfield-$ver-macos-universal.dmg.sha256" -o dmg.sha
+          dmg_sha="$(cut -d' ' -f1 dmg.sha)"
+          mkdir -p out/winget
+          for f in packaging/winget/*.yaml; do
+            sed -e "s/__VERSION__/$ver/g" -e "s/__MSI_SHA256__/${msi_sha^^}/g" "$f" > "out/winget/$(basename "$f")"
+          done
+          sed -e "s/__VERSION__/$ver/g" -e "s/__DMG_SHA256__/$dmg_sha/g" packaging/homebrew/fauxfield.rb > out/fauxfield.rb
+      - name: Publish cask to the tap
+        env: { TAP_TOKEN: "${{ secrets.TAP_TOKEN }}" }
+        run: |
+          [ -n "$TAP_TOKEN" ] || { echo "::warning::TAP_TOKEN missing; cask not published"; exit 0; }
+          git clone "https://x-access-token:$TAP_TOKEN@github.com/0funct0ry/homebrew-tap.git" tap
+          mkdir -p tap/Casks && cp out/fauxfield.rb tap/Casks/fauxfield.rb
+          cd tap && git config user.name release-bot && git config user.email release-bot@users.noreply.github.com
+          git add -A && git commit -m "fauxfield ${TAG#v} cask" && git push
+      - uses: actions/upload-artifact@v4
+        with: { name: winget-manifests, path: out/winget }

@@ -529,6 +529,8 @@ pub struct Shell {
     pub(crate) engine_events:
         Option<tokio::sync::broadcast::Receiver<fauxfield_engine::EngineEvent>>,
     pub(crate) notice_action: Option<crate::run::NoticeAction>,
+    /// A newer release found by the opt-in update check (M19).
+    pub(crate) update_notice: Option<fauxfield_store::update::UpdateInfo>,
     pub(crate) quit_confirm: bool,
     pub(crate) quit_confirmed: bool,
     pub(crate) select_next_test: bool,
@@ -885,6 +887,7 @@ impl Shell {
             rt: None,
             engine_events: None,
             notice_action: None,
+            update_notice: None,
             quit_confirm: false,
             quit_confirmed: false,
             select_next_test: false,
@@ -998,6 +1001,7 @@ impl Shell {
             this.on_appearance_changed(dark, cx);
         })
         .detach();
+        shell.start_update_check(cx);
         let dirty = shell.settings_dirty.clone();
         cx.spawn(async move |this, cx| {
             loop {
@@ -4138,6 +4142,7 @@ impl Render for Shell {
             OpenDocumentation => |this, _w, cx| this.open_documentation(cx),
             OpenReleaseNotes => |this, _w, cx| this.open_release_notes(cx),
             ReportIssue => |this, _w, cx| this.report_issue(cx),
+            CheckForUpdates => |this, _w, cx| this.check_for_updates(true, cx),
             EditCut => |this, _w, cx| this.edit_cut(cx),
             EditCopy => |this, _w, cx| this.edit_copy(cx),
             EditPaste => |this, _w, cx| this.edit_paste(cx),

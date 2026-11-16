@@ -211,8 +211,8 @@
     },
     "check_for_updates": {
       "type": "boolean",
-      "description": "Reserved for M19.",
-      "default": true
+      "description": "Once a day, ask GitHub for the latest release and show a status-bar notice when one is newer. Off by default; nothing is ever downloaded or installed.",
+      "default": false
     }
   }
 }

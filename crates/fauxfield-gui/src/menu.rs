@@ -648,6 +648,7 @@ pub fn build_menus(ctx: &MenuContext) -> Vec<MenuDef> {
         act("open_documentation", "Documentation"),
         act("open_release_notes", "Release Notes"),
         act("report_issue", "Report an Issue…"),
+        act("check_for_updates", "Check for Updates…"),
     ];
     if !mac {
         help.push(MenuEntry::Separator);
@@ -666,7 +667,7 @@ pub fn enabled(id: &str, ctx: &MenuContext) -> bool {
     match id {
         "quit" | "hide_app" | "hide_others" | "show_all_apps" | "minimize_window"
         | "zoom_window" | "toggle_fullscreen" | "open_documentation" | "open_release_notes"
-        | "report_issue" | "show_about" => return true,
+        | "report_issue" | "check_for_updates" | "show_about" => return true,
         "edit_cut" | "edit_copy" | "edit_paste" | "edit_select_all" => {
             return ctx.text_input_focused;
         }
@@ -1063,6 +1064,7 @@ mod tests {
             "open_documentation",
             "open_release_notes",
             "report_issue",
+            "check_for_updates",
             "open_settings",
         ];
         want.sort_unstable();
@@ -1090,6 +1092,7 @@ mod tests {
                 "open_documentation",
                 "open_release_notes",
                 "report_issue",
+                "check_for_updates",
                 "show_about",
             ];
             if id.starts_with("edit_c") || id == "edit_paste" || id == "edit_select_all" {

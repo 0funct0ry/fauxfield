@@ -1661,7 +1661,7 @@ mod tests {
         );
         assert!(visible_defs("zzzz-none", "Appearance").is_empty());
         // hidden keys never show
-        assert!(visible_defs("check_for_updates", "Advanced").is_empty());
+        assert!(!visible_defs("check_for_updates", "Advanced").is_empty());
     }
 
     #[test]

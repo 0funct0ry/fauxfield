@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Fauxfield
+Comment=Local-first mock API tool
+Exec=fauxfield
+Icon=fauxfield
+Categories=Development;
+Terminal=false

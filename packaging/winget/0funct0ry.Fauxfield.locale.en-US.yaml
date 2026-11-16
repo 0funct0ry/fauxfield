@@ -1,0 +1,10 @@
+PackageIdentifier: 0funct0ry.Fauxfield
+PackageVersion: __VERSION__
+PackageLocale: en-US
+Publisher: 0funct0ry
+PackageName: Fauxfield
+License: MIT
+ShortDescription: Local-first mock API tool
+PackageUrl: https://0funct0ry.github.io/fauxfield/
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

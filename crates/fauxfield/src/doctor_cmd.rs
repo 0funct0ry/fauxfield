@@ -44,6 +44,8 @@ pub fn doctor(a: WsArgs) -> i32 {
         }
     }
     let themes = theme_report(&mut problems);
+    let platform = platform_report();
+    let update_check = fauxfield_store::update::enabled();
     let ca_json = ca.as_ref().map(|c| serde_json::to_value(c).unwrap());
     if let Some(c) = &ca
         && c.exists
@@ -60,6 +62,8 @@ pub fn doctor(a: WsArgs) -> i32 {
             "ca": ca_json,
             "certs": certs,
             "themes": themes,
+            "platform": platform,
+            "update_check": update_check,
             "ok": problems == 0,
         }));
     } else {
@@ -85,6 +89,22 @@ pub fn doctor(a: WsArgs) -> i32 {
             ),
             _ => println!("dev CA: not created yet (`fauxfield certs trust` creates it)"),
         }
+        println!(
+            "platform: {} {}, gpu backend {}, display {}, vulkan {}",
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            platform["gpu_backend"].as_str().unwrap_or("none"),
+            platform["display"].as_str().unwrap_or("n/a"),
+            match platform["vulkan"].as_bool() {
+                Some(true) => "available",
+                Some(false) => "NOT found (install libvulkan1 / vulkan-loader)",
+                None => "n/a",
+            }
+        );
+        println!(
+            "update check: {}",
+            if update_check { "on" } else { "off (opt-in)" }
+        );
         if let Some(n) = themes["missing_keys"].as_u64() {
             println!(
                 "themes: {} bundled, theme.missing_key {n}",
@@ -128,4 +148,40 @@ fn theme_report(problems: &mut usize) -> serde_json::Value {
         let _ = problems;
         json!({ "bundled": null, "missing_keys": null, "errors": [] })
     }
+}
+
+/// GPU backend, display server and Vulkan availability. Headless builds have no GPU backend.
+fn platform_report() -> serde_json::Value {
+    let gui = cfg!(feature = "gui");
+    let backend = match std::env::consts::OS {
+        "macos" => "metal",
+        "windows" => "directx11",
+        _ => "vulkan",
+    };
+    let display = if cfg!(target_os = "linux") {
+        let wl = std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty());
+        let x = std::env::var_os("DISPLAY").is_some_and(|v| !v.is_empty());
+        Some(match (wl, x) {
+            (true, _) => "wayland",
+            (false, true) => "x11",
+            _ => "none",
+        })
+    } else {
+        None
+    };
+    let vulkan = cfg!(target_os = "linux").then(|| {
+        [
+            "/usr/lib/x86_64-linux-gnu/libvulkan.so.1",
+            "/usr/lib/aarch64-linux-gnu/libvulkan.so.1",
+            "/usr/lib64/libvulkan.so.1",
+            "/usr/lib/libvulkan.so.1",
+        ]
+        .iter()
+        .any(|p| std::path::Path::new(p).exists())
+    });
+    json!({
+        "gpu_backend": gui.then_some(backend),
+        "display": if gui { display } else { None },
+        "vulkan": if gui { vulkan } else { None },
+    })
 }

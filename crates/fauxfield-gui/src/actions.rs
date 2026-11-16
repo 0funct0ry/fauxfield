@@ -165,6 +165,7 @@ actions!(
         OpenDocumentation,
         OpenReleaseNotes,
         ReportIssue,
+        CheckForUpdates,
         EditCut,
         EditCopy,
         EditPaste,
@@ -648,6 +649,11 @@ pub static ACTIONS: &[ActionInfo] = &[
         OpenReleaseNotes
     ),
     row!("report_issue", "Help: Report an Issue…", ReportIssue),
+    row!(
+        "check_for_updates",
+        "Help: Check for Updates…",
+        CheckForUpdates
+    ),
     row!("edit_cut", "Edit: Cut", EditCut),
     row!("edit_copy", "Edit: Copy", EditCopy),
     row!("edit_paste", "Edit: Paste", EditPaste),

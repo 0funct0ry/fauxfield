@@ -664,6 +664,8 @@ fn certs_and_doctor_are_stable() {
     let mut v = redact(v);
     v["version"] = "<version>".into();
     v["gui"] = "<bool>".into();
+    v["platform"] = "<platform>".into();
+    v["update_check"] = "<bool>".into();
     v["ports"] = v["ports"]
         .as_array()
         .unwrap()

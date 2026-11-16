@@ -606,14 +606,13 @@ pub const SETTING_DEFS: &[SettingDef] = &[
         )
     },
     SettingDef {
-        hidden: true,
         ..def(
             "check_for_updates",
             "Advanced",
             "Check for updates",
-            "Reserved for M19.",
+            "Once a day, ask GitHub for the latest release and show a status-bar notice when one is newer. Off by default; nothing is ever downloaded or installed.",
             SettingKind::Bool,
-            "true",
+            "false",
         )
     },
 ];

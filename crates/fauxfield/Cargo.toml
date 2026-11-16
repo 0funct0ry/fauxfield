@@ -4,6 +4,8 @@ description = "The fauxfield binary: CLI dispatch, opens the desktop app when no
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+homepage.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
@@ -41,3 +43,30 @@ assert_cmd = "2"
 tempfile.workspace = true
 tokio = { workspace = true, features = ["process"] }
 insta = { version = "1", features = ["json"] }
+
+# Linux packages (M19), built by .github/workflows/release-extra.yml.
+[package.metadata.deb]
+name = "fauxfield"
+maintainer = "0funct0ry"
+section = "devel"
+depends = "$auto, libvulkan1"
+assets = [
+  ["target/release/fauxfield", "usr/bin/", "755"],
+  ["../../packaging/linux/fauxfield.desktop", "usr/share/applications/", "644"],
+  ["../../README.md", "usr/share/doc/fauxfield/README.md", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "fauxfield"
+assets = [
+  { source = "../../target/release/fauxfield", dest = "/usr/bin/fauxfield", mode = "755" },
+  { source = "../../packaging/linux/fauxfield.desktop", dest = "/usr/share/applications/fauxfield.desktop", mode = "644" },
+]
+[package.metadata.generate-rpm.requires]
+vulkan-loader = "*"
+
+[package.metadata.wix]
+upgrade-guid = "8F3EF0ED-2530-4D13-9AF0-6DB3F043DBD7"
+path-guid = "A2487138-5219-40D6-8194-8DCFB8773078"
+license = false
+eula = false

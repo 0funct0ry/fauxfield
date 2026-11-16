@@ -24,6 +24,7 @@ description: One name per action, used by the Command Palette, the menus and but
 | `apply_dataset_json` | Dataset: Apply JSON Edits |
 | `cancel_dialog` | Dialog: Cancel |
 | `cancel_quit` | Quit: Cancel |
+| `check_for_updates` | Help: Check for Updates… |
 | `clear_dataset_data` | Dataset: Clear Data… |
 | `clear_dataset_selection` | Dataset: Clear Row Selection |
 | `clear_recent` | Workspace: Clear Recent |

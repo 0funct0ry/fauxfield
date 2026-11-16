@@ -770,6 +770,7 @@ Print version information
 | Argument | Description |
 |---|---|
 | `--json` | Machine-readable output with a stable schema |
+| `--check` | Look up the latest release on GitHub (the only network call; never installs) |
 
 ## `fauxfield completions`
 

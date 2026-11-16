@@ -162,6 +162,9 @@ pub enum Command {
         /// Machine-readable output with a stable schema.
         #[arg(long)]
         json: bool,
+        /// Look up the latest release on GitHub (the only network call; never installs).
+        #[arg(long)]
+        check: bool,
     },
     /// Print a shell completion script to stdout.
     Completions {
@@ -294,7 +297,44 @@ pub fn run() -> i32 {
         Some(Command::Import(_)) => crate::output::not_available("fauxfield import", "M15"),
         Some(Command::Export(_)) => crate::output::not_available("fauxfield export", "M15"),
         Some(Command::Template(_)) => crate::output::not_available("fauxfield template", "M15"),
-        Some(Command::Version { json }) => {
+        Some(Command::Version { json, check: true }) => {
+            let cur = build_info().version;
+            match fauxfield_store::update::check(
+                &cur,
+                fauxfield_store::update::cache_path().as_deref(),
+                true,
+            ) {
+                Ok(i) if json => {
+                    crate::output::print_json(&serde_json::json!({
+                        "schema": "fauxfield.version-check/v1", "ok": true,
+                        "current": i.current, "latest": i.latest,
+                        "update_available": i.update_available, "url": i.url }));
+                    EXIT_OK
+                }
+                Ok(i) => {
+                    if i.update_available {
+                        println!(
+                            "fauxfield {} is available (you have {}): {}",
+                            i.latest, i.current, i.url
+                        );
+                    } else {
+                        println!("fauxfield {} is up to date", i.current);
+                    }
+                    EXIT_OK
+                }
+                Err(e) if json => {
+                    crate::output::print_json(&serde_json::json!({
+                        "schema": "fauxfield.error/v1", "ok": false, "code": "update_check_failed",
+                        "message": e, "hint": "check your network connection", "diagnostics": [] }));
+                    EXIT_RUNTIME
+                }
+                Err(e) => {
+                    eprintln!("update check failed: {e}");
+                    EXIT_RUNTIME
+                }
+            }
+        }
+        Some(Command::Version { json, .. }) => {
             if json {
                 crate::output::print_json(&version_json());
             } else {

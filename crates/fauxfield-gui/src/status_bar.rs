@@ -115,6 +115,19 @@ impl Shell {
                     Action("toast_action")
                 )
             }))
+            .children(self.update_notice.as_ref().map(|i| {
+                let label = format!("Update {} available", i.latest);
+                crate::dev_id!(
+                    toolbar_button(t, "status-update")
+                        .text_color(t.accent)
+                        .child(label.clone())
+                        .on_click(cx.listener(|this, _, _, cx| this.open_update_page(cx))),
+                    "status.update",
+                    Button,
+                    label,
+                    Action("check_for_updates")
+                )
+            }))
             .children(self.render_agent_status(t, cx))
             .child(crate::dev_id!(
                 toolbar_button(t, "status-settings")

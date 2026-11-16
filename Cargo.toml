@@ -6,6 +6,8 @@ members = ["crates/*", "xtask"]
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+authors = ["0funct0ry"]
+homepage = "https://0funct0ry.github.io/fauxfield/"
 repository = "https://github.com/0funct0ry/fauxfield"
 rust-version = "1.89"
 
@@ -57,3 +59,7 @@ opt-level = "z"
 opt-level = 3
 [profile.release.package.fauxfield-gui]
 opt-level = 3
+
+# The profile cargo-dist builds with.
+[profile.dist]
+inherits = "release"
