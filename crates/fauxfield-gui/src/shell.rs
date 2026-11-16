@@ -475,6 +475,8 @@ pub struct Shell {
     pub(crate) import_preview: Option<String>,
     pub(crate) traffic_selected: Option<usize>,
     pub(crate) route_sub: HashMap<String, usize>,
+    /// crud Route id -> operation shown in its scoped editor (M17.1).
+    pub(crate) crud_op_sel: HashMap<String, String>,
     /// Route Settings "Test a path" input per Route (runtime-only).
     pub(crate) test_path: HashMap<String, String>,
     pub(crate) server_section: HashMap<String, usize>,
@@ -849,6 +851,7 @@ impl Shell {
             import_preview: None,
             traffic_selected: None,
             route_sub: HashMap::new(),
+            crud_op_sel: HashMap::new(),
             test_path: HashMap::new(),
             server_section: HashMap::new(),
             reveal_secrets: false,
@@ -1414,6 +1417,16 @@ impl Shell {
         self.selected = Some(row_id.to_string());
         // A crud Route's operation rows open the Route.
         let tab_row = tree::crud_route_of(row_id).unwrap_or(row_id).to_string();
+        if let Some(op) = row_id
+            .split_once('#')
+            .and_then(|(_, n)| n.parse::<usize>().ok())
+            .and_then(|n| tree::CRUD_OP_NAMES.get(n))
+        {
+            self.crud_op_sel.insert(tab_row.clone(), (*op).to_string());
+        } else if self.ws.find_route(row_id).is_some() {
+            // Opening the Route itself shows the unscoped crud overview again.
+            self.crud_op_sel.remove(row_id);
+        }
         if let Some((kind, title)) = self.tab_for_row(&tab_row) {
             let tab_id = tab_row
                 .strip_prefix("env:")
@@ -1627,18 +1640,21 @@ impl Shell {
 
     /// Context menu of a Response row in the Route tab.
     pub fn open_response_menu(&mut self, response: &str, x: f32, y: f32, cx: &mut Context<Self>) {
-        let Some((default, disabled)) = self
-            .ws
-            .servers
-            .iter()
-            .flat_map(|s| s.all_routes())
-            .flat_map(|r| &r.responses)
-            .find(|r| r.id == response)
-            .map(|r| (r.default, r.disabled))
-        else {
+        let Some((route, _, r)) = self.find_response_scoped(response) else {
             return;
         };
-        self.open_picker_menu(response, RowKind::Response { default, disabled }, x, y, cx);
+        // An operation Response has no default (SPEC 6.2.1), so "Set as default" is not offered.
+        let default = r.default || crate::view::split_scoped(&route).is_some();
+        self.open_picker_menu(
+            response,
+            RowKind::Response {
+                default,
+                disabled: r.disabled,
+            },
+            x,
+            y,
+            cx,
+        );
     }
 
     /// Open a context or picker menu of `kind` for `row_id` at `(x, y)`.
@@ -1709,8 +1725,21 @@ impl Shell {
         self.store_op(cx, |s| s.move_response(&d, Some(&t)));
     }
 
-    /// The Response with this ID: `(route id, index, response)`.
+    /// The Response with this ID: `(route id, index, response)`. For an operation Response the
+    /// index is within its operation and the id is the crud Route's.
     pub(crate) fn find_response(&self, id: &str) -> Option<(String, usize, crate::view::Response)> {
+        self.find_response_scoped(id).map(|(route, i, r)| {
+            let route = crate::view::split_scoped(&route).map_or(route.clone(), |(r, _)| r.into());
+            (route, i, r)
+        })
+    }
+
+    /// Like [`Self::find_response`], but an operation Response reports its scoped list id
+    /// (`<route>#<op>`, see `view::Route::scoped`), the key of `resp_sel`.
+    pub(crate) fn find_response_scoped(
+        &self,
+        id: &str,
+    ) -> Option<(String, usize, crate::view::Response)> {
         self.ws
             .servers
             .iter()
@@ -1720,6 +1749,13 @@ impl Shell {
                     .iter()
                     .position(|x| x.id == id)
                     .map(|i| (r.id.clone(), i, r.responses[i].clone()))
+                    .or_else(|| {
+                        r.operations.iter().find_map(|(op, list)| {
+                            list.iter()
+                                .position(|x| x.id == id)
+                                .map(|i| (crate::view::scoped_id(&r.id, op), i, list[i].clone()))
+                        })
+                    })
             })
     }
 
@@ -1747,6 +1783,19 @@ impl Shell {
             MenuAct::NewRoute => self.new_route_at(&m.row_id, window, cx),
             MenuAct::NewFolder => self.new_folder_at(&m.row_id, window, cx),
             MenuAct::NewResponse => self.new_response_for(&m.row_id, cx),
+            MenuAct::AddOperationResponse => {
+                let target = m.row_id.split_once('#').and_then(|(r, n)| {
+                    let op = n
+                        .parse::<usize>()
+                        .ok()
+                        .and_then(|n| tree::CRUD_OP_NAMES.get(n))?;
+                    Some((r.to_string(), (*op).to_string()))
+                });
+                match target {
+                    Some((r, op)) => self.add_operation_response(&r, &op, cx),
+                    None => self.notify("Select a CRUD operation first.".into(), cx),
+                }
+            }
             MenuAct::Rename => self.rename_row(&m.row_id, window, cx),
             MenuAct::Duplicate => self.duplicate_row(&m.row_id, cx),
             MenuAct::Delete => self.delete_row(&m.row_id, cx),
@@ -2633,6 +2682,17 @@ impl Shell {
     pub(crate) fn current_response_id(&self) -> Option<String> {
         let rid = self.current_route_id()?;
         let (_, r) = self.ws.find_route(&rid)?;
+        if r.is_crud() {
+            let op = self.crud_op_sel.get(&rid)?;
+            let list = r.op_responses(op);
+            let i = self
+                .resp_sel
+                .get(&crate::view::scoped_id(&rid, op))
+                .copied()
+                .unwrap_or(0)
+                .min(list.len().saturating_sub(1));
+            return list.get(i).map(|x| x.id.clone());
+        }
         let i = self
             .resp_sel
             .get(&rid)
@@ -2683,6 +2743,10 @@ impl Shell {
     }
 
     pub(crate) fn new_response_for(&mut self, route: &str, cx: &mut Context<Self>) {
+        // `<route>#<op>` is an operation-scoped Responses list (M17.1).
+        if let Some((rid, op)) = crate::view::split_scoped(route) {
+            return self.add_operation_response(rid, op, cx);
+        }
         if self.ws.find_route(route).is_none() {
             return self.notify("Select a route first.".into(), cx);
         }
@@ -2696,6 +2760,35 @@ impl Shell {
             self.resp_sel.insert(route, n.saturating_sub(1));
             self.notify(format!("Created response {id}"), cx);
         }
+    }
+
+    /// Add an empty Response to one operation of a crud Route and select it.
+    pub(crate) fn add_operation_response(&mut self, route: &str, op: &str, cx: &mut Context<Self>) {
+        if self.ws.find_route(route).is_none_or(|(_, r)| !r.is_crud()) {
+            return self.notify("Select a CRUD route first.".into(), cx);
+        }
+        let (rid, opn) = (route.to_string(), op.to_string());
+        if let Some(id) = self.store_op(cx, |s| s.create_operation_response(&rid, &opn)) {
+            let n = self
+                .ws
+                .find_route(route)
+                .map(|(_, r)| r.op_responses(op).len())
+                .unwrap_or(1);
+            self.crud_op_sel.insert(route.to_string(), op.to_string());
+            self.resp_sel
+                .insert(crate::view::scoped_id(route, op), n.saturating_sub(1));
+            self.notify(format!("Created {op} response {id}"), cx);
+        }
+    }
+
+    /// The crud Route and operation the user is working on: the active Route tab's scope, else a
+    /// selected operation row.
+    pub(crate) fn current_crud_op(&self) -> Option<(String, String)> {
+        let rid = self.current_route_id()?;
+        if let Some(op) = self.crud_op_sel.get(&rid) {
+            return Some((rid, op.clone()));
+        }
+        None
     }
 
     fn row_target(&self, id: &str) -> Option<fauxfield_store::Target> {
@@ -2847,12 +2940,19 @@ impl Shell {
 
     /// Move a Route or Folder one step among its siblings (Alt+Up / Alt+Down, menu).
     pub(crate) fn move_row(&mut self, id: &str, delta: i32, cx: &mut Context<Self>) {
-        if let Some((route, i, _)) = self.find_response(id) {
-            let sib: Vec<String> = self
-                .ws
-                .find_route(&route)
-                .map(|(_, r)| r.responses.iter().map(|x| x.id.clone()).collect())
-                .unwrap_or_default();
+        if let Some((route, i, _)) = self.find_response_scoped(id) {
+            let sib: Vec<String> = match crate::view::split_scoped(&route) {
+                Some((rid, op)) => self
+                    .ws
+                    .find_route(rid)
+                    .map(|(_, r)| r.op_responses(op).iter().map(|x| x.id.clone()).collect())
+                    .unwrap_or_default(),
+                None => self
+                    .ws
+                    .find_route(&route)
+                    .map(|(_, r)| r.responses.iter().map(|x| x.id.clone()).collect())
+                    .unwrap_or_default(),
+            };
             let to = i as i32 + delta;
             if to < 0 || to as usize >= sib.len() {
                 return;
@@ -3751,8 +3851,26 @@ impl Render for Shell {
                 None => this.notify("Select a server first.".into(), cx),
             },
             NewResponse => |this, _w, cx| match this.current_route_id() {
-                Some(r) => this.new_response_for(&r, cx),
+                Some(r) => match this.current_crud_op() {
+                    Some((_, op)) => this.add_operation_response(&r, &op, cx),
+                    None => this.new_response_for(&r, cx),
+                },
                 None => this.notify("Open a route first.".into(), cx),
+            },
+            AddOperationResponse => |this, _w, cx| match this.current_crud_op() {
+                Some((r, op)) => this.add_operation_response(&r, &op, cx),
+                None => this.notify("Select a CRUD operation first.".into(), cx),
+            },
+            RemoveOperationResponse => |this, _w, cx| {
+                match (this.current_crud_op(), this.current_response_id()) {
+                    (Some(_), Some(id)) => {
+                        let t = fauxfield_store::Target::Response(id.clone());
+                        if this.store_op(cx, |s| s.delete(&t)).is_some() {
+                            this.notify(format!("Removed response {id}"), cx);
+                        }
+                    }
+                    _ => this.notify("Select an operation Response first.".into(), cx),
+                }
             },
             Rename => |this, w, cx| match this.selected_visible() {
                 Some(id) => this.rename_row(&id, w, cx),

@@ -1,0 +1,54 @@
+# M17.1 scenario: Responses and Rules on one operation of a CRUD Route. Needs
+# fixtures/operations-workspace as the launch workspace (a copy: the scenario edits it).
+# The `create` row scopes the Route editor to that operation; the tool call adds a Response with a
+# Rule (409 for a taken email); a matching POST gets 409 from it, a non-matching POST is answered
+# by the built-in handler (201, recorded as crud:create), then the Response is removed.
+name: m17-1-crud-operation-rules
+size: default
+steps:
+  - state: [reset]
+  - click_element: {id: "row-rte_people#1"}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/operation, equals: create}
+  - assert: {pointer: /route/falls_through, equals: built-in create}
+  - assert_find: {text: Falls through to built-in create, ids: [crud-op-fallthrough]}
+  - assert_find: {text: Add Response, ids: [crud-op-add]}
+  - assert_find: {text: All operations, ids: [crud-op-back]}
+  - assert: {pointer: /route/operations/1/responses, equals: 0}
+  # Add Response in the editor: the count follows and the Response is selected.
+  - click_element: {id: crud-op-add}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/operations/1/responses, equals: 1}
+  - assert: {pointer: /route/operation, equals: create}
+  - screenshot: {name: m17-1-operation-editor}
+  # Delete the Response again (palette action).
+  - invoke: remove_operation_response
+  - wait_for_idle: {}
+  - assert: {pointer: /route/operations/1/responses, equals: 0}
+  # Add the 409 Rule Response, start the Server, send a matching and a non-matching POST.
+  - call:
+      tool: upsert_route
+      arguments:
+        server: srv_people
+        route: rte_people
+        operations:
+          create:
+            - name: Duplicate email
+              status: 409
+              content_type: application/problem+json
+              body: '{"title":"Duplicate email"}'
+              rules:
+                - {target: body, key: "$.email", op: eq, value: taken@example.com}
+  - wait_for_idle: {}
+  - assert: {pointer: /route/operations/1/responses, equals: 1}
+  - invoke: toggle_server
+  - wait_for: {condition: {pointer: /servers/0/status, equals: running}}
+  - call: {tool: send_test_request, arguments: {server: srv_people, method: POST, path: /people, headers: {content-type: application/json}, body: '{"name":"Z","email":"taken@example.com"}'}}
+  - wait_for: {condition: {pointer: /traffic/last/response_name, equals: Duplicate email}}
+  - assert: {pointer: /traffic/last/status, equals: 409}
+  - assert: {pointer: /traffic/last/response_name, equals: Duplicate email}
+  - call: {tool: send_test_request, arguments: {server: srv_people, method: POST, path: /people, headers: {content-type: application/json}, body: '{"name":"Y","email":"new@example.com"}'}}
+  - wait_for: {condition: {pointer: /traffic/last/response_name, equals: "crud:create"}}
+  - assert: {pointer: /traffic/last/status, equals: 201}
+  - screenshot: {name: m17-1-traffic}
+  - audit: {themes: [one-dark, one-light], sizes: [default, min]}

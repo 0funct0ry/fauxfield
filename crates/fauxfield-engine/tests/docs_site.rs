@@ -203,3 +203,53 @@ fn prefix_independent_and_servers_url() {
     let doc: serde_json::Value = serde_json::from_slice(&b).unwrap();
     assert_eq!(doc["servers"][0]["url"], "/api/v1");
 }
+
+/// M17.1: a Dataset-reading template on an operation Response renders against sample rows, and
+/// the Response `schema` replaces the built-in array shape for that status.
+#[test]
+fn operation_examples_render_dataset_templates_and_use_the_response_schema() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("data")).unwrap();
+    std::fs::create_dir_all(dir.path().join("schemas")).unwrap();
+    std::fs::write(
+        dir.path().join("data/products.json"),
+        r#"[{"id":1,"name":"A"},{"id":2,"name":"B"}]"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("schemas/list.json"),
+        r#"{"type":"object","properties":{"items":{"type":"array"},"meta":{"type":"object"}}}"#,
+    )
+    .unwrap();
+    let s = parse_server(
+        r#"
+id = "srv_p"
+name = "P"
+port = 1
+[[datasets]]
+name = "products"
+seed = "data/products.json"
+[[routes]]
+id = "rte_p"
+kind = "crud"
+path = "/products"
+dataset = "products"
+[[routes.operations.list.responses]]
+id = "rsp_env"
+name = "Envelope"
+status = 200
+schema = "schemas/list.json"
+body = '{"items": {{ data.products | json_encode() | safe }}, "meta": {"total": {{ dataset_count(data=data.products) }}}}'
+"#,
+    )
+    .unwrap();
+    let doc = fauxfield_engine::openapi_document(dir.path(), "srv_p", &s);
+    let ok =
+        &doc.value["paths"]["/products"]["get"]["responses"]["200"]["content"]["application/json"];
+    assert_eq!(
+        ok["examples"]["Envelope"]["value"]["meta"]["total"], 2,
+        "{ok}"
+    );
+    assert_eq!(ok["examples"]["Envelope"]["value"]["items"][0]["name"], "A");
+    assert_eq!(ok["schema"]["type"], "object", "{ok}");
+}

@@ -479,6 +479,48 @@ fn random_below(n: usize) -> usize {
 }
 
 /// Choose the Response for this request and explain why (SPEC §5.3).
+/// Pick the first Response of a crud operation whose Rules pass (SPEC 6.2.1). Unlike
+/// [`select`] there is no `default` or first-Response fallback: `None` means "run the built-in
+/// handler".
+pub(crate) fn select_operation<'r>(
+    responses: &'r [Response],
+    c: &Ctx,
+    cc: &Compiled,
+) -> (Option<&'r Response>, Trace) {
+    let mut trace = Trace {
+        mode: "rules".into(),
+        call: c.call,
+        ..Default::default()
+    };
+    let mut hit = None;
+    for resp in responses {
+        if resp.disabled {
+            trace.evaluated.push(skipped(resp, "disabled"));
+            continue;
+        }
+        if hit.is_some() {
+            continue;
+        }
+        if resp.rules.is_empty() {
+            trace
+                .evaluated
+                .push(skipped(resp, "no rules (never matches)"));
+            continue;
+        }
+        let t = eval_response(resp, c, cc);
+        if t.passed {
+            hit = Some(resp);
+        }
+        trace.evaluated.push(t);
+    }
+    trace.reason = if hit.is_some() {
+        "first operation response whose rules passed".into()
+    } else {
+        "no operation response matched; built-in handler".into()
+    };
+    (hit, trace)
+}
+
 pub(crate) fn select<'r>(
     route: &'r Route,
     c: &Ctx,

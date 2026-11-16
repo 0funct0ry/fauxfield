@@ -194,7 +194,18 @@ impl Store {
         diags.extend(validate_environment_names(&names));
         for (file, s) in &servers {
             for (i, r) in s.routes.iter().enumerate() {
-                for (j, resp) in r.responses.iter().enumerate() {
+                let all = r
+                    .responses
+                    .iter()
+                    .enumerate()
+                    .map(|(j, x)| (format!("responses[{j}]"), x))
+                    .chain(r.operations.iter().flat_map(|(op, o)| {
+                        o.responses
+                            .iter()
+                            .enumerate()
+                            .map(move |(j, x)| (format!("operations.{op}.responses[{j}]"), x))
+                    }));
+                for (loc, resp) in all {
                     if let Some(bf) = &resp.body_file
                         && !bf.contains("..")
                         && !bf.starts_with('/')
@@ -202,7 +213,7 @@ impl Store {
                     {
                         diags.push(Diagnostic::warning(
                             file,
-                            format!("routes[{}].responses[{j}].body_file", r.id),
+                            format!("routes[{}].{loc}.body_file", r.id),
                             "W042",
                             format!("body_file `{bf}` does not exist (route {i})"),
                         ));
@@ -214,9 +225,20 @@ impl Store {
                 if let Some(f) = r.openapi.as_ref().and_then(|o| o.request_schema.as_ref()) {
                     files.push((format!("routes[{}].openapi.request_schema", r.id), f));
                 }
-                for (j, resp) in r.responses.iter().enumerate() {
+                let all = r
+                    .responses
+                    .iter()
+                    .enumerate()
+                    .map(|(j, x)| (format!("responses[{j}]"), x))
+                    .chain(r.operations.iter().flat_map(|(op, o)| {
+                        o.responses
+                            .iter()
+                            .enumerate()
+                            .map(move |(j, x)| (format!("operations.{op}.responses[{j}]"), x))
+                    }));
+                for (loc, resp) in all {
                     if let Some(f) = &resp.schema {
-                        files.push((format!("routes[{}].responses[{j}].schema", r.id), f));
+                        files.push((format!("routes[{}].{loc}.schema", r.id), f));
                     }
                 }
                 for (path, f) in files {
@@ -310,7 +332,7 @@ impl Store {
                 Target::Response(id) => doc
                     .get("routes")
                     .and_then(Item::as_array_of_tables)
-                    .is_some_and(|rs| rs.iter().any(|r| has_id(r.get("responses"), id))),
+                    .is_some_and(|rs| rs.iter().any(|r| route_has_response(r, id))),
             }
         };
         st.docs
@@ -839,6 +861,54 @@ impl Store {
                 r["responses"] = Item::ArrayOfTables(ArrayOfTables::new());
             }
             r["responses"]
+                .as_array_of_tables_mut()
+                .ok_or_else(|| StoreError::Invalid("responses is not a table array".into()))?
+                .push(t);
+            Ok(())
+        })?;
+        Ok(id)
+    }
+
+    /// Append an empty Response to one operation of a `crud` Route (M17.1); returns its id.
+    pub fn create_operation_response(
+        &self,
+        route_id: &str,
+        op: &str,
+    ) -> Result<String, StoreError> {
+        if !fauxfield_model::CRUD_OPS.contains(&op) {
+            return Err(StoreError::Invalid(format!("unknown operation `{op}`")));
+        }
+        let target = Target::Route(route_id.into());
+        let file = self
+            .file_of(&target)
+            .ok_or_else(|| StoreError::NotFound(route_id.into()))?;
+        let id = new_id("rsp");
+        self.edit(&file, |d| {
+            let r = find_table(d, "routes", route_id)
+                .ok_or_else(|| StoreError::NotFound(route_id.into()))?;
+            if r.get("kind").and_then(Item::as_str) != Some("crud") {
+                return Err(StoreError::Invalid("operations need a crud Route".into()));
+            }
+            let mut t = Table::new();
+            t["id"] = value(id.clone());
+            t["name"] = value("New response");
+            t["status"] = value(200);
+            if r.get("operations").and_then(Item::as_table).is_none() {
+                let mut ops = Table::new();
+                ops.set_implicit(true);
+                r["operations"] = Item::Table(ops);
+            }
+            let ops = r["operations"].as_table_mut().expect("just created");
+            if ops.get(op).and_then(Item::as_table).is_none() {
+                let mut ot = Table::new();
+                ot.set_implicit(true);
+                ops[op] = Item::Table(ot);
+            }
+            let ot = ops[op].as_table_mut().expect("just created");
+            if ot.get("responses").is_none() {
+                ot["responses"] = Item::ArrayOfTables(ArrayOfTables::new());
+            }
+            ot["responses"]
                 .as_array_of_tables_mut()
                 .ok_or_else(|| StoreError::Invalid("responses is not a table array".into()))?
                 .push(t);
@@ -1890,7 +1960,13 @@ impl Store {
                 Target::Response(id) => {
                     if let Some(rs) = d.get_mut("routes").and_then(Item::as_array_of_tables_mut) {
                         for r in rs.iter_mut() {
-                            remove_by_id(r.get_mut("responses"), id);
+                            for a in response_arrays(r) {
+                                let pos = a.iter().position(|t| id_of(t) == Some(id));
+                                if let Some(i) = pos {
+                                    a.remove(i);
+                                }
+                            }
+                            prune_operations(r);
                         }
                     }
                 }
@@ -1934,16 +2010,9 @@ impl Store {
                         .and_then(Item::as_array_of_tables_mut)
                         .ok_or_else(|| StoreError::NotFound(id.clone()))?;
                     for r in rs.iter_mut() {
-                        if let Some(list) = r
-                            .get_mut("responses")
-                            .and_then(Item::as_array_of_tables_mut)
-                        {
-                            let found = list
-                                .iter()
-                                .find(|x| x.get("id").and_then(Item::as_str) == Some(id))
-                                .cloned();
-                            if let Some(src) = found {
-                                let mut c = src;
+                        for list in response_arrays(r) {
+                            let found = list.iter().find(|x| id_of(x) == Some(id)).cloned();
+                            if let Some(mut c) = found {
                                 c["id"] = value(new_root.clone());
                                 c.remove("default");
                                 if let Some(n) = c
@@ -2196,6 +2265,60 @@ pub fn error_preset(status: u16) -> Option<(&'static str, &'static str)> {
     })
 }
 
+/// Every Response array of a Route: the top-level one plus each operation's (M17.1).
+fn response_arrays(route: &mut Table) -> Vec<&mut ArrayOfTables> {
+    let mut out = Vec::new();
+    for (k, item) in route.iter_mut() {
+        match k.get() {
+            "responses" => {
+                if let Some(a) = item.as_array_of_tables_mut() {
+                    out.push(a);
+                }
+            }
+            "operations" => {
+                if let Some(t) = item.as_table_mut() {
+                    for (_, op) in t.iter_mut() {
+                        if let Some(a) = op
+                            .as_table_mut()
+                            .and_then(|o| o.get_mut("responses"))
+                            .and_then(Item::as_array_of_tables_mut)
+                        {
+                            out.push(a);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Drop empty `operations.<op>` tables and an empty `operations` table so files stay clean.
+fn prune_operations(route: &mut Table) {
+    let Some(ops) = route.get_mut("operations").and_then(Item::as_table_mut) else {
+        return;
+    };
+    let empty: Vec<String> = ops
+        .iter()
+        .filter(|(_, v)| {
+            v.as_table().is_some_and(|t| {
+                t.get("responses")
+                    .and_then(Item::as_array_of_tables)
+                    .is_none_or(|a| a.is_empty())
+                    && t.iter().all(|(k, _)| k == "responses")
+            })
+        })
+        .map(|(k, _)| k.to_string())
+        .collect();
+    for k in empty {
+        ops.remove(&k);
+    }
+    if ops.is_empty() {
+        route.remove("operations");
+    }
+}
+
 fn responses_of_mut<'a>(
     d: &'a mut DocumentMut,
     response_id: &str,
@@ -2203,7 +2326,7 @@ fn responses_of_mut<'a>(
     d.get_mut("routes")?
         .as_array_of_tables_mut()?
         .iter_mut()
-        .filter_map(|r| r.get_mut("responses")?.as_array_of_tables_mut())
+        .flat_map(|r| response_arrays(r))
         .find(|rs| rs.iter().any(|t| id_of(t) == Some(response_id)))
 }
 
@@ -2322,6 +2445,17 @@ fn put_all(a: &mut ArrayOfTables, mut v: Vec<Table>, positions: Vec<usize>) {
     }
 }
 
+fn route_has_response(route: &Table, id: &str) -> bool {
+    has_id(route.get("responses"), id)
+        || route
+            .get("operations")
+            .and_then(Item::as_table)
+            .is_some_and(|ops| {
+                ops.iter()
+                    .any(|(_, o)| o.as_table().is_some_and(|o| has_id(o.get("responses"), id)))
+            })
+}
+
 fn has_id(item: Option<&Item>, id: &str) -> bool {
     item.and_then(Item::as_array_of_tables).is_some_and(|a| {
         a.iter()
@@ -2352,10 +2486,9 @@ pub(crate) fn resolve<'a>(d: &'a mut DocumentMut, target: &Target) -> Option<&'a
             .get_mut("routes")?
             .as_array_of_tables_mut()?
             .iter_mut()
-            .find_map(|r| {
-                r.get_mut("responses")?
-                    .as_array_of_tables_mut()?
-                    .iter_mut()
+            .flat_map(|r| response_arrays(r))
+            .find_map(|rs| {
+                rs.iter_mut()
                     .find(|t| t.get("id").and_then(Item::as_str) == Some(id))
             }),
     }
@@ -2373,10 +2506,7 @@ fn remove_by_id(item: Option<&mut Item>, id: &str) {
 }
 
 fn regen_response_ids(route: &mut Table) {
-    if let Some(rs) = route
-        .get_mut("responses")
-        .and_then(Item::as_array_of_tables_mut)
-    {
+    for rs in response_arrays(route) {
         for r in rs.iter_mut() {
             r["id"] = value(new_id("rsp"));
         }

@@ -1189,6 +1189,133 @@ pub(crate) fn json_response(
     )
 }
 
+/// Side results of running one chosen Response, copied back into `handle`'s locals.
+struct RunState {
+    render_error: Option<String>,
+    dataset_changes: Vec<crate::actions::DatasetChange>,
+    delay_ms: u64,
+    fault: Option<(Fault, &'static str)>,
+    render_us: u64,
+    callbacks: Vec<fauxfield_model::Callback>,
+    cb_tpl: Option<crate::render::TplEnv>,
+}
+
+impl RunState {
+    #[allow(clippy::too_many_arguments)]
+    fn apply(
+        self,
+        render_error: &mut Option<String>,
+        dataset_changes: &mut Vec<crate::actions::DatasetChange>,
+        delay_ms: &mut u64,
+        fault: &mut Option<(Fault, &'static str)>,
+        render_us: &mut u64,
+        callbacks: &mut Vec<fauxfield_model::Callback>,
+        cb_tpl: &mut Option<crate::render::TplEnv>,
+    ) {
+        *render_error = self.render_error;
+        *dataset_changes = self.dataset_changes;
+        *delay_ms = self.delay_ms;
+        *fault = self.fault;
+        *render_us = self.render_us;
+        *callbacks = self.callbacks;
+        *cb_tpl = self.cb_tpl;
+    }
+}
+
+/// Run a chosen Response: Dataset actions, delay, fault, render, Callbacks. Shared by `http`
+/// Routes and the operation Responses of `crud` Routes (M17.1).
+#[allow(clippy::too_many_arguments)]
+async fn run_response(
+    engine: &Engine,
+    rt: &Arc<ServerRt>,
+    id: &str,
+    r: &fauxfield_model::Route,
+    resp: &fauxfield_model::Response,
+    call: u64,
+    mut tpl: crate::render::TplEnv,
+    server_def: &Server,
+    path: &str,
+) -> ((u16, Vec<(String, String)>, Bytes), RunState) {
+    let mut st = RunState {
+        render_error: None,
+        dataset_changes: vec![],
+        delay_ms: 0,
+        fault: None,
+        render_us: 0,
+        callbacks: vec![],
+        cb_tpl: None,
+    };
+    let mut action_failed: Option<(u16, String)> = None;
+    if resp.actions.iter().any(|a| !a.disabled) {
+        let env = crate::actions::Env {
+            root: &engine.inner.cfg.root,
+            server_id: id,
+            server: server_def,
+            route_id: &r.id,
+            counter: call,
+        };
+        let res = {
+            let mut store = rt.data.lock().unwrap();
+            crate::actions::run(&mut store, &env, &resp.actions, &mut tpl.context)
+        };
+        match res {
+            Ok(ch) => {
+                for c in &ch {
+                    let n = rt
+                        .data
+                        .lock()
+                        .unwrap()
+                        .get(&c.dataset)
+                        .map_or(0, |s| s.len());
+                    let _ = engine.inner.events.send(EngineEvent::Dataset {
+                        server_id: id.to_string(),
+                        name: c.dataset.clone(),
+                        rows: n,
+                    });
+                }
+                st.dataset_changes = ch;
+            }
+            Err(e) => {
+                action_failed = Some((
+                    resp.action_error_status.unwrap_or(409),
+                    format!("action {} failed: {}", e.step, e.message),
+                ));
+            }
+        }
+    }
+    if let Some((status, msg)) = action_failed {
+        st.render_error = Some(msg.clone());
+        let body = serde_json::json!({
+            "type": "about:blank", "title": "Dataset action failed",
+            "status": status, "detail": msg, "instance": path,
+        });
+        return (json_response(status, body, "application/problem+json"), st);
+    }
+    let (lo, hi) = resp
+        .delay_ms
+        .as_ref()
+        .and_then(fauxfield_model::Delay::bounds)
+        .unwrap_or((0, 0));
+    st.delay_ms = sim::sample(lo, hi);
+    if st.delay_ms > 0 {
+        tokio::time::sleep(Duration::from_millis(st.delay_ms)).await;
+    }
+    if let Some(f) = resp.fault.as_deref().and_then(Fault::parse)
+        && sim::roll(resp.fault_rate.unwrap_or(1.0))
+    {
+        st.fault = Some((f, ""));
+    }
+    let t0 = Instant::now();
+    let out = crate::render::build(&engine.inner.cfg.root, r, resp, &tpl, path);
+    st.render_us = t0.elapsed().as_micros() as u64;
+    st.render_error = out.error;
+    if out.status < 500 && resp.callbacks.iter().any(|c| !c.disabled) {
+        st.callbacks = resp.callbacks.clone();
+        st.cb_tpl = Some(tpl.clone());
+    }
+    ((out.status, out.headers, out.body), st)
+}
+
 async fn handle(
     engine: Engine,
     id: String,
@@ -1401,7 +1528,6 @@ async fn handle(
         }
         Some(r) if r.kind == "crud" => {
             let call = rt.counters.bump(&r.id);
-            chosen = (String::new(), format!("CRUD {method}"));
             let item_id = route_pattern
                 .ends_with("/:id")
                 .then(|| {
@@ -1411,6 +1537,15 @@ async fn handle(
                         .map(|(_, v)| v.clone())
                 })
                 .flatten();
+            let op = crate::data::crud_op(&method, item_id.as_deref());
+            chosen = (
+                String::new(),
+                if op.is_empty() {
+                    format!("CRUD {method}")
+                } else {
+                    format!("crud:{op}")
+                },
+            );
             let ds_name = r.dataset.clone().unwrap_or_default();
             let page_size = {
                 let def = rt.def.lock().unwrap().clone();
@@ -1437,47 +1572,128 @@ async fn handle(
                 .as_deref()
                 .and_then(|p| rt.compiled.schema(&engine.inner.cfg.root, p));
             let _ = call;
-            let (out, changed, rows) = {
-                let mut d = rt.data.lock().unwrap();
-                match d.get_mut(&ds_name) {
-                    None => (
-                        json_response(
-                            500,
-                            problem::server_error(&format!("unknown dataset `{ds_name}`"), &path),
-                            "application/problem+json",
-                        ),
-                        false,
-                        0,
+            // Operation Responses (M17.1): the first whose Rules pass answers instead of the
+            // built-in handler; a request the built-in `validate` would reject is left to it.
+            let op_list = r
+                .operations
+                .get(op)
+                .map(|o| o.responses.as_slice())
+                .filter(|l| !l.is_empty())
+                .filter(|_| r.crud_ops.is_empty() || r.crud_ops.iter().any(|c| c == op));
+            let mut served = None;
+            if let Some(list) = op_list
+                && !crate::data::body_rejected(&method, schema.as_ref(), &body, &path)
+            {
+                let call = rt.counters.bump(&format!("{}#{op}", r.id));
+                let lc_headers: Vec<(String, String)> = req_headers
+                    .iter()
+                    .map(|(k, v)| (k.to_ascii_lowercase(), v.clone()))
+                    .collect();
+                let server_def = rt.def.lock().unwrap().clone();
+                let req_id = engine.inner.seq.load(Ordering::Relaxed);
+                let mut tpl = crate::render::TplEnv {
+                    context: crate::render::context(
+                        &server_def,
+                        &method,
+                        &url,
+                        &lc_headers,
+                        &params,
+                        Some(&ip),
+                        &body,
+                        req_id,
+                        call,
+                        &engine.inner.vars.read().unwrap(),
+                        Some(&r.id),
                     ),
-                    Some(ds) => {
-                        let c = crate::data::Call {
-                            method: &method,
-                            path: &path,
-                            id: item_id.as_deref(),
-                            query: &query,
-                            body: &body,
-                            page_size,
-                            schema,
-                            root: &engine.inner.cfg.root,
-                            server_id: &id,
-                            ops: &r.crud_ops,
-                        };
-                        let (out, changed) = crate::data::handle(ds, &c);
-                        (out, changed, ds.len())
+                    seed: engine.inner.cfg.seed.or(server_def.fake_seed),
+                    route_id: r.id.clone(),
+                    counter: call,
+                    seq: Some(rt.seq.clone()),
+                };
+                {
+                    let snap = rt.data.lock().unwrap().snapshot();
+                    if snap.as_object().is_some_and(|m| !m.is_empty()) {
+                        tpl.context["data"] = (*snap).clone();
                     }
                 }
-            };
-            if changed {
-                let _ = engine.inner.events.send(EngineEvent::Dataset {
-                    server_id: id.clone(),
-                    name: ds_name,
-                    rows,
-                });
+                let mut ctx = crate::rules::Ctx::new(
+                    &method,
+                    &url,
+                    &lc_headers,
+                    &params,
+                    Some(ip),
+                    &body,
+                    call,
+                    &engine.inner.cfg.root,
+                );
+                ctx.tpl = Some(tpl.clone());
+                let (picked, t) = crate::rules::select_operation(list, &ctx, &rt.compiled);
+                trace = Some(t);
+                if let Some(resp) = picked {
+                    chosen = (resp.id.clone(), resp.name.clone().unwrap_or_default());
+                    let (out, st) =
+                        run_response(&engine, &rt, &id, r, resp, call, tpl, &server_def, &path)
+                            .await;
+                    st.apply(
+                        &mut render_error,
+                        &mut dataset_changes,
+                        &mut delay_ms,
+                        &mut fault,
+                        &mut render_us,
+                        &mut callbacks,
+                        &mut cb_tpl,
+                    );
+                    served = Some(out);
+                }
             }
-            if out.0 >= 500 {
-                render_error = Some(String::from_utf8_lossy(&out.2).into_owned());
+            if let Some(out) = served {
+                (r.id.clone(), out)
+            } else {
+                let (out, changed, rows) = {
+                    let mut d = rt.data.lock().unwrap();
+                    match d.get_mut(&ds_name) {
+                        None => (
+                            json_response(
+                                500,
+                                problem::server_error(
+                                    &format!("unknown dataset `{ds_name}`"),
+                                    &path,
+                                ),
+                                "application/problem+json",
+                            ),
+                            false,
+                            0,
+                        ),
+                        Some(ds) => {
+                            let c = crate::data::Call {
+                                method: &method,
+                                path: &path,
+                                id: item_id.as_deref(),
+                                query: &query,
+                                body: &body,
+                                page_size,
+                                schema,
+                                root: &engine.inner.cfg.root,
+                                server_id: &id,
+                                ops: &r.crud_ops,
+                            };
+                            let (out, changed) = crate::data::handle(ds, &c);
+                            (out, changed, ds.len())
+                        }
+                    }
+                };
+                if changed {
+                    let _ = engine.inner.events.send(EngineEvent::Dataset {
+                        server_id: id.clone(),
+                        name: ds_name,
+                        rows,
+                    });
+                }
+                if out.0 >= 500 {
+                    render_error = Some(String::from_utf8_lossy(&out.2).into_owned());
+                }
+                (r.id.clone(), out)
             }
-            (r.id.clone(), out)
         }
         Some(r) => {
             let call = rt.counters.bump(&r.id);
@@ -1529,79 +1745,19 @@ async fn handle(
                 None => (200, vec![], Bytes::new()),
                 Some(resp) => {
                     chosen = (resp.id.clone(), resp.name.clone().unwrap_or_default());
-                    let mut action_failed: Option<(u16, String)> = None;
-                    if resp.actions.iter().any(|a| !a.disabled) {
-                        let env = crate::actions::Env {
-                            root: &engine.inner.cfg.root,
-                            server_id: &id,
-                            server: &server_def,
-                            route_id: &r.id,
-                            counter: call,
-                        };
-                        let res = {
-                            let mut store = rt.data.lock().unwrap();
-                            crate::actions::run(&mut store, &env, &resp.actions, &mut tpl.context)
-                        };
-                        match res {
-                            Ok(ch) => {
-                                for c in &ch {
-                                    let n = rt
-                                        .data
-                                        .lock()
-                                        .unwrap()
-                                        .get(&c.dataset)
-                                        .map_or(0, |s| s.len());
-                                    let _ = engine.inner.events.send(EngineEvent::Dataset {
-                                        server_id: id.clone(),
-                                        name: c.dataset.clone(),
-                                        rows: n,
-                                    });
-                                }
-                                dataset_changes = ch;
-                            }
-                            Err(e) => {
-                                action_failed = Some((
-                                    resp.action_error_status.unwrap_or(409),
-                                    format!("action {} failed: {}", e.step, e.message),
-                                ));
-                            }
-                        }
-                    }
-                    if let Some((status, msg)) = action_failed {
-                        render_error = Some(msg.clone());
-                        let body = serde_json::json!({
-                            "type": "about:blank", "title": "Dataset action failed",
-                            "status": status, "detail": msg, "instance": path,
-                        });
-                        crate::engine::json_response(status, body, "application/problem+json")
-                    } else {
-                        let (lo, hi) = resp
-                            .delay_ms
-                            .as_ref()
-                            .and_then(fauxfield_model::Delay::bounds)
-                            .unwrap_or((0, 0));
-                        delay_ms = sim::sample(lo, hi);
-                        if delay_ms > 0 {
-                            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-                        }
-                        if let Some(f) = resp.fault.as_deref().and_then(Fault::parse)
-                            && sim::roll(resp.fault_rate.unwrap_or(1.0))
-                        {
-                            fault = Some((f, ""));
-                        }
-                        {
-                            let t0 = Instant::now();
-                            let out =
-                                crate::render::build(&engine.inner.cfg.root, r, resp, &tpl, &path);
-                            render_us = t0.elapsed().as_micros() as u64;
-                            render_error = out.error;
-                            if out.status < 500 && resp.callbacks.iter().any(|c| !c.disabled) {
-                                callbacks = resp.callbacks.clone();
-                                cb_tpl = Some(tpl.clone());
-                            }
-                            (out.status, out.headers, out.body)
-                        }
-                    }
+                    let (out, st) =
+                        run_response(&engine, &rt, &id, r, resp, call, tpl, &server_def, &path)
+                            .await;
+                    st.apply(
+                        &mut render_error,
+                        &mut dataset_changes,
+                        &mut delay_ms,
+                        &mut fault,
+                        &mut render_us,
+                        &mut callbacks,
+                        &mut cb_tpl,
+                    );
+                    out
                 }
             };
             (r.id.clone(), out)

@@ -1,0 +1,18 @@
+# M17.1 fixture: a CRUD Route with no operation Responses (the scenario adds them).
+schema = 1
+id = "srv_people"
+name = "People"
+enabled = true
+host = "127.0.0.1"
+port = 4031
+
+[[datasets]]
+name = "people"
+seed = "data/people.json"
+id_strategy = "increment"
+
+[[routes]]
+id = "rte_people"
+kind = "crud"
+path = "/people"
+dataset = "people"

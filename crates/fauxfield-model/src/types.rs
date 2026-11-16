@@ -271,6 +271,10 @@ pub struct Route {
     /// `crud` routes: JSON Schema file (workspace-relative) checked on POST/PUT/PATCH.
     #[serde(default)]
     pub validate: Option<String>,
+    /// `crud` routes: Responses per operation (`list`, `get`, `create`, `update`, `patch`,
+    /// `delete`); the first whose Rules pass answers, otherwise the built-in handler (M17.1).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub operations: BTreeMap<String, Operation>,
     /// `static` routes: directory served (workspace-relative).
     #[serde(default)]
     pub dir: Option<String>,
@@ -292,6 +296,17 @@ pub struct Route {
     /// `websocket` routes: scripted messages (M13).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub messages: Vec<WsMessage>,
+    #[serde(flatten)]
+    #[schemars(skip)]
+    pub extra: Extra,
+}
+
+/// The Responses of one operation of a `crud` Route (SPEC §6.2.1, M17.1).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct Operation {
+    /// Tried in order; the first whose Rules pass is sent. No match runs the built-in handler.
+    #[serde(default)]
+    pub responses: Vec<Response>,
     #[serde(flatten)]
     #[schemars(skip)]
     pub extra: Extra,

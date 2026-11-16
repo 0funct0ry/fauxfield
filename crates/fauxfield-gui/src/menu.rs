@@ -174,6 +174,11 @@ pub struct MenuDef {
 
 /// Actions that are deliberately not in the menu, each with the reason.
 pub const NOT_IN_MENU: &[(&str, &str)] = &[
+    (
+        "add_operation_response",
+        "CRUD operation row menu, editor button and palette",
+    ),
+    ("remove_operation_response", "Response row menu and palette"),
     ("settings_focus_search", "Settings tab and palette"),
     ("settings_open_file", "Settings tab footer and palette"),
     ("settings_reset_section", "Settings tab footer and palette"),

@@ -1026,6 +1026,13 @@
           ],
           "default": null
         },
+        "operations": {
+          "description": "`crud` routes: Responses per operation (`list`, `get`, `create`, `update`, `patch`,\n`delete`); the first whose Rules pass answers, otherwise the built-in handler (M17.1).",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Operation"
+          }
+        },
         "dir": {
           "description": "`static` routes: directory served (workspace-relative).",
           "type": [
@@ -1502,6 +1509,20 @@
       "required": [
         "id"
       ]
+    },
+    "Operation": {
+      "description": "The Responses of one operation of a `crud` Route (SPEC §6.2.1, M17.1).",
+      "type": "object",
+      "properties": {
+        "responses": {
+          "description": "Tried in order; the first whose Rules pass is sent. No match runs the built-in handler.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Response"
+          },
+          "default": []
+        }
+      }
     },
     "WsMessage": {
       "description": "One scripted message of a `websocket` Route (SPEC §7.4).",

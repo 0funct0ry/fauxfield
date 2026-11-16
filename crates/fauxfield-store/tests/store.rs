@@ -913,3 +913,89 @@ fn route_openapi_edits_keep_comments_and_remove_the_empty_table() {
     s.flush().unwrap();
     assert_eq!(std::fs::read_to_string(&file).unwrap(), before);
 }
+
+const CRUD_OPS_WS: &str = r#"# crud route
+schema = 1
+id = "srv_c"
+name = "C"
+port = 4010
+
+[[datasets]]
+name = "users"
+seed = "[]"
+
+[[routes]]
+id = "rte_users"
+kind = "crud"
+path = "/users"
+dataset = "users"
+"#;
+
+#[test]
+fn operation_responses_are_created_edited_duplicated_and_deleted() {
+    let (dir, _s) = ws();
+    let file = dir.path().join("servers/c.toml");
+    std::fs::write(&file, CRUD_OPS_WS).unwrap();
+    let s = Store::open(dir.path()).unwrap();
+    let rsp = s.create_operation_response("rte_users", "create").unwrap();
+    assert!(s.create_operation_response("rte_users", "bogus").is_err());
+    s.set_int(&Target::Response(rsp.clone()), "status", Some(409))
+        .unwrap();
+    s.set_header(&rsp, "x-op", Some("1")).unwrap();
+    let snap = s.snapshot();
+    let route = &snap
+        .servers
+        .iter()
+        .find(|(_, x)| x.id == "srv_c")
+        .unwrap()
+        .1
+        .routes[0];
+    assert_eq!(route.operations["create"].responses[0].status, 409);
+    assert!(route.responses.is_empty());
+
+    // Route duplicate regenerates operation Response ids.
+    let dup = s.duplicate(&Target::Route("rte_users".into())).unwrap();
+    let snap = s.snapshot();
+    let routes = &snap
+        .servers
+        .iter()
+        .find(|(_, x)| x.id == "srv_c")
+        .unwrap()
+        .1
+        .routes;
+    let copy = routes.iter().find(|r| r.id == dup).unwrap();
+    assert_ne!(copy.operations["create"].responses[0].id, rsp);
+    assert!(
+        snap.diagnostics.iter().all(|d| d.code != "E013"),
+        "{:?}",
+        snap.diagnostics
+    );
+
+    // Response duplicate stays in the operation.
+    s.duplicate(&Target::Response(rsp.clone())).unwrap();
+    let snap = s.snapshot();
+    let route = &snap
+        .servers
+        .iter()
+        .find(|(_, x)| x.id == "srv_c")
+        .unwrap()
+        .1
+        .routes[0];
+    assert_eq!(route.operations["create"].responses.len(), 2);
+
+    // Deleting every Response removes the empty tables again.
+    let ids: Vec<String> = route.operations["create"]
+        .responses
+        .iter()
+        .map(|r| r.id.clone())
+        .collect();
+    s.delete(&Target::Route(dup)).unwrap();
+    for id in ids {
+        s.delete(&Target::Response(id)).unwrap();
+    }
+    s.flush().unwrap();
+    let out = std::fs::read_to_string(&file).unwrap();
+    assert!(!out.contains("operations"), "{out}");
+    assert!(!out.contains("rsp_"), "{out}");
+    assert_eq!(out.trim_end(), CRUD_OPS_WS.trim_end(), "{out:?}");
+}

@@ -13,6 +13,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 const RENDER_LIMIT: Duration = Duration::from_millis(250);
+/// Rows per Dataset in the preview context of the API documentation.
+const PREVIEW_ROWS: usize = 50;
 
 pub(super) struct Cached {
     json: Bytes,
@@ -65,12 +67,24 @@ pub fn openapi_document(root: &Path, server_id: &str, server: &Server) -> Docume
     let route: fauxfield_model::Route =
         serde_json::from_value(json!({"id": "rte_docs", "path": "/"})).expect("route");
     let vc = crate::vars::VarContext::default();
+    // `data.<name>` for the preview: the first rows of every Dataset, so templates that read
+    // Datasets render an example. Totals therefore describe this sample, not the full Dataset.
+    let sample_data: serde_json::Map<String, serde_json::Value> = seeds
+        .iter()
+        .map(|(name, rows)| {
+            (
+                name.clone(),
+                serde_json::Value::Array(rows.iter().take(PREVIEW_ROWS).cloned().collect()),
+            )
+        })
+        .collect();
     let render = |raw: &str| -> Result<String, String> {
         let resp: fauxfield_model::Response =
             serde_json::from_value(json!({"id": "rsp_docs", "body": raw})).expect("response");
         let sample = crate::render::SampleRequest {
             method: "GET".into(),
             url: "/".into(),
+            datasets: Some(serde_json::Value::Object(sample_data.clone())),
             ..Default::default()
         };
         let p =

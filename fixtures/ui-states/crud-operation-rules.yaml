@@ -1,0 +1,7 @@
+# UI state fixture (M17.1): a crud Route scoped to its `create` operation. Launch with
+# fixtures/operations-workspace.
+steps:
+  - reset
+  - open: {kind: route, id: rte_people}
+  - click_element: "row-rte_people#1"
+  - wait_idle

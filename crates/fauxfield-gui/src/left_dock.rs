@@ -369,7 +369,7 @@ impl Shell {
             )
             .into_any_element(),
             RowKind::Dataset { .. } => icon("table", 13., t.icon_muted).into_any_element(),
-            RowKind::CrudOp { method } => method_badge(t, method).into_any_element(),
+            RowKind::CrudOp { method, .. } => method_badge(t, method).into_any_element(),
             RowKind::Response { .. } | RowKind::ErrorPresets | RowKind::DatasetRow => {
                 div().into_any_element()
             }
@@ -601,6 +601,24 @@ impl Shell {
                             .text_color(t.text_muted)
                             .child(routes.to_string())
                             .into_any_element(),
+                    ),
+                    RowKind::CrudOp { responses, .. } if *responses > 0 => Some(
+                        crate::dev_id!(
+                            div()
+                                .id(crate::ui::eid(format!("ops-count-{}", r.id)))
+                                .flex_none()
+                                .text_size(px(11.))
+                                .text_color(t.text_muted)
+                                .tooltip(crate::ui::tooltip(
+                                    "Operation Responses; others use the built-in handler".into()
+                                ))
+                                .child(responses.to_string()),
+                            format!("tree-ops-count-{}", r.id),
+                            Text,
+                            responses.to_string(),
+                            None
+                        )
+                        .into_any_element()
                     ),
                     RowKind::Route { warn: Some(w), .. } => Some(
                         crate::dev_id!(

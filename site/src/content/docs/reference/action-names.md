@@ -19,6 +19,7 @@ description: One name per action, used by the Command Palette, the menus and but
 | `add_dataset_action` | Response: Add Dataset Action |
 | `add_dataset_column` | Dataset: Add Column… |
 | `add_dataset_row` | Dataset: Add Row |
+| `add_operation_response` | Route: Add Operation Response |
 | `agents_setup` | Agents: Set Up MCP… |
 | `apply_dataset_json` | Dataset: Apply JSON Edits |
 | `cancel_dialog` | Dialog: Cancel |
@@ -113,6 +114,7 @@ description: One name per action, used by the Command Palette, the menus and but
 | `refire_callback` | Traffic: Re-fire Callback |
 | `reload_dataset_from_seed` | Dataset: Reload From Seed |
 | `remove_dataset_column` | Dataset: Remove Column… |
+| `remove_operation_response` | Route: Remove Operation Response |
 | `rename` | Edit: Rename… |
 | `rename_dataset_column` | Dataset: Rename Column… |
 | `rename_workspace` | Workspace: Rename… |

@@ -55,7 +55,7 @@ fn script() -> Vec<(&'static str, Value)> {
         ("update_workspace", json!({ "name": "matrix" })),
         (
             "upsert_route",
-            json!({ "server": "example-api", "method": "GET", "path": "/m", "responses": [{ "status": 200, "body": "m" }] }),
+            json!({ "server": "example-api", "method": "GET", "path": "/m", "responses": [{ "status": 200, "body": "m" }], "operations": { "create": [{ "status": 409 }] } }),
         ),
         ("delete_route", json!({ "route": "rte_none" })),
         (
@@ -275,4 +275,58 @@ fn registry_matches_expected() {
             "{absent} must wait for its milestone"
         );
     }
+}
+
+/// M17.1: `upsert_route` writes operation Responses on a crud Route and `get_route` returns them.
+#[tokio::test(flavor = "multi_thread")]
+async fn operations_round_trip_through_upsert_and_get_route() {
+    let dir = tempfile::tempdir().unwrap();
+    fauxfield_store::init_workspace(dir.path()).unwrap();
+    std::fs::write(
+        dir.path().join("servers/crud.toml"),
+        "schema = 1\nid = \"srv_crud\"\nname = \"Crud\"\nport = 4777\n\n[[datasets]]\nname = \"users\"\nseed = \"[]\"\n\n[[routes]]\nid = \"rte_users\"\nkind = \"crud\"\npath = \"/users\"\ndataset = \"users\"\n",
+    )
+    .unwrap();
+    let reg = registry(dir.path());
+    let (s, c) = tokio::io::duplex(1 << 20);
+    let server = FauxfieldServer::new(Arc::new(reg), AllowedClasses::all());
+    tokio::spawn(async move {
+        if let Ok(r) = server.serve(s).await {
+            let _ = r.waiting().await;
+        }
+    });
+    let client = ().serve(c).await.unwrap();
+    let call = |name: &'static str, args: Value| {
+        let client = &client;
+        async move {
+            let mut p = CallToolRequestParams::new(name.to_owned());
+            if let Value::Object(m) = args {
+                p = p.with_arguments(m);
+            }
+            let r = client.call_tool(p).await.unwrap();
+            let text = serde_json::to_string(&r.content).unwrap();
+            (r.is_error.unwrap_or(false), text)
+        }
+    };
+    let (err, text) = call(
+        "upsert_route",
+        json!({ "server": "srv_crud", "route": "rte_users", "operations": { "create": [{
+            "name": "Duplicate", "status": 409,
+            "rules": [{ "target": "body", "key": "$.email", "op": "eq", "value": "a@b.c" }]
+        }] } }),
+    )
+    .await;
+    assert!(!err, "{text}");
+    let (err, text) = call("get_route", json!({ "route": "rte_users" })).await;
+    assert!(!err, "{text}");
+    assert!(
+        text.contains("operations") && text.contains("Duplicate"),
+        "{text}"
+    );
+    let (err, text) = call(
+        "upsert_route",
+        json!({ "server": "srv_crud", "route": "rte_users", "operations": { "bogus": [{ "status": 200 }] } }),
+    )
+    .await;
+    assert!(err, "unknown operation should be refused: {text}");
 }

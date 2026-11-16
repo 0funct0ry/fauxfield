@@ -131,6 +131,8 @@ pub fn help(code: &str) -> Option<&'static str> {
         "E099" => "Change the column default so it fits the column type.",
         "E100" => "Make the primary key column match the Dataset `key`, or change the `key`.",
         "E101" => "Use only list, get, create, update, patch and delete in `crud_ops`.",
+        "E116" => "Use only list, get, create, update, patch and delete as operation names.",
+        "E117" => "Add the operation to `crud_ops`, or remove its Responses.",
         "E102" => "Set the WebSocket mode to `echo`, `script` or `broadcast`.",
         "E103" => "Set the trigger to `connect`, `interval` or `message`.",
         "E104" => "Write `every` like `500ms`, `5s` or `1m`; the minimum is 10ms.",
@@ -151,9 +153,17 @@ pub fn help(code: &str) -> Option<&'static str> {
         "W051" => "Move the Route above the one that shadows it, or make its path more specific.",
         "W052" => "Switch `match` to `pattern`, or ignore this if the path really contains braces.",
         "W060" => "Set `bandwidth_kbps` on the Server or a Network profile, or pick another fault.",
-        "W070" => "Remove the Responses, or change the Route `kind` to `mock`.",
+        "W070" => {
+            "Remove the Responses, change the Route `kind` to `http`, or on a crud Route move them under an operation."
+        }
+        "W073" => {
+            "Add a Rule to the Response, or delete it; a Response without Rules is never chosen."
+        }
         "W071" => "Create the seed file, or fix its path; the Dataset starts empty until then.",
         "W072" => "Be aware that the action changes the Dataset file on disk.",
+        "W098" => {
+            "Remove `default` from the Response; an operation falls through to the built-in handler instead."
+        }
         "W090" => "List the allowed origins in CORS settings, or turn CORS off.",
         "W091" => {
             "Turn off accepting invalid certificates before using the proxy with real services."
@@ -186,9 +196,9 @@ pub const CODES: &[&str] = &[
     "E060", "E070", "E071", "E072", "E073", "E074", "E075", "E076", "E077", "E078", "E079", "E080",
     "E081", "E082", "E083", "E084", "E085", "E086", "E087", "E088", "E090", "E091", "E092", "E093",
     "E094", "E095", "E096", "E097", "E098", "E099", "E100", "E101", "E102", "E103", "E104", "E105",
-    "E106", "E107", "E108", "E109", "E110", "E111", "E112", "E113", "E114", "E115", "W042", "W043",
-    "W044", "W050", "W051", "W052", "W060", "W070", "W071", "W072", "W090", "W091", "W092", "W093",
-    "W094", "W095", "W096", "W097",
+    "E106", "E107", "E108", "E109", "E110", "E111", "E112", "E113", "E114", "E115", "E116", "E117",
+    "W042", "W043", "W044", "W050", "W051", "W052", "W060", "W070", "W071", "W072", "W073", "W090",
+    "W091", "W092", "W093", "W094", "W095", "W096", "W097", "W098",
 ];
 
 #[cfg(test)]

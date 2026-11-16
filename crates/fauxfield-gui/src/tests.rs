@@ -3249,6 +3249,7 @@ fn crud_operation_rows_copy_their_request_as_curl(cx: &mut TestAppContext) {
     let labels: Vec<_> = crate::tree::menu_items(
         &crate::tree::RowKind::CrudOp {
             method: "PUT".into(),
+            responses: 0,
         },
         false,
     )
@@ -3861,4 +3862,99 @@ fn toasts_stack_to_three_and_errors_persist(cx: &mut TestAppContext) {
     assert!(read(&view, cx, |s| s.notice.is_some() && s.notice_is_error));
     view.update(cx, |s, cx| s.dismiss_toast(cx));
     assert!(read(&view, cx, |s| s.notice.is_none() || !s.notice_is_error));
+}
+
+#[gpui::test]
+fn crud_operation_rows_show_response_counts_and_scope_the_editor(cx: &mut TestAppContext) {
+    let (view, cx) = setup(cx, None);
+    let route = read(&view, cx, |s| {
+        s.ws.servers
+            .iter()
+            .flat_map(|x| x.all_routes())
+            .find(|r| r.is_crud())
+            .map(|r| r.id.clone())
+    })
+    .expect("the fixture has a crud Route");
+    let op_rows = |view: &Entity<Shell>, cx: &mut VisualTestContext| {
+        read(view, cx, |s| {
+            let r = format!("{route}#");
+            crate::tree::flatten(&s.ws, &s.collapsed, &s.active_env, s.sidebar_tab)
+                .into_iter()
+                .filter(|row| row.id.starts_with(&r))
+                .map(|row| match row.kind {
+                    crate::tree::RowKind::CrudOp { responses, .. } => (row.id, responses),
+                    k => panic!("unexpected {k:?}"),
+                })
+                .collect::<Vec<_>>()
+        })
+    };
+    // Six operation rows, none with Responses: they fall through to the built-in handlers.
+    let before = op_rows(&view, cx);
+    assert_eq!(before.len(), 6);
+    assert!(before.iter().all(|(_, n)| *n == 0));
+    // Selecting the `create` row (index 1) scopes the editor; Add Response adds to it.
+    view.update(cx, |s, cx| s.click_row(&format!("{route}#1"), 1, cx));
+    assert_eq!(
+        read(&view, cx, |s| s.crud_op_sel.get(&route).cloned()).as_deref(),
+        Some("create")
+    );
+    view.update(cx, |s, cx| {
+        s.new_response_for(&format!("{route}#create"), cx)
+    });
+    cx.run_until_parked();
+    let after = op_rows(&view, cx);
+    assert_eq!(after[1].1, 1, "{after:?}");
+    assert_eq!(after.iter().map(|(_, n)| n).sum::<usize>(), 1);
+    let (rid, creates) = read(&view, cx, |s| {
+        let (_, r) = s.ws.find_route(&route).unwrap();
+        (s.current_response_id(), r.op_responses("create").len())
+    });
+    assert_eq!(creates, 1);
+    let rid = rid.expect("the new operation Response is selected");
+    // The Route's own Responses are untouched.
+    assert!(read(&view, cx, |s| s
+        .ws
+        .find_route(&route)
+        .unwrap()
+        .1
+        .responses
+        .is_empty()));
+    // The Dataset body source works on an operation Response: Generate template writes a body.
+    assert!(read(&view, cx, |s| !s.response_datasets(&rid).is_empty()));
+    view.update(cx, |s, cx| {
+        s.toggle_dataset_source(&rid, cx);
+        s.generate_dataset_body(&rid, cx);
+    });
+    cx.run_until_parked();
+    let body = read(&view, cx, |s| s.find_response(&rid).unwrap().2.body);
+    assert!(body.contains("data."), "{body}");
+    // Generated reads are JSON, so the Response gets a JSON Content-Type.
+    assert_eq!(
+        read(&view, cx, |s| s.find_response(&rid).unwrap().2.content_type),
+        "application/json"
+    );
+    // The row menu opens for an operation Response and offers Delete (not "Set as default").
+    view.update(cx, |s, cx| s.open_response_menu(&rid, 10., 10., cx));
+    let labels: Vec<&str> = read(&view, cx, |s| {
+        s.menu
+            .as_ref()
+            .map(|m| {
+                crate::tree::menu_items(&m.kind, false)
+                    .into_iter()
+                    .map(|(l, _)| l)
+                    .collect()
+            })
+            .unwrap_or_default()
+    });
+    assert!(labels.contains(&"Delete"), "{labels:?}");
+    assert!(!labels.contains(&"Set as default"), "{labels:?}");
+    view.update_in(cx, |s, w, cx| {
+        s.run_menu(crate::tree::MenuAct::Delete, w, cx)
+    });
+    // Delete from the menu removes it.
+    cx.run_until_parked();
+    assert!(op_rows(&view, cx).iter().all(|(_, n)| *n == 0));
+    // Both palette actions exist.
+    let ids: Vec<_> = ACTIONS.iter().map(|a| a.id).collect();
+    assert!(ids.contains(&"add_operation_response") && ids.contains(&"remove_operation_response"));
 }

@@ -189,7 +189,7 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                         file,
                         format!("{rp}.responses"),
                         "W070",
-                        "responses are ignored on a crud Route",
+                        "top-level responses are ignored on a crud Route; use operation Responses",
                     ));
                 }
             }
@@ -423,8 +423,71 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                     format!("unknown response_mode `{m}`"),
                 ));
             }
+            if r.kind != "crud" && !r.operations.is_empty() {
+                out.push(Diagnostic::warning(
+                    file,
+                    format!("{rp}.operations"),
+                    "W070",
+                    "operations are ignored on a Route that is not crud",
+                ));
+            }
+            if r.kind == "crud" {
+                for (op, o) in &r.operations {
+                    let op_path = format!("{rp}.operations.{op}");
+                    if !crate::CRUD_OPS.contains(&op.as_str()) {
+                        out.push(Diagnostic::error(
+                            file,
+                            op_path.clone(),
+                            "E116",
+                            format!(
+                                "unknown operation `{op}`; use one of {}",
+                                crate::CRUD_OPS.join(", ")
+                            ),
+                        ));
+                    } else if !r.crud_ops.is_empty()
+                        && !r.crud_ops.iter().any(|c| c == op)
+                        && !o.responses.is_empty()
+                    {
+                        out.push(Diagnostic::error(
+                            file,
+                            op_path.clone(),
+                            "E117",
+                            format!(
+                                "operation `{op}` is not in `crud_ops`, so its Responses never run"
+                            ),
+                        ));
+                    }
+                    for (j, resp) in o.responses.iter().enumerate() {
+                        let sp = format!("{op_path}.responses[{j}]");
+                        if resp.default {
+                            out.push(Diagnostic::warning(
+                                file,
+                                format!("{sp}.default"),
+                                "W098",
+                                "`default` has no effect inside an operation",
+                            ));
+                        }
+                        if resp.rules.is_empty() {
+                            out.push(Diagnostic::warning(
+                                file,
+                                format!("{sp}.rules"),
+                                "W073",
+                                format!("Response `{}` has no Rules, so it never matches", resp.id),
+                            ));
+                        }
+                    }
+                }
+            }
+            let mut all_responses: Vec<(String, &crate::Response)> = Vec::new();
             for (j, resp) in r.responses.iter().enumerate() {
-                let sp = format!("{rp}.responses[{j}]");
+                all_responses.push((format!("{rp}.responses[{j}]"), resp));
+            }
+            for (op, o) in &r.operations {
+                for (j, resp) in o.responses.iter().enumerate() {
+                    all_responses.push((format!("{rp}.operations.{op}.responses[{j}]"), resp));
+                }
+            }
+            for (sp, resp) in all_responses {
                 if let Some(prev) = ids.insert(&resp.id, file) {
                     out.push(Diagnostic::error(
                         file,
@@ -1146,6 +1209,43 @@ mod tests {
         for c in ["E070", "E071", "E072", "E073", "E074", "E075"] {
             assert!(codes.contains(&c), "{c} in {codes:?}");
         }
+    }
+
+    #[test]
+    fn operation_responses_are_checked() {
+        let t = "id=\"srv_a\"\nname=\"n\"\nport=1\n[[datasets]]\nname=\"u\"\n\
+            [[routes]]\nid=\"r1\"\nkind=\"crud\"\npath=\"/u\"\ndataset=\"u\"\ncrud_ops=[\"list\",\"create\"]\n\
+            [[routes.responses]]\nid=\"top\"\n\
+            [[routes.operations.create.responses]]\nid=\"a\"\ndefault=true\n\
+            [[routes.operations.create.responses]]\nid=\"a\"\nstatus=409\n\
+            [[routes.operations.create.responses.rules]]\ntarget=\"nope\"\nop=\"eq\"\n\
+            [[routes.operations.bogus.responses]]\nid=\"b\"\n\
+            [[routes.operations.delete.responses]]\nid=\"c\"\n";
+        let d = validate_servers(&[("servers/a.toml".into(), parse_server(t).unwrap())]);
+        let codes: Vec<_> = d.iter().map(|d| d.code.as_str()).collect();
+        for c in ["W070", "W073", "W098", "E013", "E116", "E117", "E044"] {
+            assert!(codes.contains(&c), "{c} in {codes:?}");
+        }
+        let at = |c: &str| d.iter().find(|x| x.code == c).unwrap().path.clone();
+        assert_eq!(at("E116"), "routes[r1].operations.bogus");
+        assert_eq!(at("E117"), "routes[r1].operations.delete");
+        assert_eq!(
+            at("W098"),
+            "routes[r1].operations.create.responses[0].default"
+        );
+        assert!(d.iter().all(|x| x.help.is_some()), "{d:?}");
+    }
+
+    #[test]
+    fn operations_round_trip_and_stay_out_of_files_without_them() {
+        let plain = "id=\"srv_a\"\nname=\"n\"\nport=1\n[[routes]]\nid=\"r\"\npath=\"/x\"\n";
+        let s = parse_server(plain).unwrap();
+        assert!(!toml::to_string(&s).unwrap().contains("operations"));
+        let t = format!("{plain}[[routes.operations.create.responses]]\nid=\"o\"\nstatus=409\n");
+        let s = parse_server(&t).unwrap();
+        assert_eq!(s.routes[0].operations["create"].responses[0].status, 409);
+        let again = parse_server(&toml::to_string(&s).unwrap()).unwrap();
+        assert_eq!(again.routes[0].operations["create"].responses[0].id, "o");
     }
 
     #[test]

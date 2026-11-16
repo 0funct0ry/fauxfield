@@ -745,8 +745,14 @@ impl Ctx<'_, '_> {
                         );
                     }
                     for c in &ds.columns {
+                        // A column default fills new rows; as a filter default it would make
+                        // Swagger UI send `?price=0` and hide rows, so it is left out here.
+                        let mut sch = column_schema(c);
+                        if let Some(o) = sch.as_object_mut() {
+                            o.remove("default");
+                        }
                         params.push(json!({"name": c.name, "in": "query", "required": false,
-                            "description": "Equality filter", "schema": column_schema(c)}));
+                            "description": "Equality filter", "schema": sch}));
                     }
                     responses.insert("200".into(), json!({"description": "List of items",
                         "headers": {"X-Total-Count": {"schema": {"type": "integer"}}, "Link": {"schema": {"type": "string"}}},
@@ -789,8 +795,8 @@ impl Ctx<'_, '_> {
             }
             o.insert("parameters".into(), Value::Array(params));
             // M17.1 operation Responses, when present, become extra examples.
-            if let Some(ops) = r.extra.get("operations").and_then(|v| v.as_table()) {
-                self.operation_examples(ops.get(&op), &mut responses);
+            if let Some(o) = r.operations.get(&op) {
+                self.operation_examples(&o.responses, &mut responses);
             }
             o.insert("responses".into(), Value::Object(responses));
             out.push((method.to_string(), which.to_string(), Value::Object(o)));
@@ -798,28 +804,30 @@ impl Ctx<'_, '_> {
         out
     }
 
-    fn operation_examples(&mut self, op: Option<&toml::Value>, responses: &mut Map<String, Value>) {
-        let Some(arr) = op
-            .and_then(|o| o.get("responses"))
-            .and_then(|r| r.as_array())
-        else {
-            return;
-        };
-        for rv in arr {
-            let status = rv
-                .get("status")
-                .and_then(|s| s.as_integer())
-                .unwrap_or(200)
-                .to_string();
-            let Some(body) = rv.get("body").and_then(|b| b.as_str()) else {
+    fn operation_examples(
+        &mut self,
+        list: &[fauxfield_model::Response],
+        responses: &mut Map<String, Value>,
+    ) {
+        for rv in list.iter().filter(|r| !r.disabled) {
+            let status = rv.status.to_string();
+            // A Response `schema` file describes what this operation returns for that status
+            // (it replaces the built-in shape, e.g. an envelope instead of the item array).
+            if let Some(f) = &rv.schema
+                && let Some(sch) = self.read_json(f)
+            {
+                let entry = responses
+                    .entry(status.clone())
+                    .or_insert_with(|| json!({"description": "Response"}));
+                entry["content"]["application/json"]["schema"] = sch;
+            }
+            // Same rule as other Responses: Tera bodies are rendered once in preview mode, and
+            // an example that cannot be rendered is left out rather than shown as a template.
+            let Some(body) = self.body_text(rv) else {
                 continue;
             };
-            let name = rv
-                .get("name")
-                .or_else(|| rv.get("id"))
-                .and_then(|n| n.as_str())
-                .unwrap_or("example");
-            let val = serde_json::from_str::<Value>(body).unwrap_or(Value::String(body.into()));
+            let name = rv.name.as_deref().unwrap_or(&rv.id);
+            let val = serde_json::from_str::<Value>(&body).unwrap_or(Value::String(body));
             let entry = responses
                 .entry(status)
                 .or_insert_with(|| json!({"description": "Response"}));

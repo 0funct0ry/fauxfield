@@ -120,6 +120,8 @@ pub enum RowKind {
     /// One generated operation of a crud Route (child row of the Route node; opens the Route).
     CrudOp {
         method: String,
+        /// Operation Responses (M17.1); 0 falls through to the built-in handler.
+        responses: usize,
     },
     /// A Response in the Route tab's list (menu only; never a tree row).
     Response {
@@ -199,6 +201,9 @@ pub fn crud_route_of(row_id: &str) -> Option<&str> {
     row_id.split_once('#').map(|(r, _)| r)
 }
 
+/// Operation names in `CRUD_OPS` order below (the row index `n` of `crud_op_row_id`).
+pub const CRUD_OP_NAMES: [&str; 6] = ["list", "create", "get", "update", "patch", "delete"];
+
 /// `(method, path suffix)` of the six operations a crud Route generates (SPEC §6.2).
 pub const CRUD_OPS: [(&str, &str); 6] = [
     ("GET", ""),
@@ -235,12 +240,16 @@ fn route_rows(
     });
     if open {
         for (i, (m, suffix)) in CRUD_OPS.iter().enumerate() {
+            if !r.serves(CRUD_OP_NAMES[i]) {
+                continue;
+            }
             rows.push(TreeRow {
                 id: crud_op_row_id(&r.id, i),
                 depth: depth + 1,
                 label: format!("{}{}", r.path.trim_end_matches('/'), suffix),
                 kind: RowKind::CrudOp {
                     method: (*m).to_string(),
+                    responses: r.op_responses(CRUD_OP_NAMES[i]).len(),
                 },
                 expandable: false,
                 expanded: false,
@@ -396,6 +405,7 @@ pub enum MenuAct {
     DuplicateDatasetRows,
     /// crud operation row: copy its request as `curl`.
     CopyCrudCurl,
+    AddOperationResponse,
     // Server menu (M3.1).
     Restart,
     ToggleEnabled,
@@ -452,6 +462,7 @@ impl MenuAct {
             CopyRowJson => "copy-row-json".into(),
             DeleteDatasetRow => "delete-row".into(),
             CopyCrudCurl => "copy-curl".into(),
+            AddOperationResponse => "add-op-response".into(),
             DuplicateDatasetRows => "duplicate-rows".into(),
             Restart => "restart".into(),
             ToggleEnabled => "toggle-enabled".into(),
@@ -631,7 +642,11 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
             ("Duplicate row", DuplicateDatasetRows),
             ("Delete row", DeleteDatasetRow),
         ],
-        RowKind::CrudOp { .. } => vec![("Open route", Open), ("Copy as cURL", CopyCrudCurl)],
+        RowKind::CrudOp { .. } => vec![
+            ("Open route", Open),
+            ("Add response", AddOperationResponse),
+            ("Copy as cURL", CopyCrudCurl),
+        ],
         RowKind::Response { default, disabled } => {
             let mut v = Vec::new();
             if !default {

@@ -43,6 +43,10 @@ pub struct Route {
     pub path: String,
     pub name: String,
     pub responses: Vec<Response>,
+    /// crud Routes: Responses per operation in `CRUD_OPS` order, only operations with entries
+    /// (M17.1), and the operations served (`crud_ops`; empty means all).
+    pub operations: Vec<(String, Vec<Response>)>,
+    pub crud_ops: Vec<String>,
     /// Route headers (values templated), in file order.
     pub headers: Vec<(String, String)>,
     /// `match` as written in the file (`None` = inferred).
@@ -103,6 +107,38 @@ impl Route {
     pub fn is_static(&self) -> bool {
         self.kind == "static"
     }
+    /// True when the crud operation `op` is served (`crud_ops` empty serves all).
+    pub fn serves(&self, op: &str) -> bool {
+        self.crud_ops.is_empty() || self.crud_ops.iter().any(|o| o == op)
+    }
+    /// Responses of one crud operation (empty when none).
+    pub fn op_responses(&self, op: &str) -> &[Response] {
+        self.operations
+            .iter()
+            .find(|(o, _)| o == op)
+            .map_or(&[], |(_, r)| r.as_slice())
+    }
+    /// A Route view whose `responses` are those of one operation and whose id is
+    /// `<route>#<op>`, so the Responses list and Rules editor can be reused unchanged (M17.1).
+    pub fn scoped(&self, op: &str) -> Route {
+        Route {
+            id: scoped_id(&self.id, op),
+            responses: self.op_responses(op).to_vec(),
+            operations: vec![],
+            response_mode: "rules".into(),
+            ..self.clone()
+        }
+    }
+}
+
+/// Id of an operation-scoped Route view: `<route id>#<operation name>`.
+pub fn scoped_id(route: &str, op: &str) -> String {
+    format!("{route}#{op}")
+}
+
+/// Splits a scoped id into the Route id and operation name.
+pub fn split_scoped(id: &str) -> Option<(&str, &str)> {
+    id.split_once('#')
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -385,6 +421,38 @@ fn generator_preview(
     vec![]
 }
 
+fn response_view(x: &fauxfield_model::Response) -> Response {
+    Response {
+        id: x.id.clone(),
+        name: x.name.clone().unwrap_or_else(|| x.status.to_string()),
+        description: x.description.clone().unwrap_or_default(),
+        status: x.status,
+        default: x.default,
+        disabled: x.disabled,
+        rules_logic: x.rules_logic.clone().unwrap_or_else(|| "and".into()),
+        rules: x.rules.clone(),
+        actions: x.actions.clone(),
+        callbacks: x.callbacks.clone(),
+        action_error_status: x
+            .action_error_status
+            .map(|s| s.to_string())
+            .unwrap_or_default(),
+        content_type: x.content_type.clone().unwrap_or_default(),
+        delay: x.delay_ms.as_ref().map(|d| d.text()).unwrap_or_default(),
+        fault: x.fault.clone().filter(|f| f != "none").unwrap_or_default(),
+        fault_rate: x.fault_rate.map(|r| r.to_string()).unwrap_or_default(),
+        body: x.body.clone().unwrap_or_default(),
+        body_file: x.body_file.clone(),
+        schema: x.schema.clone(),
+        template: x.template.unwrap_or(true),
+        headers: x
+            .headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
+    }
+}
+
 impl Workspace {
     /// Build the view from a store snapshot. Servers never run before M3, so `running` is false.
     pub fn from_snapshot(snap: &fauxfield_store::Snapshot) -> Workspace {
@@ -463,37 +531,18 @@ impl Workspace {
                     format!("{} {}", r.method, r.path)
                 }
             }),
-            responses: r
-                .responses
+            responses: r.responses.iter().map(response_view).collect(),
+            crud_ops: r.crud_ops.clone(),
+            operations: m::CRUD_OPS
                 .iter()
-                .map(|x| Response {
-                    id: x.id.clone(),
-                    name: x.name.clone().unwrap_or_else(|| x.status.to_string()),
-                    description: x.description.clone().unwrap_or_default(),
-                    status: x.status,
-                    default: x.default,
-                    disabled: x.disabled,
-                    rules_logic: x.rules_logic.clone().unwrap_or_else(|| "and".into()),
-                    rules: x.rules.clone(),
-                    actions: x.actions.clone(),
-                    callbacks: x.callbacks.clone(),
-                    action_error_status: x
-                        .action_error_status
-                        .map(|s| s.to_string())
-                        .unwrap_or_default(),
-                    content_type: x.content_type.clone().unwrap_or_default(),
-                    delay: x.delay_ms.as_ref().map(|d| d.text()).unwrap_or_default(),
-                    fault: x.fault.clone().filter(|f| f != "none").unwrap_or_default(),
-                    fault_rate: x.fault_rate.map(|r| r.to_string()).unwrap_or_default(),
-                    body: x.body.clone().unwrap_or_default(),
-                    body_file: x.body_file.clone(),
-                    schema: x.schema.clone(),
-                    template: x.template.unwrap_or(true),
-                    headers: x
-                        .headers
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect(),
+                .filter_map(|op| {
+                    let o = r.operations.get(*op)?;
+                    (!o.responses.is_empty()).then(|| {
+                        (
+                            (*op).to_string(),
+                            o.responses.iter().map(response_view).collect(),
+                        )
+                    })
                 })
                 .collect(),
             headers: r

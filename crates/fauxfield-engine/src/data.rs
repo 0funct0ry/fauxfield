@@ -846,19 +846,41 @@ pub(crate) struct Call<'a> {
     pub ops: &'a [String],
 }
 
+/// Operation name of a request to a crud Route (`list`, `get`, ... ; empty for other methods).
+pub(crate) fn crud_op(method: &str, id: Option<&str>) -> &'static str {
+    match (method, id) {
+        ("GET" | "HEAD", None) => "list",
+        ("GET" | "HEAD", Some(_)) => "get",
+        ("POST", _) => "create",
+        ("PUT", _) => "update",
+        ("PATCH", _) => "patch",
+        ("DELETE", _) => "delete",
+        _ => "",
+    }
+}
+
+/// True when the built-in handler would reject this create/update body (bad JSON or schema),
+/// so operation Responses stay out of the way (SPEC 6.2.1: `validate` runs first).
+pub(crate) fn body_rejected(
+    method: &str,
+    schema: Option<&Arc<jsonschema::Validator>>,
+    body: &[u8],
+    path: &str,
+) -> bool {
+    if !matches!(method, "POST" | "PUT") {
+        return false;
+    }
+    match serde_json::from_slice::<Value>(body) {
+        Err(_) => schema.is_some(),
+        Ok(v) => validate(schema, &v, path).is_some(),
+    }
+}
+
 /// Serve one CRUD operation. Returns the response and whether the Dataset changed.
 pub(crate) fn handle(ds: &mut DatasetRt, c: &Call<'_>) -> (Out, bool) {
     let key = ds.def.key_name().to_string();
     if !c.ops.is_empty() {
-        let op = match (c.method, c.id) {
-            ("GET" | "HEAD", None) => "list",
-            ("GET" | "HEAD", Some(_)) => "get",
-            ("POST", _) => "create",
-            ("PUT", _) => "update",
-            ("PATCH", _) => "patch",
-            ("DELETE", _) => "delete",
-            _ => "",
-        };
+        let op = crud_op(c.method, c.id);
         if !op.is_empty() && !c.ops.iter().any(|o| o == op) {
             return (
                 problem(

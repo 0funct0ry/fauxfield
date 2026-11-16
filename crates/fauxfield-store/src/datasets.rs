@@ -390,7 +390,11 @@ impl Store {
             for (k, v) in &r.headers {
                 hit(format!("route {} header {k}", r.id), v);
             }
-            for resp in &r.responses {
+            for resp in r
+                .responses
+                .iter()
+                .chain(r.operations.values().flat_map(|o| o.responses.iter()))
+            {
                 for (i, a) in resp.actions.iter().enumerate() {
                     if a.dataset == name {
                         refs.actions.push(ActionRef {

@@ -194,6 +194,36 @@ Ops: `insert`, `update` (`mode = "merge"` or `"replace"`), `delete`, `delete_whe
 
 Rule targets `dataset` (`name.$.path`) and `dataset_count` (`name?field=value`) branch on Dataset data. A Dataset seeded with an object accepts `PUT` (replace) and `PATCH` (merge) on its CRUD path, and `update`/`set` actions.
 
+## Operation Responses and Rules on CRUD Routes
+
+A CRUD Route can answer a special case itself and leave everything else to the built-in handler. Select an operation row under the Route in the tree (only operations in `crud_ops` appear; the badge counts its Responses), choose **Add Response**, and use the Responses and Rules sub-tabs as on any Route. The editor says *Falls through to built-in create* when no Response matches.
+
+```toml
+[[routes]]
+id = "rte_users"
+kind = "crud"
+path = "/users"
+dataset = "users"
+  [[routes.operations.create.responses]]
+  id = "rsp_dup"
+  name = "Duplicate email"
+  status = 409
+  content_type = "application/problem+json"
+  body = '{"title":"Duplicate email"}'
+    [[routes.operations.create.responses.rules]]
+    target = "body"
+    key = "$.email"
+    op = "eq"
+    value = "taken@example.com"
+```
+
+- The first Response, in order, whose Rules pass is sent; if none passes, the generated handler runs. A Response without Rules never matches and there is no `default`.
+- Rules use every target in the Rules reference (`body`, `header`, `count`, `dataset`, `dataset_count`, …). `count` is per operation and restarts with Reset state.
+- A matching Response can carry Dataset actions, delay, fault, headers and Callbacks. Actions run before the body renders, so a Response can change rows and still send a custom body.
+- `validate` runs first: a create or update body the schema rejects gets the built-in 422. A higher-priority `http` Route still overrides an operation outright.
+- Traffic shows the Response name, or `crud:<op>` when the built-in handler answered. Palette: *Route: Add Operation Response*, *Route: Remove Operation Response*.
+- Not available per operation: a separate path, Dataset or `validate`, a default fallback Response, or sequential and random modes. Warnings: W073 (no Rules), W098 (`default` ignored); errors E116 (unknown operation) and E117 (operation not in `crud_ops`).
+
 ## Schema designer and table workflow
 
 **New Dataset…** (the Datasets tab `+` or the palette) opens the schema designer. Give the Dataset a name, pick the Server and a source (static seed file, seed template or generator), then design the columns: type, primary key, unique, required, default, generator and description. Starter templates (*id + name*, *Users*, *Products*) fill the grid. Problems show inline and the **Create dataset** button stays disabled until there are none. Creating a Dataset never adds a Route; tick *Also create CRUD Routes* or use **Create CRUD Routes…** later.

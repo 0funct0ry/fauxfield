@@ -294,9 +294,17 @@ impl Shell {
         let key = self.dataset_key(resp, &f.dataset);
         let text = read_template(&f, &key);
         let id = resp.to_string();
+        // Every generated read is JSON; without a Content-Type the body would go out as text.
+        let needs_type = self
+            .find_response(resp)
+            .is_some_and(|(_, _, r)| r.content_type.trim().is_empty());
         self.body_edit = None;
         self.store_op(cx, |s| {
-            s.set_str(&fauxfield_store::Target::Response(id), "body", Some(&text))
+            let t = fauxfield_store::Target::Response(id);
+            if needs_type {
+                s.set_str(&t, "content_type", Some("application/json"))?;
+            }
+            s.set_str(&t, "body", Some(&text))
         });
         self.body_editors.remove(resp);
         cx.notify();

@@ -64,6 +64,8 @@ actions!(
         NewCrudResource,
         EditDatasetSchema,
         CopyCrudOpCurl,
+        AddOperationResponse,
+        RemoveOperationResponse,
         ApplyDatasetJson,
         RevertDatasetJson,
         ToggleDatasetJsonFormat,
@@ -469,6 +471,16 @@ pub static ACTIONS: &[ActionInfo] = &[
     row!("trust_dev_ca", "HTTPS: Trust Dev CA…", TrustDevCa),
     row!("new_folder", "Folder: New…", NewFolder),
     row!("new_response", "Response: New", NewResponse),
+    row!(
+        "add_operation_response",
+        "Route: Add Operation Response",
+        AddOperationResponse
+    ),
+    row!(
+        "remove_operation_response",
+        "Route: Remove Operation Response",
+        RemoveOperationResponse
+    ),
     row!("rename", "Edit: Rename…", Rename),
     row!("delete", "Edit: Delete", Delete),
     row!("undo", "Edit: Undo", Undo),

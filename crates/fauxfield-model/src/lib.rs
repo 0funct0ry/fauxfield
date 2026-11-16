@@ -17,10 +17,10 @@ pub use id::new_id;
 pub use types::{
     ACTION_OPS, CALLBACK_MAX_RETRIES, CALLBACK_METHODS, COLUMN_TYPES, CRUD_OPS, Callback, Cors,
     Dataset, DatasetAction, DatasetColumn, Delay, DocsSite, Environment, FAULTS, Folder,
-    ID_STRATEGIES, Manifest, Network, PROXY_MODES, PROXY_TIMEOUT_MS, Proxy, ROUTE_KINDS, RateLimit,
-    Response, Route, RouteOpenapi, Rule, SCHEMA_VERSION, Server, TLS_MODES, Tls, WS_FORMATS,
-    WS_MODES, WS_TRIGGERS, WsMessage, parse_delay, parse_duration_ms, parse_environment,
-    parse_manifest, parse_server, parse_window, valid_rate_key,
+    ID_STRATEGIES, Manifest, Network, Operation, PROXY_MODES, PROXY_TIMEOUT_MS, Proxy, ROUTE_KINDS,
+    RateLimit, Response, Route, RouteOpenapi, Rule, SCHEMA_VERSION, Server, TLS_MODES, Tls,
+    WS_FORMATS, WS_MODES, WS_TRIGGERS, WsMessage, parse_delay, parse_duration_ms,
+    parse_environment, parse_manifest, parse_server, parse_window, valid_rate_key,
 };
 pub use validate::{validate_action, validate_environment_names, validate_servers};
 

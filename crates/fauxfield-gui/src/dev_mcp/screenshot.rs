@@ -126,6 +126,7 @@ fixtures!(
     "route-callbacks",
     "network-profile-open",
     "api-docs",
+    "crud-operation-rules",
 );
 
 pub fn named_steps(name: &str) -> Result<Vec<Step>, String> {

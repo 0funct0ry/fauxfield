@@ -361,6 +361,7 @@ No arguments.
 | `method` | no |  |
 | `name` | no |  |
 | `openapi` | no | API documentation overrides (`[routes.openapi]`); only the given keys change. |
+| `operations` | no | `crud` Routes: Responses per operation (`list`, `get`, `create`, `update`, `patch`, `delete`), tried in order; the first whose Rules pass answers, otherwise the built-in handler runs. A Response with an existing `id` is updated; others are added. |
 | `path` | no |  |
 | `pinned` | no | Keep this Route mocked when the proxy is in `passthrough` mode. |
 | `priority` | no | Higher wins; 0 is the default and is not written. |

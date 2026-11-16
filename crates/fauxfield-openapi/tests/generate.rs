@@ -213,3 +213,96 @@ fn thousand_routes_generate_quickly() {
         start.elapsed()
     );
 }
+
+#[test]
+fn column_defaults_do_not_become_filter_defaults() {
+    let s = parse_server(
+        r#"
+id = "srv_p"
+name = "P"
+port = 1
+[[datasets]]
+name = "products"
+[[datasets.columns]]
+name = "id"
+type = "int"
+[[datasets.columns]]
+name = "price"
+type = "float"
+default = 0
+[[datasets.columns]]
+name = "in_stock"
+type = "bool"
+default = true
+[[routes]]
+id = "rte_p"
+kind = "crud"
+path = "/products"
+dataset = "products"
+"#,
+    )
+    .unwrap();
+    let snap = ServerSnapshot {
+        server: &s,
+        root: None,
+        seeds: BTreeMap::new(),
+    };
+    let v = generate(&snap, &Options::default()).value;
+    let params = v["paths"]["/products"]["get"]["parameters"]
+        .as_array()
+        .unwrap();
+    for name in ["price", "in_stock"] {
+        let p = params.iter().find(|p| p["name"] == name).expect(name);
+        assert!(p["schema"].get("default").is_none(), "{p}");
+    }
+    // The item schema still documents the defaults.
+    let item = &v["components"]["schemas"]["Products"]["properties"];
+    assert!(item.get("price").is_some(), "{item}");
+}
+
+#[test]
+fn operation_examples_render_templates_or_are_left_out() {
+    let s = parse_server(
+        r#"
+id = "srv_p"
+name = "P"
+port = 1
+[[datasets]]
+name = "products"
+[[routes]]
+id = "rte_p"
+kind = "crud"
+path = "/products"
+dataset = "products"
+[[routes.operations.list.responses]]
+id = "rsp_t"
+name = "Template"
+body = '{"total": {{ 1 + 1 }}}'
+[[routes.operations.list.responses]]
+id = "rsp_s"
+name = "Static"
+body = '{"ok": true}'
+"#,
+    )
+    .unwrap();
+    let snap = ServerSnapshot {
+        server: &s,
+        root: None,
+        seeds: BTreeMap::new(),
+    };
+    // Without a renderer the Tera body is left out; the static one stays.
+    let v = generate(&snap, &Options::default()).value;
+    let ex = &v["paths"]["/products"]["get"]["responses"]["200"]["content"]["application/json"]["examples"];
+    assert!(ex.get("Template").is_none(), "{ex}");
+    assert_eq!(ex["Static"]["value"]["ok"], true);
+    // With one, it is rendered.
+    fn render(t: &str) -> Result<String, String> {
+        Ok(t.replace("{{ 1 + 1 }}", "2"))
+    }
+    let opts = Options {
+        renderer: Some(&render),
+    };
+    let v = generate(&snap, &opts).value;
+    let ex = &v["paths"]["/products"]["get"]["responses"]["200"]["content"]["application/json"]["examples"];
+    assert_eq!(ex["Template"]["value"]["total"], 2, "{ex}");
+}

@@ -219,11 +219,24 @@ pub struct RouteState {
     pub openapi_hidden: bool,
     pub sub_tab: usize,
     pub selected_response: usize,
+    /// crud Routes (M17.1): the operation the editor is scoped to (then `responses`, `sub_tab`
+    /// and `selected_response` describe that operation), and every served operation.
+    pub operation: Option<String>,
+    pub operations: Vec<OperationState>,
+    /// Scoped operation only: what answers when no Response matches.
+    pub falls_through: Option<String>,
     /// Route headers in file order (M6).
     pub headers: Vec<(String, String)>,
     pub responses: Vec<ResponseState>,
     /// Preview of the selected Response (M6); absent until it has rendered.
     pub preview: Option<PreviewState>,
+}
+
+/// One served operation of a crud Route and its Response count (M17.1).
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct OperationState {
+    pub name: String,
+    pub responses: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -675,6 +688,8 @@ pub struct LastRequest {
     pub upstream: Option<String>,
     /// The Response that answered, and why (M5 rule trace).
     pub response_id: String,
+    /// The Response name, or `crud:<op>` when the built-in CRUD handler answered (M17.1).
+    pub response_name: String,
     pub selection_reason: String,
 }
 
@@ -949,6 +964,11 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
                         .rec
                         .as_ref()
                         .map(|x| x.response_id.clone())
+                        .unwrap_or_default(),
+                    response_name: r
+                        .rec
+                        .as_ref()
+                        .map(|x| x.response_name.clone())
                         .unwrap_or_default(),
                     selection_reason: r
                         .rec
@@ -1294,7 +1314,34 @@ impl Tracker {
 fn route_state(shell: &Shell) -> Option<RouteState> {
     let id = shell.current_route_id()?;
     let (_, r) = shell.ws.find_route(&id)?;
+    let scope = r
+        .is_crud()
+        .then(|| {
+            shell
+                .crud_op_sel
+                .get(&r.id)
+                .filter(|op| r.serves(op))
+                .cloned()
+        })
+        .flatten();
+    let scoped = scope.as_deref().map(|op| r.scoped(op));
+    let key = scoped.as_ref().map_or(r.id.clone(), |x| x.id.clone());
+    let list_route = scoped.as_ref().unwrap_or(r);
     Some(RouteState {
+        operation: scope.clone(),
+        falls_through: scope.as_ref().map(|op| format!("built-in {op}")),
+        operations: if r.is_crud() {
+            crate::tree::CRUD_OP_NAMES
+                .iter()
+                .filter(|op| r.serves(op))
+                .map(|op| OperationState {
+                    name: (*op).to_string(),
+                    responses: r.op_responses(op).len(),
+                })
+                .collect()
+        } else {
+            vec![]
+        },
         id: r.id.clone(),
         response_mode: r.response_mode.clone(),
         forward: r.forward,
@@ -1324,8 +1371,8 @@ fn route_state(shell: &Shell) -> Option<RouteState> {
                 dir_filter: ["all", "in", "out"][usize::from(shell.ws_dir).min(2)].to_string(),
             }
         }),
-        sub_tab: shell.route_sub.get(&r.id).copied().unwrap_or(0),
-        selected_response: shell.resp_sel.get(&r.id).copied().unwrap_or(0),
+        sub_tab: shell.route_sub.get(&key).copied().unwrap_or(0),
+        selected_response: shell.resp_sel.get(&key).copied().unwrap_or(0),
         headers: r.headers.clone(),
         preview: shell.preview.as_ref().map(|(id, p)| PreviewState {
             response_id: id.clone(),
@@ -1337,7 +1384,7 @@ fn route_state(shell: &Shell) -> Option<RouteState> {
             nondeterministic: p.nondeterministic,
             body_len: p.body.len(),
         }),
-        responses: r
+        responses: list_route
             .responses
             .iter()
             .map(|x| ResponseState {

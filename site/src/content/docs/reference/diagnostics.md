@@ -79,6 +79,8 @@ Errors (E) stop a Server or Route from working; warnings (W) point at something 
 | `E113` | error | Use a path like `/__docs`: starts with `/`, no trailing slash, and no `:`, `*` or `{`. |
 | `E114` | error | Use a unique operation_id without spaces, and an openapi.path that starts with `/`. |
 | `E115` | error | Point the schema at a workspace file containing a valid JSON Schema. |
+| `E116` | error | Use only list, get, create, update, patch and delete as operation names. |
+| `E117` | error | Add the operation to `crud_ops`, or remove its Responses. |
 | `W042` | warning | Create the file, fix the path, or remove `body_file`; the Response sends an empty body meanwhile. |
 | `W043` | warning | Keep one default Response; clear `default` on the others. |
 | `W044` | warning | Enable the default Response, or choose another default. |
@@ -86,9 +88,10 @@ Errors (E) stop a Server or Route from working; warnings (W) point at something 
 | `W051` | warning | Move the Route above the one that shadows it, or make its path more specific. |
 | `W052` | warning | Switch `match` to `pattern`, or ignore this if the path really contains braces. |
 | `W060` | warning | Set `bandwidth_kbps` on the Server or a Network profile, or pick another fault. |
-| `W070` | warning | Remove the Responses, or change the Route `kind` to `mock`. |
+| `W070` | warning | Remove the Responses, change the Route `kind` to `http`, or on a crud Route move them under an operation. |
 | `W071` | warning | Create the seed file, or fix its path; the Dataset starts empty until then. |
 | `W072` | warning | Be aware that the action changes the Dataset file on disk. |
+| `W073` | warning | Add a Rule to the Response, or delete it; a Response without Rules is never chosen. |
 | `W090` | warning | List the allowed origins in CORS settings, or turn CORS off. |
 | `W091` | warning | Turn off accepting invalid certificates before using the proxy with real services. |
 | `W092` | warning | Set the Route to an http Route, or remove `proxy` and `pinned`. |
@@ -97,3 +100,4 @@ Errors (E) stop a Server or Route from working; warnings (W) point at something 
 | `W095` | warning | Bind the Server to 127.0.0.1, or turn off API documentation; anyone on the network can read it. |
 | `W096` | warning | Move the Route away from the docs path, or change `docs_site.path`. |
 | `W097` | warning | Give the Route an `openapi.path`, or set `openapi.hidden = true` to silence this. |
+| `W098` | warning | Remove `default` from the Response; an operation falls through to the built-in handler instead. |

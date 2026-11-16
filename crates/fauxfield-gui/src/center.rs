@@ -1011,24 +1011,26 @@ impl Shell {
                 "New response",
                 Press(format!("resp-add:{}", r.id))
             ))
-            .child(crate::dev_id!(
-                btn("resp-add-preset", "+ Add error preset…").on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, ev: &gpui::MouseDownEvent, _, cx| {
-                        this.open_picker_menu(
-                            &preset_id,
-                            crate::tree::RowKind::ErrorPresets,
-                            f32::from(ev.position.x),
-                            f32::from(ev.position.y) - 300.,
-                            cx,
-                        );
-                    })
-                ),
-                "resp-add-preset",
-                Button,
-                "Add error preset",
-                Press(format!("resp-add-preset:{}", r.id))
-            ))
+            .when(!r.id.contains('#'), |d| {
+                d.child(crate::dev_id!(
+                    btn("resp-add-preset", "+ Add error preset…").on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, ev: &gpui::MouseDownEvent, _, cx| {
+                            this.open_picker_menu(
+                                &preset_id,
+                                crate::tree::RowKind::ErrorPresets,
+                                f32::from(ev.position.x),
+                                f32::from(ev.position.y) - 300.,
+                                cx,
+                            );
+                        })
+                    ),
+                    "resp-add-preset",
+                    Button,
+                    "Add error preset",
+                    Press(format!("resp-add-preset:{}", r.id))
+                ))
+            })
             .into_any_element()
     }
 
@@ -1288,10 +1290,20 @@ impl Shell {
         s: &Server,
         r: &Route,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    ) -> AnyElement {
         let key = r.dataset.as_ref().map(|d| format!("{}:{d}", s.id));
         let base = r.path.trim_end_matches('/').to_string();
         let prefix = s.prefix.clone();
+        if let Some(op) = self
+            .crud_op_sel
+            .get(&r.id)
+            .filter(|op| r.serves(op))
+            .cloned()
+        {
+            return self
+                .render_crud_operation_tab(t, s, r, &op, cx)
+                .into_any_element();
+        }
         div()
             .id(crate::ui::eid(format!("route-tab-{}", r.id)))
             .size_full()
@@ -1368,9 +1380,147 @@ impl Shell {
                     )
                     .child(div().text_color(t.text_muted).child(
                         "List supports _page, _limit, _sort, _order, q and field filters (age_gte, age_lte, role_ne, name_like). \
-                         An http route with a higher priority overrides one operation.",
+                         An http route with a higher priority overrides one operation. Select an operation \
+                         in the tree to add Responses and Rules to it.",
                     )),
             )
+            .into_any_element()
+    }
+
+    /// A crud Route scoped to one operation (M17.1): its Responses and Rules, and the line that
+    /// says what answers when none matches.
+    fn render_crud_operation_tab(
+        &self,
+        t: &Theme,
+        s: &Server,
+        r: &Route,
+        op: &str,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let scoped = r.scoped(op);
+        let sub = self.route_sub.get(&scoped.id).copied().unwrap_or(0).min(1);
+        let n = crate::tree::CRUD_OP_NAMES
+            .iter()
+            .position(|x| *x == op)
+            .unwrap_or(0);
+        let (method, suffix) = crate::tree::CRUD_OPS[n];
+        let url = format!("{}{}{}", s.prefix, r.path.trim_end_matches('/'), suffix);
+        let scoped_id = scoped.id.clone();
+        let route_id = r.id.clone();
+        let _op_name = op.to_string();
+        div()
+            .id(crate::ui::eid(format!("route-tab-{}", r.id)))
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .h(px(40.))
+                    .flex_none()
+                    .px(px(12.))
+                    .flex()
+                    .items_center()
+                    .gap(px(10.))
+                    .border_b_1()
+                    .border_color(t.border_variant)
+                    .child(crate::ui::method_badge(t, method))
+                    .child(div().text_size(px(14.)).child(url))
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(t.text_muted)
+                            .child(format!("CRUD {op} operation")),
+                    )
+                    .child(div().flex_1())
+                    .child(crate::dev_id!(
+                        toolbar_button(t, "crud-op-back")
+                            .child("All operations")
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.crud_op_sel.remove(&route_id);
+                                cx.notify();
+                            })),
+                        "crud-op-back",
+                        Button,
+                        "All operations",
+                        None
+                    ))
+                    .child(crate::dev_id!(
+                        toolbar_button(t, "crud-op-add")
+                            .child("Add Response")
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.new_response_for(&scoped_id, cx)
+                            })),
+                        "crud-op-add",
+                        Button,
+                        "Add Response",
+                        Press(format!(
+                            "resp-add:{}",
+                            crate::view::scoped_id(&r.id, &_op_name)
+                        ))
+                    )),
+            )
+            .child(crate::dev_id!(
+                div()
+                    .id("crud-op-fallthrough")
+                    .flex_none()
+                    .px(px(12.))
+                    .py(px(6.))
+                    .text_size(px(12.))
+                    .text_color(t.text_muted)
+                    .border_b_1()
+                    .border_color(t.border_variant)
+                    .child(format!(
+                        "Falls through to built-in {op} when no Response matches. A Response needs \
+                         a Rule to be chosen."
+                    )),
+                "crud-op-fallthrough",
+                Text,
+                format!("Falls through to built-in {op}"),
+                None
+            ))
+            .child(
+                div()
+                    .h(px(30.))
+                    .flex_none()
+                    .px(px(8.))
+                    .flex()
+                    .flex_row()
+                    .items_end()
+                    .gap(px(2.))
+                    .border_b_1()
+                    .border_color(t.border_variant)
+                    .children(ROUTE_SUBTABS.iter().take(2).enumerate().map(|(i, name)| {
+                        let rid = scoped.id.clone();
+                        let active = i == sub;
+                        crate::dev_id!(
+                            div()
+                                .id(crate::ui::eid(format!("subtab-{name}")))
+                                .px(px(10.))
+                                .h(px(28.))
+                                .flex()
+                                .items_center()
+                                .cursor_pointer()
+                                .text_size(px(12.))
+                                .border_b_2()
+                                .border_color(if active { t.accent } else { t.editor })
+                                .text_color(if active { t.text } else { t.text_muted })
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.route_sub.insert(rid.clone(), i);
+                                    cx.notify();
+                                }))
+                                .child(*name),
+                            format!("subtab-{}-{name}", scoped.id),
+                            Tab,
+                            *name,
+                            SubTab(scoped.id.clone(), i)
+                        )
+                    })),
+            )
+            .child(div().flex_1().min_h_0().child(if sub == 0 {
+                self.render_responses(t, &scoped, cx).into_any_element()
+            } else {
+                self.render_rules(t, &scoped, cx)
+            }))
     }
 
     fn server_general(&self, t: &Theme, s: &Server, cx: &mut Context<Self>) -> impl IntoElement {

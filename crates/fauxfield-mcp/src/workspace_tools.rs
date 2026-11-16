@@ -315,6 +315,10 @@ struct UpsertRoute {
     /// API documentation overrides (`[routes.openapi]`); only the given keys change.
     openapi: Option<RouteOpenapiSpec>,
     responses: Option<Vec<ResponseSpec>>,
+    /// `crud` Routes: Responses per operation (`list`, `get`, `create`, `update`, `patch`,
+    /// `delete`), tried in order; the first whose Rules pass answers, otherwise the built-in
+    /// handler runs. A Response with an existing `id` is updated; others are added.
+    operations: Option<std::collections::BTreeMap<String, Vec<ResponseSpec>>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -494,7 +498,11 @@ fn apply_response(store: &Store, id: &str, r: &ResponseSpec) -> Result<(), Strin
             .servers
             .iter()
             .flat_map(|(_, s)| s.routes.iter())
-            .flat_map(|r| r.responses.iter())
+            .flat_map(|r| {
+                r.responses
+                    .iter()
+                    .chain(r.operations.values().flat_map(|o| o.responses.iter()))
+            })
             .find(|x| x.id == id)
             .map_or(0, |x| x.rules.len());
         for _ in 0..have {
@@ -515,7 +523,11 @@ fn apply_response(store: &Store, id: &str, r: &ResponseSpec) -> Result<(), Strin
             .servers
             .iter()
             .flat_map(|(_, s)| s.routes.iter())
-            .flat_map(|r| r.responses.iter())
+            .flat_map(|r| {
+                r.responses
+                    .iter()
+                    .chain(r.operations.values().flat_map(|o| o.responses.iter()))
+            })
             .find(|x| x.id == id)
             .map_or(0, |x| x.callbacks.len());
         for _ in 0..have {
@@ -1079,7 +1091,7 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                 if a.server.as_ref().is_some_and(|q| *q != srv.id && *q != srv.name && *q != slug(f)) {
                     continue;
                 }
-                rows.extend(srv.routes.iter().map(|r| json!({ "id": r.id, "server": srv.id, "folder": r.folder, "kind": r.kind, "method": r.method, "path": r.path, "name": r.name, "responses": r.responses.len(), "match": r.match_mode, "priority": r.priority.unwrap_or(0), "shadowed_by": shadowed_by(srv, &r.id) })));
+                rows.extend(srv.routes.iter().map(|r| json!({ "id": r.id, "server": srv.id, "folder": r.folder, "kind": r.kind, "method": r.method, "path": r.path, "name": r.name, "responses": r.responses.len() + r.operations.values().map(|o| o.responses.len()).sum::<usize>(), "match": r.match_mode, "priority": r.priority.unwrap_or(0), "shadowed_by": shadowed_by(srv, &r.id) })));
             }
             json!({ "routes": rows })
         });
@@ -1206,6 +1218,15 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                         (None, None) => s.create_response(&rid).map_err(e)?,
                     };
                     apply_response(&s, &id, spec)?;
+                }
+                for (op, specs) in a.operations.iter().flatten() {
+                    for spec in specs {
+                        let id = match &spec.id {
+                            Some(id) => id.clone(),
+                            None => s.create_operation_response(&rid, op).map_err(e)?,
+                        };
+                        apply_response(&s, &id, spec)?;
+                    }
                 }
                 s.flush().map_err(e)?;
                 let (srv, r) = find_route(&s, &rid)?;
