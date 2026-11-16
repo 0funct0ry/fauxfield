@@ -59,7 +59,9 @@ jobs:
             security set-key-partition-list -S apple-tool:,apple: -s -k ci ci.keychain
             codesign --force --options runtime --timestamp --sign "$MACOS_SIGN_IDENTITY" stage/Fauxfield.app
           else
-            echo "::warning::no signing certificate configured; the dmg is NOT signed or notarised"
+            # Ad-hoc sign: lipo invalidates the per-arch signatures and Apple Silicon needs a valid one.
+            codesign --force --deep --sign - stage/Fauxfield.app
+            echo "::warning::no signing certificate configured; the dmg is ad-hoc signed only (not notarised)"
           fi
           ln -s /Applications stage/Applications
           hdiutil create -volname Fauxfield -srcfolder stage -ov -format UDZO "Fauxfield-$ver-macos-universal.dmg"
