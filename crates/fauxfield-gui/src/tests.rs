@@ -1010,7 +1010,7 @@ fn help_items_open_exact_urls_through_the_seam(cx: &mut TestAppContext) {
     assert_eq!(
         *rec.0.borrow(),
         vec![
-            format!("{repo}#readme"),
+            "https://0funct0ry.github.io/fauxfield/docs/".to_string(),
             format!("{repo}/blob/main/CHANGELOG.md"),
             format!("{repo}/issues/new"),
         ]

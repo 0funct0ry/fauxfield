@@ -23,9 +23,10 @@ pub fn menu_style() -> MenuStyle {
 /// Every URL the Help menu and the About box open, in one place.
 pub mod links {
     pub const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
-    /// TODO(M18): point at the published docs site.
+    /// The published documentation site (GitHub Pages, deployed by `.github/workflows/site.yml`).
+    pub const DOCUMENTATION: &str = "https://0funct0ry.github.io/fauxfield/docs/";
     pub fn documentation() -> String {
-        format!("{REPOSITORY}#readme")
+        DOCUMENTATION.to_string()
     }
     /// TODO(M19): point at the releases page.
     pub fn release_notes() -> String {
@@ -1362,7 +1363,10 @@ mod tests {
     fn help_links_are_exact() {
         let repo = "https://github.com/0funct0ry/fauxfield";
         assert_eq!(links::REPOSITORY, repo);
-        assert_eq!(links::documentation(), format!("{repo}#readme"));
+        assert_eq!(
+            links::documentation(),
+            "https://0funct0ry.github.io/fauxfield/docs/"
+        );
         assert_eq!(
             links::release_notes(),
             format!("{repo}/blob/main/CHANGELOG.md")

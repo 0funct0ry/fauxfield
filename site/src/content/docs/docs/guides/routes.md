@@ -113,7 +113,7 @@ Set `fake_seed = 42` on the Server for identical output across runs (the RNG der
 the Route ID and the call number); without it the output is random and the tree shows a dice icon.
 A Route header is added to every Response; a Response header of the same name wins. Syntax errors are
 underlined in the editor, a preview renders against the Route's own request, and a failing template returns
-500 with the error in Traffic. See [Template functions and fake kinds](/reference/template-functions/).
+500 with the error in Traffic. See [Template functions and fake kinds](/docs/reference/template-functions/).
 
 ```bash
 fauxfield render users-api <route-id> --seed 42 --json

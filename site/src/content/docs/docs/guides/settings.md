@@ -19,4 +19,4 @@ Writes go through `toml_edit`, so your comments, key order and unknown keys surv
 
 Theme, fonts, scale and motion apply instantly. `[mcp]` and `[traffic]` rows are read when a session starts and say so. `ui_scale`, `reduce_motion` and `high_contrast` are stored here; their effect arrives with the accessibility work. Telemetry is shown disabled: there is none.
 
-Every key is listed in the [settings reference](/reference/settings/), and a [JSON Schema](/schema/v1/settings.json) is published for editor completion.
+Every key is listed in the [settings reference](/docs/reference/settings/), and a [JSON Schema](/schema/v1/settings.json) is published for editor completion.

@@ -2,7 +2,8 @@
 
 use std::path::Path;
 
-const TEMPLATE_DOC: &str = "site/src/content/docs/reference/template-functions.md";
+const TEMPLATE_DOC: &str = "site/src/content/docs/docs/reference/template-functions.md";
+const SERVER_DOC: &str = "site/src/content/docs/docs/reference/server-file.md";
 const SERVER_SCHEMA: &str = "site/public/schema/v1/server.json";
 
 /// One generated file: the xtask command, its path and its current text.
@@ -17,6 +18,11 @@ const GENERATED: &[Gen] = &[
         cmd: "schema",
         path: SERVER_SCHEMA,
         text: || serde_json::to_string_pretty(&fauxfield_model::server_schema()).unwrap() + "\n",
+    },
+    Gen {
+        cmd: "server-docs",
+        path: SERVER_DOC,
+        text: server_docs,
     },
     Gen {
         cmd: "template-docs",
@@ -115,15 +121,15 @@ fn main() {
         }
         _ => {
             eprintln!(
-                "usage: cargo xtask schema|settings-schema|settings-docs|keybindings-docs|template-docs|generator-docs|mcp-tools-docs|cli-docs [--check] | check | all | perf-workspace [DIR]"
+                "usage: cargo xtask schema|server-docs|settings-schema|settings-docs|keybindings-docs|template-docs|generator-docs|mcp-tools-docs|cli-docs [--check] | check | all | perf-workspace [DIR]"
             );
             std::process::exit(2);
         }
     }
 }
 
-const MCP_DOC: &str = "site/src/content/docs/reference/mcp-tools.md";
-const CLI_DOC: &str = "site/src/content/docs/reference/cli.md";
+const MCP_DOC: &str = "site/src/content/docs/docs/reference/mcp-tools.md";
+const CLI_DOC: &str = "site/src/content/docs/docs/reference/cli.md";
 
 /// The CLI reference comes from the binary's own clap tree (`fauxfield docs-cli`).
 fn cli_docs() -> String {
@@ -249,7 +255,7 @@ fn mcp_tools_docs() -> String {
     o
 }
 
-const GENERATOR_DOC: &str = "site/src/content/docs/reference/seed-generators.md";
+const GENERATOR_DOC: &str = "site/src/content/docs/docs/reference/seed-generators.md";
 
 fn generator_docs() -> String {
     let mut o = String::from(
@@ -286,10 +292,10 @@ fn template_docs() -> String {
 }
 
 const SETTINGS_SCHEMA: &str = "site/public/schema/v1/settings.json";
-const SETTINGS_DOC: &str = "site/src/content/docs/reference/settings.md";
-const KEYBINDINGS_DOC: &str = "site/src/content/docs/reference/keybindings.md";
-const DIAGNOSTICS_DOC: &str = "site/src/content/docs/reference/diagnostics.md";
-const ACTION_NAMES_DOC: &str = "site/src/content/docs/reference/action-names.md";
+const SETTINGS_DOC: &str = "site/src/content/docs/docs/reference/settings.md";
+const KEYBINDINGS_DOC: &str = "site/src/content/docs/docs/reference/keybindings.md";
+const DIAGNOSTICS_DOC: &str = "site/src/content/docs/docs/reference/diagnostics.md";
+const ACTION_NAMES_DOC: &str = "site/src/content/docs/docs/reference/action-names.md";
 
 fn kind_json(k: fauxfield_store::settings::SettingKind) -> serde_json::Value {
     use fauxfield_store::settings::SettingKind as K;
@@ -502,4 +508,150 @@ fn perf_workspace(dir: &Path) {
         }
         std::fs::write(servers.join(format!("{s:02}-perf-{s:02}.toml")), t).unwrap();
     }
+}
+
+/// One-line type of a JSON Schema fragment.
+fn schema_type(v: &serde_json::Value) -> String {
+    if let Some(r) = v.get("$ref").and_then(|r| r.as_str()) {
+        let n = r.rsplit('/').next().unwrap_or(r);
+        return format!("[`{n}`](#{})", n.to_lowercase());
+    }
+    for k in ["anyOf", "oneOf"] {
+        if let Some(a) = v.get(k).and_then(|a| a.as_array()) {
+            let parts: Vec<String> = a
+                .iter()
+                .map(schema_type)
+                .filter(|t| t != "`null`")
+                .collect();
+            return parts.join(" or ");
+        }
+    }
+    if let Some(e) = v.get("enum").and_then(|e| e.as_array()) {
+        let o: Vec<String> = e
+            .iter()
+            .map(|x| format!("`{}`", x.as_str().unwrap_or(&x.to_string())))
+            .collect();
+        return o.join(", ");
+    }
+    match v.get("type") {
+        Some(serde_json::Value::String(t)) if t == "array" => {
+            format!(
+                "array of {}",
+                v.get("items")
+                    .map(schema_type)
+                    .unwrap_or_else(|| "any".into())
+            )
+        }
+        Some(serde_json::Value::String(t)) if t == "object" => {
+            match v.get("additionalProperties") {
+                Some(a) if a.is_object() => format!("map of {}", schema_type(a)),
+                _ => "table".into(),
+            }
+        }
+        Some(serde_json::Value::String(t)) => format!("`{t}`"),
+        Some(serde_json::Value::Array(ts)) => ts
+            .iter()
+            .filter_map(|t| t.as_str())
+            .filter(|t| *t != "null")
+            .map(|t| format!("`{t}`"))
+            .collect::<Vec<_>>()
+            .join(" or "),
+        _ => "any".into(),
+    }
+}
+
+fn schema_table(o: &mut String, obj: &serde_json::Value) {
+    let Some(props) = obj.get("properties").and_then(|p| p.as_object()) else {
+        o.push_str("No keys.\n\n");
+        return;
+    };
+    let required: Vec<&str> = obj
+        .get("required")
+        .and_then(|r| r.as_array())
+        .map(|r| r.iter().filter_map(|x| x.as_str()).collect())
+        .unwrap_or_default();
+    o.push_str("| Key | Type | Default | Description |\n|---|---|---|---|\n");
+    for (k, v) in props {
+        let def = match v.get("default") {
+            Some(d) if !d.is_null() => format!("`{d}`"),
+            _ if required.contains(&k.as_str()) => "required".into(),
+            _ => String::new(),
+        };
+        let desc = v
+            .get("description")
+            .and_then(|d| d.as_str())
+            .unwrap_or("")
+            .replace('|', "\\|")
+            .replace('\n', " ");
+        let desc = strip_spec_refs(&desc);
+        o.push_str(&format!(
+            "| `{k}` | {} | {def} | {desc} |\n",
+            schema_type(v)
+        ));
+    }
+    o.push('\n');
+}
+
+/// The server-file reference comes from the model's JSON Schema, so it cannot drift.
+fn server_docs() -> String {
+    let schema = fauxfield_model::server_schema();
+    let mut o = String::from(
+        "---\ntitle: Server file reference\ndescription: Every key of a Server TOML file in servers/, generated from the JSON Schema.\n---\n\n<!-- Generated by `cargo xtask server-docs`; do not edit. -->\n\nOne Server per file in `servers/`. Point your editor at [`schema/v1/server.json`](/schema/v1/server.json) for completion and validation. Unknown keys are kept when Fauxfield saves the file.\n\n## Server\n\n",
+    );
+    schema_table(&mut o, &schema);
+    if let Some(defs) = schema.get("$defs").and_then(|d| d.as_object()) {
+        for (name, def) in defs {
+            o.push_str(&format!("## {name}\n\n"));
+            if let Some(d) = def.get("description").and_then(|d| d.as_str()) {
+                o.push_str(&format!("{}\n\n", strip_spec_refs(d)));
+            }
+            schema_table(&mut o, def);
+        }
+    }
+    o
+}
+
+/// Drop internal `(SPEC §x.y, M17)` pointers and milestone tags from schema descriptions.
+fn strip_spec_refs(s: &str) -> String {
+    let mut out = String::new();
+    let mut rest = s;
+    while let Some(i) = rest.find("SPEC §") {
+        // Back up over a leading "(" or ", " that introduced the pointer.
+        let head = &rest[..i];
+        let (head, opened) = match head.strip_suffix('(') {
+            Some(h) => (h, true),
+            None => (head.strip_suffix(", ").unwrap_or(head), false),
+        };
+        out.push_str(head.trim_end());
+        let tail = &rest[i..];
+        let end = tail.find([')', ':']).unwrap_or(tail.len());
+        let closes = tail[end..].starts_with(')');
+        rest = &tail[end + usize::from(closes)..];
+        if !opened && !closes {
+            // ", SPEC §x: more": keep what follows the colon.
+            rest = rest.strip_prefix(':').unwrap_or(rest);
+        }
+        if closes && !opened {
+            out.push(')');
+        }
+    }
+    out.push_str(rest);
+    // Milestone tags such as " (M11)" or " (M17.06)".
+    while let Some(i) = out.find(" (M") {
+        match out[i..].find(')') {
+            Some(j)
+                if out[i + 3..i + j]
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || c == '.') =>
+            {
+                out.replace_range(i..i + j + 1, "")
+            }
+            _ => break,
+        }
+    }
+    out.replace(" .", ".")
+        .replace(" ,", ",")
+        .replace("  ", " ")
+        .trim()
+        .to_string()
 }

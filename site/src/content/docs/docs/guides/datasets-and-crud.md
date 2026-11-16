@@ -96,7 +96,7 @@ dataset = "teams"      # key of a row of another Dataset in the same Server
 Set `fake_seed` on the Server to get identical rows on every start. A `ref` makes the referenced
 Dataset load first; a cycle is diagnostic E077, and a bad option is E076 with the field path.
 Editing a generator block or a seed file reloads only that Dataset. The Dataset tab previews the first
-rows. See the [generator reference](/reference/seed-generators/).
+rows. See the [generator reference](/docs/reference/seed-generators/).
 
 ```bash
 fauxfield data generate example-api users --rows 10 --seed 42       # print

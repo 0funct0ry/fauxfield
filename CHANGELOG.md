@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- Marketing site and documentation (M18): `site/` is now an Astro + Starlight project. The marketing page at `/` (hero with a live templated response, the Workspace-as-files section, features, agents, a comparison table that includes the rows Fauxfield loses, install tabs) and the docs at `/docs/` (Getting started, Guides, Reference, Recipes, Changelog) use One Light / One Dark tokens and self-hosted IBM Plex, with Pagefind search, per-page Open Graph images, and download links and a version label read from the latest release at build time. New pages: install, first mock, Workspace layout, Templating, CI usage and two Recipes. New generated page `reference/server-file.md` (`cargo xtask server-docs`, from the model's JSON Schema); every reference page is now generated and checked by `cargo xtask check`. `make site`, `make site-dev` and `make site-check`; `.github/workflows/site.yml` builds on pull requests and deploys to GitHub Pages from `main` and release tags. Docs pages moved to `site/src/content/docs/docs/` so they serve under `/docs/`. Help > Documentation and the About box now open the docs site. Lighthouse on the built site: performance 100 and accessibility 100 on `/`, 99 and 100 on a docs page.
+
 ### Removed
 - The per-Route *Sample…* request dialog (it did not work): Send test now fires the Route's own method and path.
 

@@ -3,7 +3,7 @@ title: Keymap
 description: Rebind actions, resolve conflicts, and the vim list-navigation preset.
 ---
 
-The **Keymap** category of the [Settings tab](/guides/settings/) lists every action with its binding and where that binding comes from: `default`, `vim preset` or `user`. Search filters by action name, id or keys.
+The **Keymap** category of the [Settings tab](/docs/guides/settings/) lists every action with its binding and where that binding comes from: `default`, `vim preset` or `user`. Search filters by action name, id or keys.
 
 ## Rebinding
 
@@ -30,4 +30,4 @@ Layers are defaults, then the vim preset (when enabled), then your file. The fir
 
 ## Vim list navigation
 
-Turn on **Vim list navigation** (`vim_list_navigation = true`) to add `j`/`k`, `g g`/`G`, `h`/`l` (collapse and expand), `/` (filter), `Enter` (open) and `Esc` (leave) while the sidebar tree has focus. Click a row to focus the tree. Text inputs and editors are never affected. Every default is in the [keybindings reference](/reference/keybindings/).
+Turn on **Vim list navigation** (`vim_list_navigation = true`) to add `j`/`k`, `g g`/`G`, `h`/`l` (collapse and expand), `/` (filter), `Enter` (open) and `Esc` (leave) while the sidebar tree has focus. Click a row to focus the tree. Text inputs and editors are never affected. Every default is in the [keybindings reference](/docs/reference/keybindings/).

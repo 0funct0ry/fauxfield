@@ -447,13 +447,22 @@ dist: build-release ## Package release binaries into dist/fauxfield-<version>-<t
 
 ##@ Website
 
-.PHONY: site site-dev
+.PHONY: site site-dev site-check site-install
 
-site: ## (M18) Build the marketing page and docs site into site/dist
-	$(call not_yet,M18,site)
+site-install: ## Install the site's npm dependencies (pnpm, lockfile enforced)
+	pnpm --dir site install --frozen-lockfile
 
-site-dev: ## (M18) Serve the site with live reload
-	$(call not_yet,M18,site-dev)
+site: site-install docs-gen ## Build the marketing page and docs site into site/dist
+	pnpm --dir site build
+
+site-dev: site-install ## Serve the site with live reload (http://localhost:4321/fauxfield/)
+	node site/scripts/prebuild.mjs
+	pnpm --dir site dev
+
+site-check: site-install ## Type-check the site and build it; fail if generated docs drifted
+	$(CARGO) xtask check
+	pnpm --dir site check
+	pnpm --dir site build
 
 
 ##@ Clean

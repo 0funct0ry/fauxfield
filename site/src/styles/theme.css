@@ -1,0 +1,22 @@
+/* One Light / One Dark tokens (the app's themes) on Starlight's variables. */
+:root {
+  --sl-font: "IBM Plex Sans", system-ui, sans-serif;
+  --sl-font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+:root[data-theme="light"] {
+  --sl-color-bg: #fafafa; --sl-color-bg-nav: #fafafa; --sl-color-bg-sidebar: #f0f0f1;
+  --sl-color-text: #242529; --sl-color-white: #242529; --sl-color-gray-1: #3b3d42;
+  --sl-color-gray-2: #4d4f54; --sl-color-gray-3: #5d5f63; --sl-color-gray-4: #6b6d72;
+  --sl-color-gray-5: #dcdcdd; --sl-color-gray-6: #f0f0f1; --sl-color-black: #fafafa;
+  --sl-color-accent-low: #dfe5fa; --sl-color-accent: #4a66d6; --sl-color-accent-high: #2f45a8;
+  --sl-color-hairline: #dcdcdd;
+}
+:root {
+  --sl-color-bg: #282c33; --sl-color-bg-nav: #282c33; --sl-color-bg-sidebar: #2f343e;
+  --sl-color-text: #dce0e5; --sl-color-white: #dce0e5; --sl-color-gray-1: #c8ccd4;
+  --sl-color-gray-2: #b2b8c4; --sl-color-gray-3: #a9afbc; --sl-color-gray-4: #878a98;
+  --sl-color-gray-5: #3e4450; --sl-color-gray-6: #2f343e; --sl-color-black: #21252b;
+  --sl-color-accent-low: #2b3a55; --sl-color-accent: #74ade8; --sl-color-accent-high: #b4d3f5;
+  --sl-color-hairline: #3e4450;
+}
+:root[data-theme="light"] { --sl-color-bg-inline-code: #ececee; }

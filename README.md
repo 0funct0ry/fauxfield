@@ -30,7 +30,7 @@ fauxfield .                       # open the app to watch the agent work
 
 Restart Claude Code and run `/mcp`, then ask it to "mock the endpoints this React page needs and
 start them". Use `fauxfield mcp . --read-only` for a read-only agent. See
-`site/src/content/docs/guides/agents.md`; the tool and CLI references are generated
+`site/src/content/docs/docs/guides/agents.md`; the tool and CLI references are generated
 (`make docs-gen`, checked by `make docs-check`).
 
 ## Keys

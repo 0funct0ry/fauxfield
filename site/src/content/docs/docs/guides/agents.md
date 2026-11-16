@@ -65,4 +65,4 @@ Settings can also live under `[mcp]` in `settings.toml` (`transport`, `allow`, `
 - **`no host is running`:** read-only tools work without a host. `start_server` makes the MCP process the host when no app or `fauxfield run` is running for the Workspace. Open the app first to watch live.
 - **Port in use:** the agent gets the error from `start_server`; change the Server port in the app or with `upsert`/`update_server`.
 - **A value shows as `***`:** the variable name looks secret. Read it in the app or the file; agents never see it.
-- **Tools and arguments:** see the generated [MCP tools](/reference/mcp-tools/) reference and the [CLI reference](/reference/cli/).
+- **Tools and arguments:** see the generated [MCP tools](/docs/reference/mcp-tools/) reference and the [CLI reference](/docs/reference/cli/).
