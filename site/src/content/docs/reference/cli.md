@@ -22,7 +22,7 @@ Global flags: `-q`/`--quiet` suppresses informational output, `--no-color` (and 
 
 With `--json` a command prints exactly one JSON document on stdout (JSON Lines for `logs --follow` and `run --log-format json`); logs and prompts go to stderr. A success is `{"schema": "fauxfield.<command>/v1", "ok": true, ...}`. A failure is `{"schema": "fauxfield.error/v1", "ok": false, "code", "message", "hint", "diagnostics"}`. Additive fields do not change the version; removing or redefining a field does.
 
-Schema ids: `fauxfield.init/v1`, `fauxfield.validate/v1`, `fauxfield.workspace.info/v1`, `fauxfield.workspace.rename/v1`, `fauxfield.server.list/v1`, `fauxfield.server.add/v1`, `fauxfield.server.rm/v1`, `fauxfield.server.show/v1`, `fauxfield.server.rename/v1`, `fauxfield.server.enable/v1`, `fauxfield.server.disable/v1`, `fauxfield.route.list/v1`, `fauxfield.route.rm/v1`, `fauxfield.route.show/v1`, `fauxfield.route.add/v1`, `fauxfield.response.add/v1`, `fauxfield.response.set-default/v1`, `fauxfield.env.list/v1`, `fauxfield.env.use/v1`, `fauxfield.env.add/v1`, `fauxfield.var.get/v1`, `fauxfield.var.set/v1`, `fauxfield.var.unset/v1`, `fauxfield.callback.refire/v1`, `fauxfield.ws.list/v1`, `fauxfield.ws.log/v1`, `fauxfield.ws.send/v1`, `fauxfield.ws.disconnect/v1`, `fauxfield.data.list/v1`, `fauxfield.data.show/v1`, `fauxfield.data.reset/v1`, `fauxfield.data.export/v1`, `fauxfield.data.import/v1`, `fauxfield.data.create/v1`, `fauxfield.data.delete/v1`, `fauxfield.data.rename/v1`, `fauxfield.data.generate/v1`, `fauxfield.data.refs/v1`, `fauxfield.certs.status/v1`, `fauxfield.certs.trust/v1`, `fauxfield.certs.untrust/v1`, `fauxfield.doctor/v1`, `fauxfield.render/v1`, `fauxfield.status/v1`, `fauxfield.stop/v1`, `fauxfield.logs/v1`, `fauxfield.agents.init/v1`, `fauxfield.theme.list/v1`, `fauxfield.theme.set/v1`, `fauxfield.record/v1`, `fauxfield.import/v1`, `fauxfield.export/v1`, `fauxfield.template/v1`, `fauxfield.version/v1`
+Schema ids: `fauxfield.init/v1`, `fauxfield.validate/v1`, `fauxfield.workspace.info/v1`, `fauxfield.workspace.rename/v1`, `fauxfield.server.list/v1`, `fauxfield.server.add/v1`, `fauxfield.server.rm/v1`, `fauxfield.server.show/v1`, `fauxfield.server.rename/v1`, `fauxfield.server.enable/v1`, `fauxfield.server.disable/v1`, `fauxfield.route.list/v1`, `fauxfield.route.rm/v1`, `fauxfield.route.show/v1`, `fauxfield.route.add/v1`, `fauxfield.response.add/v1`, `fauxfield.response.set-default/v1`, `fauxfield.env.list/v1`, `fauxfield.env.use/v1`, `fauxfield.env.add/v1`, `fauxfield.var.get/v1`, `fauxfield.var.set/v1`, `fauxfield.var.unset/v1`, `fauxfield.callback.refire/v1`, `fauxfield.ws.list/v1`, `fauxfield.ws.log/v1`, `fauxfield.ws.send/v1`, `fauxfield.ws.disconnect/v1`, `fauxfield.docs.spec/v1`, `fauxfield.docs.url/v1`, `fauxfield.docs.open/v1`, `fauxfield.data.list/v1`, `fauxfield.data.show/v1`, `fauxfield.data.reset/v1`, `fauxfield.data.export/v1`, `fauxfield.data.import/v1`, `fauxfield.data.create/v1`, `fauxfield.data.delete/v1`, `fauxfield.data.rename/v1`, `fauxfield.data.generate/v1`, `fauxfield.data.refs/v1`, `fauxfield.certs.status/v1`, `fauxfield.certs.trust/v1`, `fauxfield.certs.untrust/v1`, `fauxfield.doctor/v1`, `fauxfield.render/v1`, `fauxfield.status/v1`, `fauxfield.stop/v1`, `fauxfield.logs/v1`, `fauxfield.agents.init/v1`, `fauxfield.theme.list/v1`, `fauxfield.theme.set/v1`, `fauxfield.record/v1`, `fauxfield.import/v1`, `fauxfield.export/v1`, `fauxfield.template/v1`, `fauxfield.version/v1`
 
 ## `fauxfield open`
 
@@ -383,6 +383,42 @@ Close a connection
 | `<SERVER>` |  |
 | `<CONNECTION>` |  |
 | `--code` | Close code (default 1000) |
+| `-w, --workspace` | Workspace folder (default: the nearest ancestor containing fauxfield.toml, else the current directory) |
+| `--json` | Machine-readable output with a stable schema |
+
+## `fauxfield docs`
+
+Generate the OpenAPI document of a Server; show or open its published API documentation
+
+## `fauxfield docs spec`
+
+Write the generated OpenAPI 3.1 document of a Server (no host needed)
+
+| Argument | Description |
+|---|---|
+| `<SERVER>` | Server ID, name or slug |
+| `-o, --output` | Write to this file instead of stdout |
+| `-w, --workspace` | Workspace folder (default: the nearest ancestor containing fauxfield.toml, else the current directory) |
+| `--json` | Machine-readable output with a stable schema |
+
+## `fauxfield docs url`
+
+Print the documentation URL of every running Server that publishes it
+
+| Argument | Description |
+|---|---|
+| `--server` | Only this Server |
+| `-w, --workspace` | Workspace folder (default: the nearest ancestor containing fauxfield.toml, else the current directory) |
+| `--json` | Machine-readable output with a stable schema |
+
+## `fauxfield docs open`
+
+Open the documentation of a running Server in the browser
+
+| Argument | Description |
+|---|---|
+| `<SERVER>` | Server ID, name or slug |
+| `--no-launch` | Print the URL without opening a browser |
 | `-w, --workspace` | Workspace folder (default: the nearest ancestor containing fauxfield.toml, else the current directory) |
 | `--json` | Machine-readable output with a stable schema |
 

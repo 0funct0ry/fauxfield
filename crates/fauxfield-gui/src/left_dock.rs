@@ -301,12 +301,26 @@ impl Shell {
                 | RowKind::Route { disabled: true, .. }
         );
         let lead: gpui::AnyElement = match &r.kind {
-            RowKind::Server { running, https, .. } => div()
+            RowKind::Server {
+                running,
+                https,
+                docs,
+                ..
+            } => div()
                 .flex()
                 .flex_row()
                 .items_center()
                 .gap(px(4.))
                 .child(status_dot(t, *running))
+                .when(*docs, |d| {
+                    d.child(crate::dev_id!(
+                        div().child(icon("book-open", 11., t.icon_muted)),
+                        format!("tree-docs-{}", r.id),
+                        Text,
+                        "API documentation",
+                        None
+                    ))
+                })
                 .when(*https, |d| {
                     d.child(crate::dev_id!(
                         div().child(icon("lock", 11., t.icon_muted)),

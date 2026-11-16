@@ -25,6 +25,7 @@ fn script() -> Vec<(&'static str, Value)> {
         ("validate", json!({})),
         ("list_servers", json!({})),
         ("get_server", s.clone()),
+        ("get_openapi", s.clone()),
         ("list_routes", s.clone()),
         ("get_route", json!({ "route": "rte_none" })),
         (

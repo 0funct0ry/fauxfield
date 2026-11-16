@@ -31,6 +31,7 @@ description: One name per action, used by the Command Palette, the menus and but
 | `close_workspace` | Workspace: Close |
 | `command_palette` | Command Palette: Toggle |
 | `confirm_dialog` | Dialog: Confirm |
+| `copy_api_docs_url` | Server: Copy API Documentation URL |
 | `copy_as_curl` | Traffic: Copy as cURL |
 | `copy_crud_op_curl` | Route: Copy CRUD Operation as cURL |
 | `copy_dataset_cell` | Dataset: Copy Cell |
@@ -63,6 +64,7 @@ description: One name per action, used by the Command Palette, the menus and but
 | `edit_server_port` | Server: Change Port… |
 | `edit_server_prefix` | Server: Change Prefix… |
 | `export_dataset` | Dataset: Export… |
+| `export_openapi` | Server: Export OpenAPI Document… |
 | `generate_dataset_rows` | Dataset: Seed Data… |
 | `hide_app` | Application: Hide Fauxfield |
 | `hide_others` | Application: Hide Others |
@@ -94,6 +96,7 @@ description: One name per action, used by the Command Palette, the menus and but
 | `new_server` | Server: New… |
 | `new_static_route` | Route: New Static Files… |
 | `new_websocket_route` | Route: New WebSocket |
+| `open_api_docs` | Server: Open API Documentation |
 | `open_dataset_seed` | Dataset: Open Seed |
 | `open_documentation` | Help: Documentation |
 | `open_folder` | Workspace: Open Folder… |
@@ -143,6 +146,7 @@ description: One name per action, used by the Command Palette, the menus and but
 | `switch_environment` | Environment: Switch… |
 | `switch_network_profile` | Network: Switch Profile… |
 | `toast_action` | Toast: Run Action |
+| `toggle_api_docs` | Server: Toggle API Documentation |
 | `toggle_bottom_dock` | View: Toggle Bottom Dock |
 | `toggle_chaos` | Server: Toggle Chaos |
 | `toggle_dataset_json_format` | Dataset: Toggle Pretty/Compact JSON |

@@ -19,6 +19,7 @@ Commands:
   var          Get, set and unset variables at a scope
   callback     Fire the Callbacks (webhooks) of a recorded request again
   ws           List WebSocket connections, read the timeline, send messages, disconnect clients
+  docs         Generate the OpenAPI document of a Server; show or open its published API documentation
   data         List, show, reset, export and import Datasets
   certs        Show, trust and untrust the development CA used by HTTPS Servers
   doctor       Check ports, the development CA trust state and certificate expiry

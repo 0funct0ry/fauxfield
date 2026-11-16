@@ -91,6 +91,9 @@ pub struct Server {
     /// CORS settings (SPEC §5.7).
     #[serde(default)]
     pub cors: Option<Cors>,
+    /// Published API documentation (SPEC §12.4, M17.06).
+    #[serde(default)]
+    pub docs_site: Option<DocsSite>,
     /// Proxy and partial mocking (SPEC §7.1).
     #[serde(default)]
     pub proxy: Option<Proxy>,
@@ -246,6 +249,9 @@ pub struct Route {
     pub response_mode: Option<String>,
     #[serde(default)]
     pub docs: Option<String>,
+    /// OpenAPI overrides (SPEC §12.4, M17.06).
+    #[serde(default)]
+    pub openapi: Option<RouteOpenapi>,
     /// Route headers (values templated); a Response header of the same name wins (SPEC §5.5).
     #[serde(default)]
     #[schemars(with = "BTreeMap<String, String>")]
@@ -340,6 +346,9 @@ pub struct Response {
     pub rules: Vec<Rule>,
     #[serde(default = "ok_status")]
     pub status: u16,
+    /// JSON Schema file (workspace-relative) used by the API documentation (M17.06).
+    #[serde(default)]
+    pub schema: Option<String>,
     #[serde(default)]
     pub content_type: Option<String>,
     #[serde(default)]
@@ -621,6 +630,54 @@ impl Proxy {
             .filter(|t| *t > 0)
             .unwrap_or(PROXY_TIMEOUT_MS)
     }
+}
+
+/// Server `[docs_site]` table: published API documentation (SPEC §12.4).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DocsSite {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Path of the page, relative to the Server root (default `/__docs`).
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Document version (default `1.0.0`).
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+impl DocsSite {
+    pub const DEFAULT_PATH: &'static str = "/__docs";
+    pub fn path_or_default(&self) -> &str {
+        self.path
+            .as_deref()
+            .filter(|p| !p.is_empty())
+            .unwrap_or(Self::DEFAULT_PATH)
+    }
+}
+
+/// Route `[routes.openapi]` table: overrides for the generated document.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RouteOpenapi {
+    #[serde(default)]
+    pub hidden: bool,
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub operation_id: Option<String>,
+    /// Documented path for a regex Route.
+    #[serde(default)]
+    pub path: Option<String>,
+    /// JSON Schema file (workspace-relative).
+    #[serde(default)]
+    pub request_schema: Option<String>,
 }
 
 /// Server `[cors]` table.

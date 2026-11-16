@@ -106,6 +106,13 @@ pub enum InlineTarget {
         route: String,
         field: crate::https_ui::StaticField,
     },
+    /// A `[routes.openapi]` field of the Route's Docs sub-tab (M17.06).
+    Openapi {
+        route: String,
+        field: crate::docs_edit::OpenapiField,
+    },
+    /// The JSON Schema file of a Response (M17.06).
+    Schema(String),
 }
 
 impl InlineTarget {
@@ -391,6 +398,10 @@ impl Shell {
             InlineTarget::Static { route, field } => {
                 self.commit_static_field(&route, field, &v, cx)
             }
+            InlineTarget::Openapi { route, field } => {
+                self.commit_openapi_field(&route, field, &v, cx)
+            }
+            InlineTarget::Schema(id) => self.commit_response_schema(&id, &v, cx),
             InlineTarget::Ws { route, idx, field } => {
                 self.commit_ws_field(&route, idx, field, &v, cx)
             }
@@ -1013,7 +1024,7 @@ impl Shell {
                     .child(
                         div()
                             .flex_1()
-                            .min_w(px(0.))
+                            .min_w(px(120.))
                             .flex()
                             .flex_col()
                             .gap(px(4.))
@@ -1029,6 +1040,32 @@ impl Shell {
                                 cx,
                             )),
                     ),
+            )
+            .child(
+                // Own row: the property row above has no room left in a narrow window.
+                div()
+                    .flex_none()
+                    .px(px(16.))
+                    .py(px(6.))
+                    .flex()
+                    .flex_row()
+                    .items_end()
+                    .gap(px(16.))
+                    .border_b_1()
+                    .border_color(t.border_variant)
+                    .child(field(
+                        "Schema file (API documentation)",
+                        self.inline_field(
+                            t,
+                            "resp-schema".into(),
+                            InlineTarget::Schema(resp.id.clone()),
+                            resp.schema.as_deref().unwrap_or(""),
+                            "schemas/order.json",
+                            320.,
+                            false,
+                            cx,
+                        ),
+                    )),
             )
             .child(
                 div()

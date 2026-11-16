@@ -57,6 +57,30 @@ struct UpdateServer {
     clear_seed: Option<bool>,
     /// Proxy settings (`[proxy]`, SPEC §7.1); only the given keys change.
     proxy: Option<ProxySpec>,
+    /// Published API documentation (`[docs_site]`, SPEC §12.4); only the given keys change.
+    docs_site: Option<DocsSiteSpec>,
+    /// Markdown docs of the Server (the API documentation intro). Empty removes it.
+    docs: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct DocsSiteSpec {
+    /// Publish Swagger UI at `path` on the Server's own port.
+    enabled: Option<bool>,
+    /// Starts with `/`, no trailing slash, no `:`, `*` or `{` (default `/__docs`). Empty removes it.
+    path: Option<String>,
+    /// Document title (default: the Server name). Empty removes it.
+    title: Option<String>,
+    /// Document version (default `1.0.0`). Empty removes it.
+    version: Option<String>,
+    /// Document description (default: the Server docs). Empty removes it.
+    description: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct GetOpenapi {
+    /// Server ID, name or file slug.
+    server: String,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -257,6 +281,8 @@ struct ResponseSpec {
     /// method, url, delay_ms, headers, body, retries, backoff_ms, timeout_ms, disabled. `url`,
     /// `headers` and `body` are Tera templates; headers can use `callback.body` for signing.
     callbacks: Option<Vec<fauxfield_model::Callback>>,
+    /// JSON Schema file (workspace-relative) for the API documentation; empty removes it.
+    schema: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -284,7 +310,29 @@ struct UpsertRoute {
     proxy: Option<bool>,
     /// Keep this Route mocked when the proxy is in `passthrough` mode.
     pinned: Option<bool>,
+    /// Markdown docs (the API documentation operation description); empty removes it.
+    docs: Option<String>,
+    /// API documentation overrides (`[routes.openapi]`); only the given keys change.
+    openapi: Option<RouteOpenapiSpec>,
     responses: Option<Vec<ResponseSpec>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct RouteOpenapiSpec {
+    /// Leave the Route out of the generated document.
+    hidden: Option<bool>,
+    /// Operation summary (default: the Route name). Empty removes it.
+    summary: Option<String>,
+    /// Operation description in Markdown (default: the Route docs). Empty removes it.
+    description: Option<String>,
+    /// Tags replacing the Folder tag; an empty list removes them.
+    tags: Option<Vec<String>>,
+    /// operationId (default: the Route id). Empty removes it.
+    operation_id: Option<String>,
+    /// Documented path, needed for regex Routes. Empty removes it.
+    path: Option<String>,
+    /// JSON Schema file (workspace-relative) for the request body. Empty removes it.
+    request_schema: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -401,6 +449,11 @@ fn apply_response(store: &Store, id: &str, r: &ResponseSpec) -> Result<(), Strin
     }
     if let Some(v) = &r.content_type {
         store.set_str(&t, "content_type", Some(v)).map_err(e)?;
+    }
+    if let Some(v) = &r.schema {
+        store
+            .set_str(&t, "schema", (!v.is_empty()).then_some(v.as_str()))
+            .map_err(e)?;
     }
     if let Some(v) = &r.body {
         store.set_str(&t, "body", Some(v)).map_err(e)?;
@@ -857,7 +910,7 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
     let p = provider.clone();
     r.register(ToolDef::new::<UpdateServer>(
         "update_server",
-        "Update Server fields (name, port, host, enabled, prefix, unmatched_hint, fake_seed) and the `proxy` settings.",
+        "Update Server fields (name, port, host, enabled, prefix, unmatched_hint, fake_seed), the `proxy` settings and the `docs_site` settings (published API documentation).",
         ToolClass::Write,
         move |m| {
             let Some(s) = p() else { return no_workspace() };
@@ -936,8 +989,67 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                         }
                     }
                 }
+                if let Some(v) = &a.docs {
+                    s.set_str(&t, "docs", (!v.is_empty()).then_some(v.as_str())).map_err(e)?;
+                }
+                if let Some(d) = &a.docs_site {
+                    let sid = srv.id.as_str();
+                    if let Some(p) = d.path.as_deref()
+                        && !p.is_empty()
+                        && (!p.starts_with('/')
+                            || p == "/"
+                            || p.ends_with('/')
+                            || p.contains([':', '*', '{', '}']))
+                    {
+                        return Err(format!("docs_site.path `{p}` is invalid (E113)"));
+                    }
+                    if let Some(v) = d.enabled {
+                        s.set_server_table_bool(sid, "docs_site", "enabled", v).map_err(e)?;
+                    }
+                    for (k, v) in [
+                        ("path", &d.path),
+                        ("title", &d.title),
+                        ("version", &d.version),
+                        ("description", &d.description),
+                    ] {
+                        if let Some(v) = v {
+                            s.set_server_table_str(sid, "docs_site", k, (!v.is_empty()).then_some(v.as_str()))
+                                .map_err(e)?;
+                        }
+                    }
+                }
                 s.flush().map_err(e)?;
                 Ok(json!({ "id": srv.id }))
+            });
+            Box::pin(async move { out })
+        },
+    ));
+    let p = provider.clone();
+    r.register(ToolDef::new::<GetOpenapi>(
+        "get_openapi",
+        "The generated OpenAPI 3.1 document of a Server, built from its files (works while stopped). The document is capped at 64 KB; `truncated: true` means it was left out, so use `fauxfield docs spec` for the whole document.",
+        ToolClass::Read,
+        move |m| {
+            let Some(s) = p() else { return no_workspace() };
+            let out = parse::<GetOpenapi>(m).and_then(|a| {
+                let (_, srv) = find_server(&s, &a.server)?;
+                let doc = fauxfield_engine::openapi_document(&s.root(), &srv.id, &srv);
+                let text = doc.to_json();
+                let truncated = text.len() > 64 * 1024;
+                let ds = srv.docs_site.clone().unwrap_or_default();
+                let mut v = json!({
+                    "server": srv.id,
+                    "docs_enabled": ds.enabled,
+                    "path": ds.path_or_default(),
+                    "stats": { "documented": doc.stats.documented, "skipped": doc.stats.skipped },
+                    "unrepresentable": doc.unrepresentable,
+                    "warnings": doc.warnings,
+                    "truncated": truncated,
+                });
+                if !truncated {
+                    v["document"] = doc.value;
+                }
+                Ok(v)
             });
             Box::pin(async move { out })
         },
@@ -1043,6 +1155,30 @@ pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
                 }
                 if let Some(v) = &a.name {
                     s.set_str(&t, "name", Some(v)).map_err(e)?;
+                }
+                if let Some(v) = &a.docs {
+                    s.set_str(&t, "docs", (!v.is_empty()).then_some(v.as_str()))
+                        .map_err(e)?;
+                }
+                if let Some(o) = &a.openapi {
+                    if let Some(v) = o.hidden {
+                        s.set_route_openapi_bool(&rid, "hidden", v).map_err(e)?;
+                    }
+                    for (k, v) in [
+                        ("summary", &o.summary),
+                        ("description", &o.description),
+                        ("operation_id", &o.operation_id),
+                        ("path", &o.path),
+                        ("request_schema", &o.request_schema),
+                    ] {
+                        if let Some(v) = v {
+                            s.set_route_openapi_str(&rid, k, (!v.is_empty()).then_some(v.as_str()))
+                                .map_err(e)?;
+                        }
+                    }
+                    if let Some(v) = &o.tags {
+                        s.set_route_openapi_list(&rid, "tags", v).map_err(e)?;
+                    }
                 }
                 if let Some(v) = a.proxy {
                     s.set_route_flag(&rid, "proxy", v).map_err(e)?;

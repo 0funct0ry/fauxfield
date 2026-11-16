@@ -1,0 +1,66 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "document": {
+    "info": {
+      "title": "Example API",
+      "version": "1.0.0"
+    },
+    "openapi": "3.1.0",
+    "paths": {
+      "/health": {
+        "get": {
+          "operationId": "<rte-id>",
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "examples": {
+                    "OK": {
+                      "value": {
+                        "status": "ok"
+                      }
+                    }
+                  },
+                  "schema": {
+                    "properties": {
+                      "status": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  }
+                }
+              },
+              "description": "OK"
+            }
+          },
+          "summary": "Health",
+          "tags": [
+            "Other"
+          ]
+        }
+      }
+    },
+    "servers": [
+      {
+        "url": "/"
+      }
+    ],
+    "tags": [
+      {
+        "name": "Other"
+      }
+    ]
+  },
+  "ok": true,
+  "output": null,
+  "schema": "fauxfield.docs.spec/v1",
+  "server": "<srv-id>",
+  "stats": {
+    "documented": 1,
+    "skipped": 0
+  }
+}

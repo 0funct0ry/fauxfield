@@ -1,157 +1,456 @@
 {
-  "$defs": {
-    "Callback": {
-      "description": "A Callback (webhook simulation, SPEC §7.3): an outgoing request fired after the Response is\nsent. `url`, `headers` and `body` are Tera templates; `callback.body` (the rendered body) is\navailable to header templates for signing.",
-      "properties": {
-        "backoff_ms": {
-          "description": "First retry wait; doubles on each further retry (default 500).",
-          "format": "uint64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "body": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "delay_ms": {
-          "description": "Wait before the first attempt.",
-          "format": "uint64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "description": {
-          "description": "One-line note; not sent.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "disabled": {
-          "type": "boolean"
-        },
-        "headers": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "default": {},
-          "type": "object"
-        },
-        "id": {
-          "type": "string"
-        },
-        "method": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "name": {
-          "description": "Friendly label shown in the Callbacks table.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "retries": {
-          "description": "Extra attempts after a failure (connection error, timeout or 5xx). Default 0.",
-          "format": "uint32",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "timeout_ms": {
-          "description": "Per-attempt timeout (default 10000).",
-          "format": "uint64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "url": {
-          "default": "",
-          "type": "string"
-        }
-      },
-      "required": [
-        "id"
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Server",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0,
+      "default": 1
+    },
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "host": {
+      "type": "string",
+      "default": "127.0.0.1"
+    },
+    "port": {
+      "type": "integer",
+      "format": "uint16",
+      "minimum": 0,
+      "maximum": 65535
+    },
+    "prefix": {
+      "type": [
+        "string",
+        "null"
       ],
-      "type": "object"
+      "default": null
+    },
+    "unmatched_hint": {
+      "description": "Add the closest-routes hint to 404 bodies (default true).",
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "default": null
+    },
+    "strict_slash": {
+      "description": "true: `/users` and `/users/` are different paths (SPEC §5.2).",
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "default": null
+    },
+    "docs": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null
+    },
+    "network": {
+      "description": "Server-wide latency simulation (SPEC §5.6).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Network"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "rate_limit": {
+      "description": "Request rate limit (SPEC §5.6).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RateLimit"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "tls": {
+      "description": "HTTPS settings (SPEC §5.8).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Tls"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "cors": {
+      "description": "CORS settings (SPEC §5.7).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Cors"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "docs_site": {
+      "description": "Published API documentation (SPEC §12.4, M17.06).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DocsSite"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "proxy": {
+      "description": "Proxy and partial mocking (SPEC §7.1).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Proxy"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "fake_seed": {
+      "description": "Seed for fake data and random functions; unset means random (SPEC §8.3).",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0,
+      "default": null
+    },
+    "variables": {
+      "type": "object",
+      "additionalProperties": true,
+      "default": {}
+    },
+    "datasets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Dataset"
+      },
+      "default": []
+    },
+    "folders": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Folder"
+      },
+      "default": []
+    },
+    "routes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Route"
+      },
+      "default": []
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "port"
+  ],
+  "$defs": {
+    "Network": {
+      "description": "Server `[network]` table: simulated latency and bandwidth.",
+      "type": "object",
+      "properties": {
+        "latency_ms": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 0
+        },
+        "jitter_ms": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 0
+        },
+        "bandwidth_kbps": {
+          "description": "0 = unlimited.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 0
+        }
+      }
+    },
+    "RateLimit": {
+      "description": "Server `[rate_limit]` table.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "requests": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 100
+        },
+        "window": {
+          "description": "`30s`, `1m`, `2h`.",
+          "type": "string",
+          "default": "1m"
+        },
+        "key": {
+          "description": "`ip`, `header:<name>` or `query:<name>`.",
+          "type": "string",
+          "default": "ip"
+        }
+      }
+    },
+    "Tls": {
+      "description": "Server `[tls]` table.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "mode": {
+          "description": "`dev-ca` (default) or `files`.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "cert": {
+          "description": "`files` mode: PEM certificate chain (workspace-relative).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "key": {
+          "description": "`files` mode: PEM private key (workspace-relative).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "also_http_port": {
+          "description": "Also serve plain HTTP on this port (same routes).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535,
+          "default": null
+        }
+      }
     },
     "Cors": {
       "description": "Server `[cors]` table.",
+      "type": "object",
       "properties": {
-        "credentials": {
-          "default": false,
-          "type": "boolean"
-        },
         "enabled": {
-          "default": false,
-          "type": "boolean"
+          "type": "boolean",
+          "default": false
         },
-        "headers": {
-          "default": [],
+        "origins": {
+          "description": "Allowed origins; `*` allows any.",
+          "type": "array",
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "default": []
+        },
+        "methods": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "headers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "credentials": {
+          "type": "boolean",
+          "default": false
         },
         "max_age": {
-          "default": null,
           "description": "Preflight cache seconds.",
-          "format": "uint64",
-          "minimum": 0,
           "type": [
             "integer",
             "null"
-          ]
-        },
-        "methods": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "origins": {
-          "default": [],
-          "description": "Allowed origins; `*` allows any.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
+          ],
+          "format": "uint64",
+          "minimum": 0,
+          "default": null
         }
-      },
-      "type": "object"
+      }
     },
-    "Dataset": {
-      "description": "A named JSON collection backing stateful `crud` routes (SPEC §6.1).",
+    "DocsSite": {
+      "description": "Server `[docs_site]` table: published API documentation (SPEC §12.4).",
+      "type": "object",
       "properties": {
-        "columns": {
-          "description": "Optional column list (M10.04): drives the Data Table's cell editors and validation.",
-          "items": {
-            "$ref": "#/$defs/DatasetColumn"
-          },
-          "type": "array"
+        "enabled": {
+          "type": "boolean",
+          "default": false
         },
-        "description": {
-          "description": "Free-text description (M10.07).",
+        "path": {
+          "description": "Path of the page, relative to the Server root (default `/__docs`).",
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "default": null
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "version": {
+          "description": "Document version (default `1.0.0`).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      }
+    },
+    "Proxy": {
+      "description": "Server `[proxy]` table (SPEC §7.1).",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "upstream": {
+          "description": "Upstream base URL; may contain `{{ vars.x }}`.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "mode": {
+          "description": "`fallback` (default) or `passthrough`.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "preserve_host": {
+          "description": "Send the client's `Host` header upstream instead of the upstream host.",
+          "type": "boolean",
+          "default": false
+        },
+        "record": {
+          "description": "Keep proxied traffic in Traffic and recordings (default true).",
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null
+        },
+        "timeout_ms": {
+          "description": "Upstream timeout in ms (default 30000).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0,
+          "default": null
+        },
+        "insecure": {
+          "description": "Accept invalid upstream certificates (default false).",
+          "type": "boolean",
+          "default": false
+        },
+        "request_headers": {
+          "description": "Headers set on the upstream request (values templated).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "response_headers": {
+          "description": "Headers set on the response to the client (values templated).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        }
+      }
+    },
+    "Dataset": {
+      "description": "A named JSON collection backing stateful `crud` routes (SPEC §6.1).",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "seed": {
+          "description": "Static JSON seed file (workspace-relative).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "seed_template": {
+          "description": "Tera template rendering to JSON (workspace-relative).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
         },
         "generator": {
+          "description": "Declarative generator seed (M10.02); a third seed source.",
           "anyOf": [
             {
               "$ref": "#/$defs/GeneratorSeed"
@@ -160,44 +459,38 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "description": "Declarative generator seed (M10.02); a third seed source."
-        },
-        "id_strategy": {
-          "default": null,
-          "description": "`uuid` (default), `increment` or `ulid`.",
-          "type": [
-            "string",
-            "null"
-          ]
+          "default": null
         },
         "key": {
-          "default": null,
           "description": "Field holding each item's identifier (default `id`).",
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "default": null
         },
-        "name": {
-          "type": "string"
-        },
-        "persist": {
-          "default": false,
-          "description": "true: mutations are written to `.fauxfield/state/` and reloaded on start.",
-          "type": "boolean"
-        },
-        "seed": {
-          "default": null,
-          "description": "Static JSON seed file (workspace-relative).",
+        "id_strategy": {
+          "description": "`uuid` (default), `increment` or `ulid`.",
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "default": null
         },
-        "seed_template": {
-          "default": null,
-          "description": "Tera template rendering to JSON (workspace-relative).",
+        "persist": {
+          "description": "true: mutations are written to `.fauxfield/state/` and reloaded on start.",
+          "type": "boolean",
+          "default": false
+        },
+        "columns": {
+          "description": "Optional column list (M10.04): drives the Data Table's cell editors and validation.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DatasetColumn"
+          }
+        },
+        "description": {
+          "description": "Free-text description (M10.07).",
           "type": [
             "string",
             "null"
@@ -206,29 +499,879 @@
       },
       "required": [
         "name"
-      ],
-      "type": "object"
+      ]
     },
-    "DatasetAction": {
-      "description": "One step of a Response's Dataset actions (SPEC §6.3). Every input is a Tera expression over\nthe request (`request.params.id`, `request.body.qty`, `action.0.id`, ...).",
+    "GeneratorSeed": {
+      "type": "object",
       "properties": {
-        "by": {
-          "description": "`increment`: amount, default 1; may be negative.",
+        "rows": {
+          "description": "Number of rows (array Datasets).",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 0
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GeneratorField"
+          },
+          "default": []
+        }
+      }
+    },
+    "GeneratorField": {
+      "description": "One generator and its options; `kind` selects which options apply.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "default": ""
+        },
+        "min": true,
+        "max": true,
+        "step": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "start": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "precision": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "probability": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "pattern": {
           "type": [
             "string",
             "null"
           ]
         },
+        "values": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": true
+        },
+        "weights": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "length": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "charset": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "words": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "fake": {
+          "description": "`fake` kind, e.g. `internet.email`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": true,
+        "dataset": {
+          "description": "`ref`: the other Dataset.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "field": {
+          "description": "`ref`: the key field to pick (default `id`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "null_probability": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "inner": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GeneratorSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expr": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fields": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/GeneratorField"
+          }
+        },
+        "item": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GeneratorSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "GeneratorSpec": {
+      "description": "One generator and its options; `kind` selects which options apply.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "default": ""
+        },
+        "min": true,
+        "max": true,
+        "step": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "start": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "precision": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "probability": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "pattern": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "values": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": true
+        },
+        "weights": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "length": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "charset": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "words": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "fake": {
+          "description": "`fake` kind, e.g. `internet.email`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": true,
+        "dataset": {
+          "description": "`ref`: the other Dataset.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "field": {
+          "description": "`ref`: the key field to pick (default `id`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "null_probability": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "inner": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GeneratorSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expr": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fields": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/GeneratorField"
+          }
+        },
+        "item": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GeneratorSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "DatasetColumn": {
+      "description": "One declared column of a Dataset (M10.04).",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "description": "One of [`COLUMN_TYPES`] (default `string`).",
+          "type": "string",
+          "default": ""
+        },
+        "primary_key": {
+          "description": "Identifies the row (M10.07); at most one column, and it must match the Dataset `key`.",
+          "type": "boolean"
+        },
+        "unique": {
+          "description": "No two rows may hold the same non-null value (M10.07).",
+          "type": "boolean"
+        },
+        "required": {
+          "description": "The value may not be null or empty (M10.07).",
+          "type": "boolean"
+        },
+        "default": {
+          "description": "Value given to a new row that does not set the column (M10.07)."
+        },
+        "description": {
+          "description": "Free-text description shown in the schema designer (M10.07).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "Folder": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "docs": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "enabled": {
+          "description": "false: every Route inside is skipped by the matcher (default true).",
+          "type": "boolean",
+          "default": true
+        },
+        "collapsed": {
+          "description": "true: starts collapsed in the tree.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "Route": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "folder": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "kind": {
+          "type": "string",
+          "default": "http"
+        },
+        "method": {
+          "type": "string",
+          "default": "GET"
+        },
+        "path": {
+          "type": "string"
+        },
+        "match": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "priority": {
+          "description": "Higher wins; default 0.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "default": null
+        },
+        "response_mode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "docs": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "openapi": {
+          "description": "OpenAPI overrides (SPEC §12.4, M17.06).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RouteOpenapi"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "headers": {
+          "description": "Route headers (values templated); a Response header of the same name wins (SPEC §5.5).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "variables": {
+          "description": "Route-scope variables (SPEC §8.1).",
+          "type": "object",
+          "additionalProperties": true,
+          "default": {}
+        },
+        "responses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Response"
+          },
+          "default": []
+        },
+        "dataset": {
+          "description": "`crud` routes: the Dataset this Route serves.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "crud_ops": {
+          "description": "`crud` routes: the operations served (subset of [`CRUD_OPS`]); empty serves all (M10.07).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "validate": {
+          "description": "`crud` routes: JSON Schema file (workspace-relative) checked on POST/PUT/PATCH.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "dir": {
+          "description": "`static` routes: directory served (workspace-relative).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "template_extensions": {
+          "description": "`static` routes: extensions rendered through Tera, e.g. `[\".tera\"]`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "index": {
+          "description": "`static` routes: file served for a directory request (default none).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "proxy": {
+          "description": "Forward this Route to the proxy upstream even when other Routes are mocked (M11).",
+          "type": "boolean"
+        },
+        "pinned": {
+          "description": "In `passthrough` mode keep this Route mocked instead of forwarding it (M11).",
+          "type": "boolean"
+        },
+        "mode": {
+          "description": "`websocket` routes: `echo`, `script` or `broadcast` (default `echo`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "messages": {
+          "description": "`websocket` routes: scripted messages (M13).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WsMessage"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "path"
+      ]
+    },
+    "RouteOpenapi": {
+      "description": "Route `[routes.openapi]` table: overrides for the generated document.",
+      "type": "object",
+      "properties": {
+        "hidden": {
+          "type": "boolean",
+          "default": false
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "operation_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "path": {
+          "description": "Documented path for a regex Route.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "request_schema": {
+          "description": "JSON Schema file (workspace-relative).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      }
+    },
+    "Response": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "description": {
+          "description": "Optional one-line note shown under the name (SPEC §5.5). Not sent.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "default": {
+          "type": "boolean",
+          "default": false
+        },
+        "disabled": {
+          "description": "true: skipped by response selection (SPEC §5.3).",
+          "type": "boolean",
+          "default": false
+        },
+        "rules_logic": {
+          "description": "`and` (default) or `or` (SPEC §5.4).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Rule"
+          },
+          "default": []
+        },
+        "status": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535,
+          "default": 200
+        },
+        "schema": {
+          "description": "JSON Schema file (workspace-relative) used by the API documentation (M17.06).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "content_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "body": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "body_file": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "template": {
+          "description": "false: body, body_file and header values are sent verbatim (default true).",
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null
+        },
+        "delay_ms": {
+          "description": "Milliseconds, or a range such as `\"200..800\"` (SPEC §5.5).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Delay"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "fault": {
+          "description": "`none`, `timeout`, `reset`, `close`, `empty`, `malformed` or `slow_body`.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "fault_rate": {
+          "description": "0.0-1.0 probability that `fault` applies (default 1.0).",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
+        "headers": {
+          "description": "In file order (rows of the Response headers editor keep the order they were written in).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "actions": {
+          "description": "Dataset actions (SPEC §6.3): ordered, atomic as a group, run after this Response is\nchosen and before the body renders.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DatasetAction"
+          }
+        },
+        "action_error_status": {
+          "description": "Status returned when an action fails and the group is rolled back (default 409).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "callbacks": {
+          "description": "Outgoing HTTP requests fired after this Response is sent (SPEC §7.3).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Callback"
+          }
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "Rule": {
+      "description": "One condition of a Response (SPEC §5.4). Values are plain strings, numbers or arrays until M6.",
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string"
+        },
+        "key": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "op": {
+          "type": "string"
+        },
+        "value": {
+          "default": null
+        },
+        "negate": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "target",
+        "op"
+      ]
+    },
+    "Delay": {
+      "description": "A fixed delay in ms, or a `\"min..max\"` range.",
+      "anyOf": [
+        {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "DatasetAction": {
+      "description": "One step of a Response's Dataset actions (SPEC §6.3). Every input is a Tera expression over\nthe request (`request.params.id`, `request.body.qty`, `action.0.id`, ...).",
+      "type": "object",
+      "properties": {
         "dataset": {
           "description": "Name of a Dataset of the same Server.",
           "type": "string"
         },
-        "disabled": {
-          "description": "true: step skipped.",
-          "type": "boolean"
+        "op": {
+          "description": "One of [`ACTION_OPS`].",
+          "type": "string"
         },
-        "fail_if": {
-          "description": "Tera expression evaluated after the step with `result` in scope; `true` aborts the group.",
+        "key": {
+          "description": "Row key for `update`, `delete`, `set`, `increment` (array Datasets).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "filter": {
+          "description": "`delete_where`: CRUD-style filters, e.g. `stock_gte = \"{{ request.query.min }}\"`.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "row": {
+          "description": "`insert`/`update`: template rendering a JSON object. Default: the request body.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fields": {
+          "description": "`insert`/`update`: fields merged over `row`; values are Tera expressions.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "mode": {
+          "description": "`update` on a row or singleton: `merge` (default) or `replace`.",
           "type": [
             "string",
             "null"
@@ -241,1001 +1384,132 @@
             "null"
           ]
         },
-        "fields": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "description": "`insert`/`update`: fields merged over `row`; values are Tera expressions.",
-          "type": "object"
-        },
-        "filter": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "description": "`delete_where`: CRUD-style filters, e.g. `stock_gte = \"{{ request.query.min }}\"`.",
-          "type": "object"
-        },
-        "key": {
-          "description": "Row key for `update`, `delete`, `set`, `increment` (array Datasets).",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "mode": {
-          "description": "`update` on a row or singleton: `merge` (default) or `replace`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "op": {
-          "description": "One of [`ACTION_OPS`].",
-          "type": "string"
-        },
-        "row": {
-          "description": "`insert`/`update`: template rendering a JSON object. Default: the request body.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "value": {
           "description": "`set`: the new value (Tera expression; JSON when it parses as JSON).",
           "type": [
             "string",
             "null"
           ]
-        }
-      },
-      "required": [
-        "dataset",
-        "op"
-      ],
-      "type": "object"
-    },
-    "DatasetColumn": {
-      "description": "One declared column of a Dataset (M10.04).",
-      "properties": {
-        "default": {
-          "description": "Value given to a new row that does not set the column (M10.07)."
         },
-        "description": {
-          "description": "Free-text description shown in the schema designer (M10.07).",
+        "by": {
+          "description": "`increment`: amount, default 1; may be negative.",
           "type": [
             "string",
             "null"
           ]
         },
-        "name": {
-          "type": "string"
-        },
-        "primary_key": {
-          "description": "Identifies the row (M10.07); at most one column, and it must match the Dataset `key`.",
-          "type": "boolean"
-        },
-        "required": {
-          "description": "The value may not be null or empty (M10.07).",
-          "type": "boolean"
-        },
-        "type": {
-          "default": "",
-          "description": "One of [`COLUMN_TYPES`] (default `string`).",
-          "type": "string"
-        },
-        "unique": {
-          "description": "No two rows may hold the same non-null value (M10.07).",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "name"
-      ],
-      "type": "object"
-    },
-    "Delay": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "A fixed delay in ms, or a `\"min..max\"` range."
-    },
-    "Folder": {
-      "properties": {
-        "collapsed": {
-          "default": false,
-          "description": "true: starts collapsed in the tree.",
-          "type": "boolean"
-        },
-        "docs": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "enabled": {
-          "default": true,
-          "description": "false: every Route inside is skipped by the matcher (default true).",
-          "type": "boolean"
-        },
-        "id": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "name"
-      ],
-      "type": "object"
-    },
-    "GeneratorField": {
-      "description": "One generator and its options; `kind` selects which options apply.",
-      "properties": {
-        "charset": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "dataset": {
-          "description": "`ref`: the other Dataset.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "expr": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "fake": {
-          "description": "`fake` kind, e.g. `internet.email`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "field": {
-          "description": "`ref`: the key field to pick (default `id`).",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "fields": {
-          "items": {
-            "$ref": "#/$defs/GeneratorField"
-          },
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "format": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "inner": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/GeneratorSpec"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "item": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/GeneratorSpec"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "kind": {
-          "default": "",
-          "type": "string"
-        },
-        "length": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "max": true,
-        "min": true,
-        "name": {
-          "type": "string"
-        },
-        "null_probability": {
-          "format": "double",
-          "type": [
-            "number",
-            "null"
-          ]
-        },
-        "pattern": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "precision": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "probability": {
-          "format": "double",
-          "type": [
-            "number",
-            "null"
-          ]
-        },
-        "start": {
-          "format": "double",
-          "type": [
-            "number",
-            "null"
-          ]
-        },
-        "step": {
-          "format": "double",
-          "type": [
-            "number",
-            "null"
-          ]
-        },
-        "value": true,
-        "values": {
-          "items": true,
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "weights": {
-          "items": {
-            "format": "double",
-            "type": "number"
-          },
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "words": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "name"
-      ],
-      "type": "object"
-    },
-    "GeneratorSeed": {
-      "properties": {
-        "fields": {
-          "default": [],
-          "items": {
-            "$ref": "#/$defs/GeneratorField"
-          },
-          "type": "array"
-        },
-        "rows": {
-          "default": 0,
-          "description": "Number of rows (array Datasets).",
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "type": "object"
-    },
-    "GeneratorSpec": {
-      "description": "One generator and its options; `kind` selects which options apply.",
-      "properties": {
-        "charset": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "dataset": {
-          "description": "`ref`: the other Dataset.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "expr": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "fake": {
-          "description": "`fake` kind, e.g. `internet.email`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "field": {
-          "description": "`ref`: the key field to pick (default `id`).",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "fields": {
-          "items": {
-            "$ref": "#/$defs/GeneratorField"
-          },
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "format": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "inner": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/GeneratorSpec"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "item": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/GeneratorSpec"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "kind": {
-          "default": "",
-          "type": "string"
-        },
-        "length": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "max": true,
-        "min": true,
-        "null_probability": {
-          "format": "double",
-          "type": [
-            "number",
-            "null"
-          ]
-        },
-        "pattern": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "precision": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "probability": {
-          "format": "double",
-          "type": [
-            "number",
-            "null"
-          ]
-        },
-        "start": {
-          "format": "double",
-          "type": [
-            "number",
-            "null"
-          ]
-        },
-        "step": {
-          "format": "double",
-          "type": [
-            "number",
-            "null"
-          ]
-        },
-        "value": true,
-        "values": {
-          "items": true,
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "weights": {
-          "items": {
-            "format": "double",
-            "type": "number"
-          },
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "words": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        }
-      },
-      "type": "object"
-    },
-    "Network": {
-      "description": "Server `[network]` table: simulated latency and bandwidth.",
-      "properties": {
-        "bandwidth_kbps": {
-          "default": 0,
-          "description": "0 = unlimited.",
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "jitter_ms": {
-          "default": 0,
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "latency_ms": {
-          "default": 0,
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "type": "object"
-    },
-    "Proxy": {
-      "description": "Server `[proxy]` table (SPEC §7.1).",
-      "properties": {
-        "enabled": {
-          "default": false,
-          "type": "boolean"
-        },
-        "insecure": {
-          "default": false,
-          "description": "Accept invalid upstream certificates (default false).",
-          "type": "boolean"
-        },
-        "mode": {
-          "default": null,
-          "description": "`fallback` (default) or `passthrough`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "preserve_host": {
-          "default": false,
-          "description": "Send the client's `Host` header upstream instead of the upstream host.",
-          "type": "boolean"
-        },
-        "record": {
-          "default": null,
-          "description": "Keep proxied traffic in Traffic and recordings (default true).",
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "request_headers": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "default": {},
-          "description": "Headers set on the upstream request (values templated).",
-          "type": "object"
-        },
-        "response_headers": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "default": {},
-          "description": "Headers set on the response to the client (values templated).",
-          "type": "object"
-        },
-        "timeout_ms": {
-          "default": null,
-          "description": "Upstream timeout in ms (default 30000).",
-          "format": "uint64",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "upstream": {
-          "default": null,
-          "description": "Upstream base URL; may contain `{{ vars.x }}`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "type": "object"
-    },
-    "RateLimit": {
-      "description": "Server `[rate_limit]` table.",
-      "properties": {
-        "enabled": {
-          "default": false,
-          "type": "boolean"
-        },
-        "key": {
-          "default": "ip",
-          "description": "`ip`, `header:<name>` or `query:<name>`.",
-          "type": "string"
-        },
-        "requests": {
-          "default": 100,
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "window": {
-          "default": "1m",
-          "description": "`30s`, `1m`, `2h`.",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "Response": {
-      "properties": {
-        "action_error_status": {
-          "description": "Status returned when an action fails and the group is rolled back (default 409).",
-          "format": "uint16",
-          "maximum": 65535,
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "actions": {
-          "description": "Dataset actions (SPEC §6.3): ordered, atomic as a group, run after this Response is\nchosen and before the body renders.",
-          "items": {
-            "$ref": "#/$defs/DatasetAction"
-          },
-          "type": "array"
-        },
-        "body": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "body_file": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "callbacks": {
-          "description": "Outgoing HTTP requests fired after this Response is sent (SPEC §7.3).",
-          "items": {
-            "$ref": "#/$defs/Callback"
-          },
-          "type": "array"
-        },
-        "content_type": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "default": {
-          "default": false,
-          "type": "boolean"
-        },
-        "delay_ms": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Delay"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Milliseconds, or a range such as `\"200..800\"` (SPEC §5.5)."
-        },
-        "description": {
-          "default": null,
-          "description": "Optional one-line note shown under the name (SPEC §5.5). Not sent.",
+        "fail_if": {
+          "description": "Tera expression evaluated after the step with `result` in scope; `true` aborts the group.",
           "type": [
             "string",
             "null"
           ]
         },
         "disabled": {
-          "default": false,
-          "description": "true: skipped by response selection (SPEC §5.3).",
+          "description": "true: step skipped.",
           "type": "boolean"
-        },
-        "fault": {
-          "default": null,
-          "description": "`none`, `timeout`, `reset`, `close`, `empty`, `malformed` or `slow_body`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "fault_rate": {
-          "default": null,
-          "description": "0.0-1.0 probability that `fault` applies (default 1.0).",
-          "format": "double",
-          "type": [
-            "number",
-            "null"
-          ]
-        },
-        "headers": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "default": {},
-          "description": "In file order (rows of the Response headers editor keep the order they were written in).",
-          "type": "object"
-        },
+        }
+      },
+      "required": [
+        "dataset",
+        "op"
+      ]
+    },
+    "Callback": {
+      "description": "A Callback (webhook simulation, SPEC §7.3): an outgoing request fired after the Response is\nsent. `url`, `headers` and `body` are Tera templates; `callback.body` (the rendered body) is\navailable to header templates for signing.",
+      "type": "object",
+      "properties": {
         "id": {
           "type": "string"
         },
         "name": {
-          "default": null,
+          "description": "Friendly label shown in the Callbacks table.",
           "type": [
             "string",
             "null"
           ]
         },
-        "rules": {
-          "default": [],
-          "items": {
-            "$ref": "#/$defs/Rule"
+        "description": {
+          "description": "One-line note; not sent.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "method": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "default": ""
+        },
+        "delay_ms": {
+          "description": "Wait before the first attempt.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
           },
-          "type": "array"
+          "default": {}
         },
-        "rules_logic": {
-          "default": null,
-          "description": "`and` (default) or `or` (SPEC §5.4).",
+        "body": {
           "type": [
             "string",
             "null"
           ]
         },
-        "status": {
-          "default": 200,
-          "format": "uint16",
-          "maximum": 65535,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "template": {
-          "default": null,
-          "description": "false: body, body_file and header values are sent verbatim (default true).",
+        "retries": {
+          "description": "Extra attempts after a failure (connection error, timeout or 5xx). Default 0.",
           "type": [
-            "boolean",
+            "integer",
             "null"
-          ]
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "backoff_ms": {
+          "description": "First retry wait; doubles on each further retry (default 500).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "timeout_ms": {
+          "description": "Per-attempt timeout (default 10000).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "disabled": {
+          "type": "boolean"
         }
       },
       "required": [
         "id"
-      ],
-      "type": "object"
-    },
-    "Route": {
-      "properties": {
-        "crud_ops": {
-          "description": "`crud` routes: the operations served (subset of [`CRUD_OPS`]); empty serves all (M10.07).",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "dataset": {
-          "default": null,
-          "description": "`crud` routes: the Dataset this Route serves.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "dir": {
-          "default": null,
-          "description": "`static` routes: directory served (workspace-relative).",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "docs": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "folder": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "headers": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "default": {},
-          "description": "Route headers (values templated); a Response header of the same name wins (SPEC §5.5).",
-          "type": "object"
-        },
-        "id": {
-          "type": "string"
-        },
-        "index": {
-          "default": null,
-          "description": "`static` routes: file served for a directory request (default none).",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "kind": {
-          "default": "http",
-          "type": "string"
-        },
-        "match": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "messages": {
-          "description": "`websocket` routes: scripted messages (M13).",
-          "items": {
-            "$ref": "#/$defs/WsMessage"
-          },
-          "type": "array"
-        },
-        "method": {
-          "default": "GET",
-          "type": "string"
-        },
-        "mode": {
-          "description": "`websocket` routes: `echo`, `script` or `broadcast` (default `echo`).",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "name": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "path": {
-          "type": "string"
-        },
-        "pinned": {
-          "description": "In `passthrough` mode keep this Route mocked instead of forwarding it (M11).",
-          "type": "boolean"
-        },
-        "priority": {
-          "default": null,
-          "description": "Higher wins; default 0.",
-          "format": "int32",
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "proxy": {
-          "description": "Forward this Route to the proxy upstream even when other Routes are mocked (M11).",
-          "type": "boolean"
-        },
-        "response_mode": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "responses": {
-          "default": [],
-          "items": {
-            "$ref": "#/$defs/Response"
-          },
-          "type": "array"
-        },
-        "template_extensions": {
-          "default": [],
-          "description": "`static` routes: extensions rendered through Tera, e.g. `[\".tera\"]`.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "validate": {
-          "default": null,
-          "description": "`crud` routes: JSON Schema file (workspace-relative) checked on POST/PUT/PATCH.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "variables": {
-          "additionalProperties": true,
-          "default": {},
-          "description": "Route-scope variables (SPEC §8.1).",
-          "type": "object"
-        }
-      },
-      "required": [
-        "id",
-        "path"
-      ],
-      "type": "object"
-    },
-    "Rule": {
-      "description": "One condition of a Response (SPEC §5.4). Values are plain strings, numbers or arrays until M6.",
-      "properties": {
-        "key": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "negate": {
-          "default": false,
-          "type": "boolean"
-        },
-        "op": {
-          "type": "string"
-        },
-        "target": {
-          "type": "string"
-        },
-        "value": {
-          "default": null
-        }
-      },
-      "required": [
-        "target",
-        "op"
-      ],
-      "type": "object"
-    },
-    "Tls": {
-      "description": "Server `[tls]` table.",
-      "properties": {
-        "also_http_port": {
-          "default": null,
-          "description": "Also serve plain HTTP on this port (same routes).",
-          "format": "uint16",
-          "maximum": 65535,
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "cert": {
-          "default": null,
-          "description": "`files` mode: PEM certificate chain (workspace-relative).",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "enabled": {
-          "default": false,
-          "type": "boolean"
-        },
-        "key": {
-          "default": null,
-          "description": "`files` mode: PEM private key (workspace-relative).",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "mode": {
-          "default": null,
-          "description": "`dev-ca` (default) or `files`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "type": "object"
+      ]
     },
     "WsMessage": {
       "description": "One scripted message of a `websocket` Route (SPEC §7.4).",
+      "type": "object",
       "properties": {
-        "binary": {
-          "description": "true: `body` is base64 and sent as a binary frame.",
-          "type": "boolean"
-        },
-        "body": {
-          "default": "",
-          "description": "Templated message body (text frame; base64 bytes when `binary`).",
+        "trigger": {
+          "description": "`connect`, `interval` or `message`.",
           "type": "string"
-        },
-        "close_code": {
-          "description": "When set the connection is closed with this code after sending.",
-          "format": "uint16",
-          "maximum": 65535,
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
         },
         "every": {
           "description": "`interval` trigger: period like `500ms`, `5s`, `1m`.",
@@ -1244,18 +1518,8 @@
             "null"
           ]
         },
-        "format": {
-          "description": "`compact` (default), `pretty` (2 spaces) or `raw`: how a rendered body that is valid JSON\nis sent. Anything that is not JSON is sent as it is.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "trigger": {
-          "description": "`connect`, `interval` or `message`.",
-          "type": "string"
-        },
         "when": {
+          "description": "`message` trigger: condition on the incoming frame (`body` target, `key` = JSONPath).",
           "anyOf": [
             {
               "$ref": "#/$defs/Rule"
@@ -1263,176 +1527,38 @@
             {
               "type": "null"
             }
+          ]
+        },
+        "body": {
+          "description": "Templated message body (text frame; base64 bytes when `binary`).",
+          "type": "string",
+          "default": ""
+        },
+        "format": {
+          "description": "`compact` (default), `pretty` (2 spaces) or `raw`: how a rendered body that is valid JSON\nis sent. Anything that is not JSON is sent as it is.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "binary": {
+          "description": "true: `body` is base64 and sent as a binary frame.",
+          "type": "boolean"
+        },
+        "close_code": {
+          "description": "When set the connection is closed with this code after sending.",
+          "type": [
+            "integer",
+            "null"
           ],
-          "description": "`message` trigger: condition on the incoming frame (`body` target, `key` = JSONPath)."
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535
         }
       },
       "required": [
         "trigger"
-      ],
-      "type": "object"
+      ]
     }
-  },
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {
-    "cors": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Cors"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "CORS settings (SPEC §5.7)."
-    },
-    "datasets": {
-      "default": [],
-      "items": {
-        "$ref": "#/$defs/Dataset"
-      },
-      "type": "array"
-    },
-    "docs": {
-      "default": null,
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "enabled": {
-      "default": true,
-      "type": "boolean"
-    },
-    "fake_seed": {
-      "default": null,
-      "description": "Seed for fake data and random functions; unset means random (SPEC §8.3).",
-      "format": "uint64",
-      "minimum": 0,
-      "type": [
-        "integer",
-        "null"
-      ]
-    },
-    "folders": {
-      "default": [],
-      "items": {
-        "$ref": "#/$defs/Folder"
-      },
-      "type": "array"
-    },
-    "host": {
-      "default": "127.0.0.1",
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "name": {
-      "type": "string"
-    },
-    "network": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Network"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Server-wide latency simulation (SPEC §5.6)."
-    },
-    "port": {
-      "format": "uint16",
-      "maximum": 65535,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "prefix": {
-      "default": null,
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "proxy": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Proxy"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Proxy and partial mocking (SPEC §7.1)."
-    },
-    "rate_limit": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/RateLimit"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Request rate limit (SPEC §5.6)."
-    },
-    "routes": {
-      "default": [],
-      "items": {
-        "$ref": "#/$defs/Route"
-      },
-      "type": "array"
-    },
-    "schema": {
-      "default": 1,
-      "format": "uint32",
-      "minimum": 0,
-      "type": "integer"
-    },
-    "strict_slash": {
-      "default": null,
-      "description": "true: `/users` and `/users/` are different paths (SPEC §5.2).",
-      "type": [
-        "boolean",
-        "null"
-      ]
-    },
-    "tls": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Tls"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "HTTPS settings (SPEC §5.8)."
-    },
-    "unmatched_hint": {
-      "default": null,
-      "description": "Add the closest-routes hint to 404 bodies (default true).",
-      "type": [
-        "boolean",
-        "null"
-      ]
-    },
-    "variables": {
-      "additionalProperties": true,
-      "default": {},
-      "type": "object"
-    }
-  },
-  "required": [
-    "id",
-    "name",
-    "port"
-  ],
-  "title": "Server",
-  "type": "object"
+  }
 }

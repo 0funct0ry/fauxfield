@@ -819,6 +819,7 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
                 "CORS is enabled but no origins are allowed",
             ));
         }
+        docs_checks(file, s, &mut out);
         if let Some(p) = &s.proxy {
             if let Some(m) = p.mode.as_deref()
                 && !m.is_empty()
@@ -881,6 +882,101 @@ pub fn validate_servers(servers: &[(String, Server)]) -> Vec<Diagnostic> {
 }
 
 /// Environment files: names must be unique. Entries are `(file, name)`.
+/// True for a docs/openapi path that is absolute, has no `:`, `*` or `{`, and no trailing slash.
+fn docs_path_ok(p: &str) -> bool {
+    p.starts_with('/') && p != "/" && !p.ends_with('/') && !p.contains([':', '*', '{', '}'])
+}
+
+fn confined_path(p: &str) -> bool {
+    !(p.starts_with('/') || p.split(['/', '\\']).any(|c| c == ".."))
+}
+
+/// M17.06 model-level checks (SPEC §12.4): E113, E114, E042 on schema files, W095.
+fn docs_checks(file: &str, s: &Server, out: &mut Vec<Diagnostic>) {
+    let mut op_ids: HashMap<String, &str> = HashMap::new();
+    for r in &s.routes {
+        let rp = format!("routes[{}]", r.id);
+        let ids = [(r.openapi.as_ref().and_then(|o| o.operation_id.clone()))
+            .unwrap_or_else(|| r.id.clone())];
+        for id in ids {
+            if let Some(prev) = op_ids.insert(id.clone(), &r.id) {
+                out.push(Diagnostic::error(
+                    file,
+                    format!("{rp}.openapi.operation_id"),
+                    "E114",
+                    format!("operationId `{id}` is also used by Route `{prev}`"),
+                ));
+            }
+        }
+        if let Some(o) = &r.openapi {
+            if let Some(id) = o.operation_id.as_deref()
+                && (id.is_empty() || id.contains(char::is_whitespace))
+            {
+                out.push(Diagnostic::error(
+                    file,
+                    format!("{rp}.openapi.operation_id"),
+                    "E114",
+                    "operation_id must be non-empty and contain no whitespace",
+                ));
+            }
+            if let Some(p) = o.path.as_deref()
+                && (!p.starts_with('/') || p.is_empty())
+            {
+                out.push(Diagnostic::error(
+                    file,
+                    format!("{rp}.openapi.path"),
+                    "E114",
+                    "openapi.path must start with `/`",
+                ));
+            }
+            if let Some(f) = o.request_schema.as_deref()
+                && !confined_path(f)
+            {
+                out.push(Diagnostic::error(
+                    file,
+                    format!("{rp}.openapi.request_schema"),
+                    "E042",
+                    "request_schema must stay inside the workspace",
+                ));
+            }
+        }
+        for (j, resp) in r.responses.iter().enumerate() {
+            if let Some(f) = resp.schema.as_deref()
+                && !confined_path(f)
+            {
+                out.push(Diagnostic::error(
+                    file,
+                    format!("{rp}.responses[{j}].schema"),
+                    "E042",
+                    "schema must stay inside the workspace",
+                ));
+            }
+        }
+    }
+    let Some(d) = &s.docs_site else { return };
+    if let Some(p) = d.path.as_deref()
+        && !docs_path_ok(p)
+    {
+        out.push(Diagnostic::error(
+            file,
+            "docs_site.path",
+            "E113",
+            format!("docs_site.path `{p}` is invalid"),
+        ));
+    }
+    if d.enabled && !matches!(s.host.as_str(), "127.0.0.1" | "localhost" | "::1") {
+        out.push(Diagnostic::warning(
+            file,
+            "docs_site.enabled",
+            "W095",
+            format!(
+                "API documentation is published on non-loopback host `{}`",
+                s.host
+            ),
+        ));
+    }
+}
+
 pub fn validate_environment_names(envs: &[(String, String)]) -> Vec<Diagnostic> {
     let mut seen: HashMap<&str, &str> = HashMap::new();
     let mut out = Vec::new();
@@ -989,6 +1085,18 @@ mod tests {
         let d = validate_servers(&[("servers/a.toml".into(), parse_server(t).unwrap())]);
         let codes: Vec<_> = d.iter().map(|d| d.code.as_str()).collect();
         for c in ["E108", "E109", "E110", "E111", "E112"] {
+            assert!(codes.contains(&c), "{c} in {codes:?}");
+        }
+    }
+
+    #[test]
+    fn docs_checks_fire() {
+        let t = "id=\"srv_a\"\nname=\"n\"\nport=1\nhost=\"0.0.0.0\"\n[docs_site]\nenabled=true\npath=\"/a/\"\n\
+            [[routes]]\nid=\"rte_1\"\npath=\"/x\"\n[routes.openapi]\noperation_id=\"dup\"\nrequest_schema=\"../x.json\"\n\
+            [[routes]]\nid=\"dup\"\npath=\"/y\"\n";
+        let d = validate_servers(&[("servers/a.toml".into(), parse_server(t).unwrap())]);
+        let codes: Vec<_> = d.iter().map(|d| d.code.as_str()).collect();
+        for c in ["E113", "E114", "E042", "W095"] {
             assert!(codes.contains(&c), "{c} in {codes:?}");
         }
     }

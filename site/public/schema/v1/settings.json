@@ -1,124 +1,144 @@
 {
-  "$id": "https://fauxfield.dev/schema/v1/settings.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://fauxfield.dev/schema/v1/settings.json",
+  "title": "Fauxfield settings.toml",
+  "type": "object",
   "properties": {
-    "autosave_delay_ms": {
-      "default": 300,
-      "description": "Milliseconds to wait after an edit before writing the file.",
-      "maximum": 60000,
-      "minimum": 0,
-      "type": "integer"
+    "theme": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "system",
+            "light",
+            "dark"
+          ],
+          "description": "Follow the OS (system) or pin light or dark.",
+          "default": "system"
+        },
+        "light": {
+          "type": "string",
+          "description": "Theme used in light mode.",
+          "default": "One Light"
+        },
+        "dark": {
+          "type": "string",
+          "description": "Theme used in dark mode.",
+          "default": "One Dark"
+        }
+      }
+    },
+    "ui_font_family": {
+      "type": "string",
+      "description": "Font for the interface.",
+      "default": "IBM Plex Sans"
+    },
+    "ui_font_size": {
+      "type": "number",
+      "minimum": 8.0,
+      "maximum": 32.0,
+      "description": "Interface text size in points.",
+      "default": 13
     },
     "buffer_font_family": {
-      "default": "IBM Plex Mono",
+      "type": "string",
       "description": "Font for editors and tables.",
-      "type": "string"
+      "default": "IBM Plex Mono"
     },
     "buffer_font_size": {
-      "default": 14,
-      "description": "Editor text size in points.",
-      "maximum": 32.0,
+      "type": "number",
       "minimum": 8.0,
-      "type": "number"
+      "maximum": 32.0,
+      "description": "Editor text size in points.",
+      "default": 14
     },
-    "check_for_updates": {
-      "default": true,
-      "description": "Reserved for M19.",
-      "type": "boolean"
-    },
-    "confirm_on_quit_with_running_servers": {
-      "default": true,
-      "description": "Ask before quitting while Servers run.",
-      "type": "boolean"
+    "ui_scale": {
+      "type": "number",
+      "minimum": 0.8,
+      "maximum": 2.0,
+      "description": "Scale the whole interface, 0.8 to 2.0.",
+      "default": 1.0
     },
     "editor": {
+      "type": "object",
       "properties": {
-        "auto_close": {
-          "default": true,
-          "description": "Insert the closing bracket or quote.",
-          "type": "boolean"
-        },
-        "cursor_blink": {
-          "default": true,
-          "description": "Blink the text cursor.",
-          "type": "boolean"
-        },
-        "format_json_on_save": {
-          "default": false,
-          "description": "Pretty-print valid JSON bodies when saving.",
-          "type": "boolean"
+        "tab_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16,
+          "description": "Spaces per indent level, 1 to 16.",
+          "default": 2
         },
         "hard_tabs": {
-          "default": false,
+          "type": "boolean",
           "description": "Indent with tab characters.",
-          "type": "boolean"
+          "default": false
         },
-        "indent_guides": {
-          "default": true,
-          "description": "Draw vertical indent guides.",
-          "type": "boolean"
-        },
-        "line_numbers": {
-          "default": true,
-          "description": "Show the line number gutter.",
-          "type": "boolean"
+        "soft_wrap": {
+          "type": "boolean",
+          "description": "Wrap long lines.",
+          "default": false
         },
         "show_whitespace": {
-          "default": "none",
-          "description": "none, selection or all.",
+          "type": "string",
           "enum": [
             "none",
             "selection",
             "all"
           ],
-          "type": "string"
+          "description": "none, selection or all.",
+          "default": "none"
         },
-        "soft_wrap": {
-          "default": false,
-          "description": "Wrap long lines.",
-          "type": "boolean"
+        "indent_guides": {
+          "type": "boolean",
+          "description": "Draw vertical indent guides.",
+          "default": true
         },
-        "tab_size": {
-          "default": 2,
-          "description": "Spaces per indent level, 1 to 16.",
-          "maximum": 16,
-          "minimum": 1,
-          "type": "integer"
+        "line_numbers": {
+          "type": "boolean",
+          "description": "Show the line number gutter.",
+          "default": true
+        },
+        "auto_close": {
+          "type": "boolean",
+          "description": "Insert the closing bracket or quote.",
+          "default": true
+        },
+        "cursor_blink": {
+          "type": "boolean",
+          "description": "Blink the text cursor.",
+          "default": true
+        },
+        "format_json_on_save": {
+          "type": "boolean",
+          "description": "Pretty-print valid JSON bodies when saving.",
+          "default": false
         }
-      },
-      "type": "object"
+      }
     },
-    "high_contrast": {
-      "default": false,
-      "description": "Use stronger borders and text colours.",
-      "type": "boolean"
+    "autosave_delay_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 60000,
+      "description": "Milliseconds to wait after an edit before writing the file.",
+      "default": 300
+    },
+    "confirm_on_quit_with_running_servers": {
+      "type": "boolean",
+      "description": "Ask before quitting while Servers run.",
+      "default": true
+    },
+    "restore_workspaces_on_start": {
+      "type": "boolean",
+      "description": "Reopen the Workspaces of the last session.",
+      "default": true
     },
     "mcp": {
+      "type": "object",
       "properties": {
-        "allow": {
-          "default": [
-            "read",
-            "write",
-            "execute"
-          ],
-          "description": "Tool classes agents may call.",
-          "items": {
-            "enum": [
-              "read",
-              "write",
-              "execute"
-            ],
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "socket": {
-          "description": "Unix socket path for the unix transport.",
-          "type": "string"
-        },
         "transport": {
-          "default": "stdio",
-          "description": "Default for `fauxfield mcp`; flags win.",
+          "type": "string",
           "enum": [
             "stdio",
             "unix",
@@ -126,93 +146,73 @@
             "both",
             "http"
           ],
-          "type": "string"
+          "description": "Default for `fauxfield mcp`; flags win.",
+          "default": "stdio"
+        },
+        "allow": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "read",
+              "write",
+              "execute"
+            ]
+          },
+          "description": "Tool classes agents may call.",
+          "default": [
+            "read",
+            "write",
+            "execute"
+          ]
+        },
+        "socket": {
+          "type": "string",
+          "description": "Unix socket path for the unix transport."
         }
-      },
-      "type": "object"
+      }
+    },
+    "traffic": {
+      "type": "object",
+      "properties": {
+        "max_rows": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 10000000,
+          "description": "Recordings kept in memory.",
+          "default": 100000
+        }
+      }
+    },
+    "vim_list_navigation": {
+      "type": "boolean",
+      "description": "j/k, g g/G, h/l in lists, trees and tables.",
+      "default": false
     },
     "reduce_motion": {
-      "default": "system",
-      "description": "system follows the OS.",
+      "type": "string",
       "enum": [
         "system",
         "on",
         "off"
       ],
-      "type": "string"
+      "description": "system follows the OS.",
+      "default": "system"
     },
-    "restore_workspaces_on_start": {
-      "default": true,
-      "description": "Reopen the Workspaces of the last session.",
-      "type": "boolean"
+    "high_contrast": {
+      "type": "boolean",
+      "description": "Use stronger borders and text colours.",
+      "default": false
     },
     "telemetry": {
-      "default": false,
+      "type": "boolean",
       "description": "There is no telemetry in v1.0; the key is reserved.",
-      "type": "boolean"
+      "default": false
     },
-    "theme": {
-      "properties": {
-        "dark": {
-          "default": "One Dark",
-          "description": "Theme used in dark mode.",
-          "type": "string"
-        },
-        "light": {
-          "default": "One Light",
-          "description": "Theme used in light mode.",
-          "type": "string"
-        },
-        "mode": {
-          "default": "system",
-          "description": "Follow the OS (system) or pin light or dark.",
-          "enum": [
-            "system",
-            "light",
-            "dark"
-          ],
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "traffic": {
-      "properties": {
-        "max_rows": {
-          "default": 100000,
-          "description": "Recordings kept in memory.",
-          "maximum": 10000000,
-          "minimum": 100,
-          "type": "integer"
-        }
-      },
-      "type": "object"
-    },
-    "ui_font_family": {
-      "default": "IBM Plex Sans",
-      "description": "Font for the interface.",
-      "type": "string"
-    },
-    "ui_font_size": {
-      "default": 13,
-      "description": "Interface text size in points.",
-      "maximum": 32.0,
-      "minimum": 8.0,
-      "type": "number"
-    },
-    "ui_scale": {
-      "default": 1.0,
-      "description": "Scale the whole interface, 0.8 to 2.0.",
-      "maximum": 2.0,
-      "minimum": 0.8,
-      "type": "number"
-    },
-    "vim_list_navigation": {
-      "default": false,
-      "description": "j/k, g g/G, h/l in lists, trees and tables.",
-      "type": "boolean"
+    "check_for_updates": {
+      "type": "boolean",
+      "description": "Reserved for M19.",
+      "default": true
     }
-  },
-  "title": "Fauxfield settings.toml",
-  "type": "object"
+  }
 }

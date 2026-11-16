@@ -597,6 +597,8 @@ pub struct Shell {
     pub(crate) editor_settings: crate::code_editor::EditorSettings,
     pub(crate) body_editors:
         std::collections::HashMap<String, gpui::Entity<crate::code_editor::CodeEditor>>,
+    /// Markdown editors of the Docs sub-tab, Folder tab and Server Docs section (M15, M17.06).
+    pub(crate) docs_editors: std::cell::RefCell<crate::docs_edit::DocsEditors>,
     /// Read-only request and response body viewers of the Traffic detail.
     pub(crate) traffic_editors: Option<[gpui::Entity<crate::code_editor::CodeEditor>; 2]>,
     /// Painted bounds of the picker's text input, and a drag in progress in it.
@@ -937,6 +939,7 @@ impl Shell {
             body_edit: None,
             editor_settings,
             body_editors: Default::default(),
+            docs_editors: Default::default(),
             traffic_editors: None,
             mono_w: 0.0,
             inline: None,
@@ -1806,6 +1809,10 @@ impl Shell {
                 }
             }
             MenuAct::Restart => self.restart_server_id(&m.row_id, cx),
+            MenuAct::ToggleDocs => self.toggle_docs(&m.row_id, cx),
+            MenuAct::OpenDocs => self.open_docs(&m.row_id, cx),
+            MenuAct::CopyDocsUrl => self.copy_docs_url(&m.row_id, cx),
+            MenuAct::ExportOpenapi => self.export_openapi(&m.row_id, cx),
             MenuAct::ToggleEnabled => self.toggle_enabled(&m.row_id, cx),
             MenuAct::ChangePort => self.change_port(&m.row_id, window, cx),
             MenuAct::ChangeHost => self.change_host(&m.row_id, window, cx),
@@ -3952,6 +3959,22 @@ impl Render for Shell {
             CopyAsCurl => |this, _w, cx| this.copy_curl(cx),
             MockThisRoute => |this, _w, cx| this.mock_this_route(cx),
             RefireCallback => |this, _w, cx| this.refire_callback(cx),
+            ToggleApiDocs => |this, _w, cx| match this.current_server_id() {
+                Some(id) => this.toggle_docs(&id, cx),
+                None => this.notify("Select a server first.".into(), cx),
+            },
+            OpenApiDocs => |this, _w, cx| match this.current_server_id() {
+                Some(id) => this.open_docs(&id, cx),
+                None => this.notify("Select a server first.".into(), cx),
+            },
+            CopyApiDocsUrl => |this, _w, cx| match this.current_server_id() {
+                Some(id) => this.copy_docs_url(&id, cx),
+                None => this.notify("Select a server first.".into(), cx),
+            },
+            ExportOpenapi => |this, _w, cx| match this.current_server_id() {
+                Some(id) => this.export_openapi(&id, cx),
+                None => this.notify("Select a server first.".into(), cx),
+            },
             ToggleServerProxy => |this, _w, cx| match this.current_server_id() {
                 Some(id) => this.toggle_proxy(&id, "enabled", cx),
                 None => this.notify("Select a server first.".into(), cx),

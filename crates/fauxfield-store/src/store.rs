@@ -209,6 +209,38 @@ impl Store {
                     }
                 }
             }
+            for r in &s.routes {
+                let mut files: Vec<(String, &String)> = Vec::new();
+                if let Some(f) = r.openapi.as_ref().and_then(|o| o.request_schema.as_ref()) {
+                    files.push((format!("routes[{}].openapi.request_schema", r.id), f));
+                }
+                for (j, resp) in r.responses.iter().enumerate() {
+                    if let Some(f) = &resp.schema {
+                        files.push((format!("routes[{}].responses[{j}].schema", r.id), f));
+                    }
+                }
+                for (path, f) in files {
+                    if f.contains("..") || f.starts_with('/') {
+                        continue; // E042 already reported by the model
+                    }
+                    let why = match std::fs::read_to_string(st.root.join(f)) {
+                        Err(_) => Some("is missing"),
+                        Ok(t) => match serde_json::from_str::<serde_json::Value>(&t) {
+                            Err(_) => Some("is not valid JSON"),
+                            Ok(v) if v.is_object() || v.is_boolean() => None,
+                            Ok(_) => Some("is not a JSON Schema"),
+                        },
+                    };
+                    if let Some(why) = why {
+                        diags.push(Diagnostic::error(
+                            file,
+                            path,
+                            "E115",
+                            format!("schema file `{f}` {why}"),
+                        ));
+                    }
+                }
+            }
             for (i, d) in s.datasets.iter().enumerate() {
                 for (k, f) in [("seed", &d.seed), ("seed_template", &d.seed_template)] {
                     if let Some(f) = f
@@ -1389,6 +1421,75 @@ impl Store {
             }
             Ok(())
         })
+    }
+
+    /// Set (or with `None`, remove) one key of a Route's `[routes.openapi]` table (M17.06). An
+    /// emptied table is removed so defaults are never written (SPEC §4.1).
+    pub fn set_route_openapi(
+        &self,
+        route_id: &str,
+        key: &str,
+        val: Option<Item>,
+    ) -> Result<(), StoreError> {
+        let t = Target::Route(route_id.into());
+        let file = self
+            .file_of(&t)
+            .ok_or_else(|| StoreError::NotFound(route_id.into()))?;
+        self.edit(&file, |d| {
+            let r = find_table(d, "routes", route_id)
+                .ok_or_else(|| StoreError::NotFound(route_id.into()))?;
+            match val {
+                Some(v) => {
+                    if !r.get("openapi").is_some_and(Item::is_table) {
+                        r.insert("openapi", Item::Table(toml_edit::Table::new()));
+                    }
+                    r["openapi"][key] = v;
+                }
+                None => {
+                    if let Some(tb) = r.get_mut("openapi").and_then(Item::as_table_mut) {
+                        tb.remove(key);
+                        if tb.is_empty() {
+                            r.remove("openapi");
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })
+    }
+
+    pub fn set_route_openapi_str(
+        &self,
+        route_id: &str,
+        key: &str,
+        val: Option<&str>,
+    ) -> Result<(), StoreError> {
+        self.set_route_openapi(route_id, key, val.map(value))
+    }
+
+    pub fn set_route_openapi_bool(
+        &self,
+        route_id: &str,
+        key: &str,
+        val: bool,
+    ) -> Result<(), StoreError> {
+        self.set_route_openapi(route_id, key, val.then(|| value(true)))
+    }
+
+    pub fn set_route_openapi_list(
+        &self,
+        route_id: &str,
+        key: &str,
+        items: &[String],
+    ) -> Result<(), StoreError> {
+        let v = (!items.is_empty()).then(|| {
+            let mut a = toml_edit::Array::new();
+            for i in items {
+                a.push(i.as_str());
+            }
+            value(a)
+        });
+        self.set_route_openapi(route_id, key, v)
     }
 
     pub fn set_server_table_int(

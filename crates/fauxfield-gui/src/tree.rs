@@ -90,6 +90,8 @@ pub enum RowKind {
         chaos: bool,
         /// Serves HTTPS (lock icon, M10).
         https: bool,
+        /// Running with API documentation published (docs badge, M17.06).
+        docs: bool,
     },
     /// The workspace root header (rendered above the tree, not part of `flatten`).
     Workspace,
@@ -278,6 +280,7 @@ pub fn flatten(
                     enabled: s.enabled,
                     chaos: s.chaos.is_some(),
                     https: s.https(),
+                    docs: s.running && s.docs_site.as_ref().is_some_and(|d| d.enabled),
                 },
                 true,
             );
@@ -354,6 +357,11 @@ pub enum MenuAct {
     /// Server menu: add a static files or WebSocket Route (M10, M13).
     NewStaticRoute,
     NewWebsocketRoute,
+    /// Server menu: API documentation (M17.06).
+    ToggleDocs,
+    OpenDocs,
+    CopyDocsUrl,
+    ExportOpenapi,
     NewFolder,
     NewResponse,
     Rename,
@@ -416,6 +424,10 @@ impl MenuAct {
             NewRoute => "new-route".into(),
             NewStaticRoute => "new-static-route".into(),
             NewWebsocketRoute => "new-websocket-route".into(),
+            ToggleDocs => "toggle-docs".into(),
+            OpenDocs => "open-docs".into(),
+            CopyDocsUrl => "copy-docs-url".into(),
+            ExportOpenapi => "export-openapi".into(),
             NewFolder => "new-folder".into(),
             NewResponse => "new-response".into(),
             Rename => "rename".into(),
@@ -510,11 +522,21 @@ pub fn error_preset_items() -> Vec<(&'static str, MenuAct)> {
 pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, MenuAct)> {
     use MenuAct::*;
     match kind {
-        RowKind::Server { enabled, chaos, .. } => {
+        RowKind::Server {
+            enabled,
+            chaos,
+            docs,
+            ..
+        } => {
             let mut v = vec![(if server_running { "Stop" } else { "Start" }, StartStop)];
             if server_running {
                 v.push(("Restart", Restart));
             }
+            if *docs {
+                v.push(("Open API documentation", OpenDocs));
+                v.push(("Copy API documentation URL", CopyDocsUrl));
+            }
+            v.push(("Export OpenAPI document…", ExportOpenapi));
             v.extend([
                 ("New route…", NewRoute),
                 ("New static files route…", NewStaticRoute),
@@ -525,6 +547,7 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
                 ("Change Host…", ChangeHost),
                 ("Change Prefix…", ChangePrefix),
                 (if *chaos { "Chaos off" } else { "Chaos on" }, ToggleChaos),
+                ("Toggle API documentation", ToggleDocs),
                 ("Rename…", Rename),
                 ("Duplicate", Duplicate),
                 ("Delete", Delete),
@@ -728,12 +751,14 @@ mod tests {
             enabled: true,
             chaos: false,
             https: false,
+            docs: false,
         };
         assert_eq!(
             labels(&srv, true),
             [
                 "Stop",
                 "Restart",
+                "Export OpenAPI document…",
                 "New route…",
                 "New static files route…",
                 "New WebSocket route",
@@ -743,6 +768,7 @@ mod tests {
                 "Change Host…",
                 "Change Prefix…",
                 "Chaos on",
+                "Toggle API documentation",
                 "Rename…",
                 "Duplicate",
                 "Delete"
@@ -755,13 +781,14 @@ mod tests {
             enabled: false,
             chaos: false,
             https: false,
+            docs: false,
         };
         let l = labels(&off, false);
         assert_eq!(
-            (l[0], l[1], l[3]),
+            (l[0], l[2], l[4]),
             ("Start", "New route…", "New WebSocket route")
         );
-        assert_eq!(l[5], "Enable");
+        assert_eq!(l[6], "Enable");
         assert!(!l.contains(&"Restart"));
         assert!(
             labels(&RowKind::Environment { active: true }, false)

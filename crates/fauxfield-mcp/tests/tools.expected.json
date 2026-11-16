@@ -1,197 +1,202 @@
 [
   {
+    "name": "bake_dataset",
     "class": "write",
-    "milestone": "M10.02",
-    "name": "bake_dataset"
+    "milestone": "M10.02"
   },
   {
+    "name": "certs_status",
     "class": "read",
-    "milestone": "M10",
-    "name": "certs_status"
+    "milestone": "M10"
   },
   {
+    "name": "certs_trust_command",
     "class": "read",
-    "milestone": "M10",
-    "name": "certs_trust_command"
+    "milestone": "M10"
   },
   {
+    "name": "clear_dataset",
     "class": "execute",
-    "milestone": "M10.02",
-    "name": "clear_dataset"
+    "milestone": "M10.02"
   },
   {
+    "name": "create_server",
     "class": "write",
-    "milestone": "M2",
-    "name": "create_server"
+    "milestone": "M2"
   },
   {
+    "name": "dataset_references",
     "class": "read",
-    "milestone": "M10.01",
-    "name": "dataset_references"
+    "milestone": "M10.01"
   },
   {
+    "name": "delete_dataset",
     "class": "write",
-    "milestone": "M10.01",
-    "name": "delete_dataset"
+    "milestone": "M10.01"
   },
   {
+    "name": "delete_route",
     "class": "write",
-    "milestone": "M2",
-    "name": "delete_route"
+    "milestone": "M2"
   },
   {
+    "name": "delete_server",
     "class": "write",
-    "milestone": "M2",
-    "name": "delete_server"
+    "milestone": "M2"
   },
   {
+    "name": "disconnect_ws_client",
     "class": "execute",
-    "milestone": "M13",
-    "name": "disconnect_ws_client"
+    "milestone": "M13"
   },
   {
+    "name": "get_openapi",
     "class": "read",
-    "milestone": "M2",
-    "name": "get_route"
+    "milestone": "?"
   },
   {
+    "name": "get_route",
     "class": "read",
-    "milestone": "M2",
-    "name": "get_server"
+    "milestone": "M2"
   },
   {
+    "name": "get_server",
     "class": "read",
-    "milestone": "M3",
-    "name": "get_traffic"
+    "milestone": "M2"
   },
   {
+    "name": "get_traffic",
+    "class": "read",
+    "milestone": "M3"
+  },
+  {
+    "name": "import_dataset",
     "class": "write",
-    "milestone": "M10.05",
-    "name": "import_dataset"
+    "milestone": "M10.05"
   },
   {
+    "name": "list_routes",
     "class": "read",
-    "milestone": "M2",
-    "name": "list_routes"
+    "milestone": "M2"
   },
   {
+    "name": "list_servers",
     "class": "read",
-    "milestone": "M2",
-    "name": "list_servers"
+    "milestone": "M2"
   },
   {
+    "name": "list_static_files",
     "class": "read",
-    "milestone": "M10",
-    "name": "list_static_files"
+    "milestone": "M10"
   },
   {
+    "name": "list_ws_connections",
     "class": "read",
-    "milestone": "M13",
-    "name": "list_ws_connections"
+    "milestone": "M13"
   },
   {
+    "name": "match_path",
     "class": "read",
-    "milestone": "M4",
-    "name": "match_path"
+    "milestone": "M4"
   },
   {
+    "name": "ping",
     "class": "read",
-    "milestone": "M1.1",
-    "name": "ping"
+    "milestone": "M1.1"
   },
   {
+    "name": "preview_generator",
     "class": "read",
-    "milestone": "M10.02",
-    "name": "preview_generator"
+    "milestone": "M10.02"
   },
   {
+    "name": "refire_callback",
     "class": "execute",
-    "milestone": "M14",
-    "name": "refire_callback"
+    "milestone": "M14"
   },
   {
+    "name": "render_template",
     "class": "read",
-    "milestone": "M6",
-    "name": "render_template"
+    "milestone": "M6"
   },
   {
+    "name": "reset_state",
     "class": "execute",
-    "milestone": "M8",
-    "name": "reset_state"
+    "milestone": "M8"
   },
   {
+    "name": "restart_server",
     "class": "execute",
-    "milestone": "M3",
-    "name": "restart_server"
+    "milestone": "M3"
   },
   {
+    "name": "send_test_request",
     "class": "execute",
-    "milestone": "M3",
-    "name": "send_test_request"
+    "milestone": "M3"
   },
   {
+    "name": "send_ws_message",
     "class": "execute",
-    "milestone": "M13",
-    "name": "send_ws_message"
+    "milestone": "M13"
   },
   {
+    "name": "server_info",
     "class": "read",
-    "milestone": "M1.1",
-    "name": "server_info"
+    "milestone": "M1.1"
   },
   {
+    "name": "set_chaos",
     "class": "execute",
-    "milestone": "M9",
-    "name": "set_chaos"
+    "milestone": "M9"
   },
   {
+    "name": "set_network_profile",
     "class": "execute",
-    "milestone": "M9",
-    "name": "set_network_profile"
+    "milestone": "M9"
   },
   {
+    "name": "set_variable",
     "class": "write",
-    "milestone": "M7",
-    "name": "set_variable"
+    "milestone": "M7"
   },
   {
+    "name": "start_server",
     "class": "execute",
-    "milestone": "M3",
-    "name": "start_server"
+    "milestone": "M3"
   },
   {
+    "name": "stop_server",
     "class": "execute",
-    "milestone": "M3",
-    "name": "stop_server"
+    "milestone": "M3"
   },
   {
+    "name": "update_server",
     "class": "write",
-    "milestone": "M2",
-    "name": "update_server"
+    "milestone": "M2"
   },
   {
+    "name": "update_workspace",
     "class": "write",
-    "milestone": "M3.1",
-    "name": "update_workspace"
+    "milestone": "M3.1"
   },
   {
+    "name": "upsert_dataset",
     "class": "write",
-    "milestone": "M8",
-    "name": "upsert_dataset"
+    "milestone": "M8"
   },
   {
+    "name": "upsert_route",
     "class": "write",
-    "milestone": "M2",
-    "name": "upsert_route"
+    "milestone": "M2"
   },
   {
+    "name": "validate",
     "class": "read",
-    "milestone": "M2",
-    "name": "validate"
+    "milestone": "M2"
   },
   {
+    "name": "workspace_info",
     "class": "read",
-    "milestone": "M2",
-    "name": "workspace_info"
+    "milestone": "M2"
   }
 ]

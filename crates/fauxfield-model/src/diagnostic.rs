@@ -161,6 +161,20 @@ pub fn help(code: &str) -> Option<&'static str> {
         "W092" => "Set the Route to an http Route, or remove `proxy` and `pinned`.",
         "W093" => "Remove `when`, or change the trigger to `message`.",
         "W094" => "Pick a fault that keeps the connection open, or remove the Callbacks.",
+        "E113" => {
+            "Use a path like `/__docs`: starts with `/`, no trailing slash, and no `:`, `*` or `{`."
+        }
+        "E114" => {
+            "Use a unique operation_id without spaces, and an openapi.path that starts with `/`."
+        }
+        "E115" => "Point the schema at a workspace file containing a valid JSON Schema.",
+        "W095" => {
+            "Bind the Server to 127.0.0.1, or turn off API documentation; anyone on the network can read it."
+        }
+        "W096" => "Move the Route away from the docs path, or change `docs_site.path`.",
+        "W097" => {
+            "Give the Route an `openapi.path`, or set `openapi.hidden = true` to silence this."
+        }
         _ => return None,
     })
 }
@@ -172,8 +186,9 @@ pub const CODES: &[&str] = &[
     "E060", "E070", "E071", "E072", "E073", "E074", "E075", "E076", "E077", "E078", "E079", "E080",
     "E081", "E082", "E083", "E084", "E085", "E086", "E087", "E088", "E090", "E091", "E092", "E093",
     "E094", "E095", "E096", "E097", "E098", "E099", "E100", "E101", "E102", "E103", "E104", "E105",
-    "E106", "E107", "E108", "E109", "E110", "E111", "E112", "W042", "W043", "W044", "W050", "W051",
-    "W052", "W060", "W070", "W071", "W072", "W090", "W091", "W092", "W093", "W094",
+    "E106", "E107", "E108", "E109", "E110", "E111", "E112", "E113", "E114", "E115", "W042", "W043",
+    "W044", "W050", "W051", "W052", "W060", "W070", "W071", "W072", "W090", "W091", "W092", "W093",
+    "W094", "W095", "W096", "W097",
 ];
 
 #[cfg(test)]

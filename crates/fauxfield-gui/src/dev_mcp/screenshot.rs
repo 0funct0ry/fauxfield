@@ -125,6 +125,7 @@ fixtures!(
     "traffic-proxy",
     "route-callbacks",
     "network-profile-open",
+    "api-docs",
 );
 
 pub fn named_steps(name: &str) -> Result<Vec<Step>, String> {

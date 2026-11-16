@@ -224,6 +224,48 @@ pub fn fill(template: &str, args: &[&str]) -> String {
 }
 
 /// What happened, why, how to fix (SPEC §20.34).
+// API documentation (M17.06).
+pub const DOCS_TITLE: &str = "API documentation";
+pub const DOCS_PUBLISH: &str = "Publish API documentation";
+pub const DOCS_OPEN: &str = "Open in browser";
+pub const DOCS_COPY_URL: &str = "Copy URL";
+pub const DOCS_COPY_JSON: &str = "Copy OpenAPI JSON";
+pub const DOCS_SAVE: &str = "Save OpenAPI as…";
+pub const DOCS_OFF: &str = "Off. Turn on to publish Swagger UI on this Server’s port.";
+pub const DOCS_START_TO_PUBLISH: &str = "Start the Server to publish";
+pub const DOCS_COUNTS: &str = "{} Routes documented, {} skipped";
+pub const DOCS_OPEN_DISABLED: &str = "Start the Server with API documentation on to open it.";
+pub const DOCS_NOT_RUNNING: &str = "Start the Server with API documentation on first.";
+pub const DOCS_URL_COPIED: &str = "API documentation URL copied.";
+pub const DOCS_JSON_COPIED: &str = "OpenAPI document copied.";
+pub const DOCS_NO_DOCUMENT: &str = "Could not generate the OpenAPI document. Is a host running?";
+pub const DOCS_SAVED: &str = "Saved the OpenAPI document to {}.";
+pub const DOCS_SAVE_FAILED: &str = "Could not save the OpenAPI document: {}";
+pub const DOCS_PATH_INVALID: &str =
+    "The path must start with / and have no trailing slash, :, * or {.";
+
+// Docs editing and OpenAPI fields (M15, M17.06).
+pub const DOCS_SECTION: &str = "Docs";
+pub const DOCS_EDITOR_LABEL: &str = "Markdown docs";
+pub const DOCS_EDITOR_PLACEHOLDER: &str = "Write Markdown. It is saved when you leave the editor.";
+pub const DOCS_ROUTE_HINT: &str =
+    "Markdown shown as the operation description in the published API documentation.";
+pub const DOCS_FOLDER_HINT: &str =
+    "Markdown shown as the description of this Folder's tag in the API documentation.";
+pub const DOCS_SERVER_HINT: &str = "Markdown shown as the intro of the API documentation, unless the API documentation section sets its own description.";
+pub const OPENAPI_SECTION: &str = "API documentation";
+pub const OPENAPI_HINT: &str = "Optional overrides for the published OpenAPI document. Leave a field empty to use the default.";
+pub const OPENAPI_HIDDEN: &str = "Hide from documentation";
+pub const OPENAPI_SUMMARY: &str = "Summary";
+pub const OPENAPI_TAGS: &str = "Tags (comma separated)";
+pub const OPENAPI_OPERATION_ID: &str = "Operation ID";
+pub const OPENAPI_PATH: &str = "Documented path";
+pub const OPENAPI_REQUEST_SCHEMA: &str = "Request schema file";
+pub const OPENAPI_OPERATION_ID_INVALID: &str = "The operation ID cannot contain spaces.";
+pub const OPENAPI_PATH_INVALID: &str = "The documented path must start with /.";
+pub const SCHEMA_PATH_INVALID: &str =
+    "The schema must be a file inside the workspace, for example schemas/order.json.";
+
 pub const ERR_PORT_IN_USE: &str = "Couldn’t start “{}”. Port {} is already in use by another process. Choose a free port in Server settings.";
 pub const ERR_SERVER_DISABLED: &str =
     "Couldn’t start “{}”. The Server is disabled in its file. Enable it, then start it again.";

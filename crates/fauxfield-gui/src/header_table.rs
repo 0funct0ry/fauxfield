@@ -571,6 +571,7 @@ mod tests {
             fault_rate: String::new(),
             body: String::new(),
             body_file: None,
+            schema: None,
             headers: vec![("x-a".into(), "1".into())],
         }
     }

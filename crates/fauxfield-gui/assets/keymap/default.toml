@@ -744,3 +744,7 @@ keys = "secondary-alt-s"
 [[binding]]
 action = "open_settings"
 keys = "secondary-,"
+
+[[binding]]
+action = "open_api_docs"
+keys = "secondary-alt-o"

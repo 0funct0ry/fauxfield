@@ -121,6 +121,13 @@ async fn dispatch(
         "chaos.set" => to(api
             .chaos_set(param(params, "server")?, param(params, "rate")?)
             .await),
+        "openapi.get" => api
+            .openapi_get(
+                param(params, "server")?,
+                param::<Option<bool>>(params, "include_document")?.unwrap_or(false),
+            )
+            .await
+            .map(|i| json!({"openapi": i})),
         "ws.connections" => api
             .ws_connections(param(params, "server")?, param(params, "route")?)
             .await
@@ -396,6 +403,20 @@ impl ControlApi for RemoteControl {
             self.call("chaos.set", json!({"server": server, "rate": rate}))
                 .await?,
         )
+    }
+    async fn openapi_get(
+        &self,
+        server: String,
+        include_document: bool,
+    ) -> Result<fauxfield_engine::OpenapiInfo, ControlError> {
+        let v = self
+            .call(
+                "openapi.get",
+                json!({"server": server, "include_document": include_document}),
+            )
+            .await?;
+        serde_json::from_value(v["openapi"].clone())
+            .map_err(|e| ControlError::new("transport", e.to_string()))
     }
     async fn ws_connections(
         &self,

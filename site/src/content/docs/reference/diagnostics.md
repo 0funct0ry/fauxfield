@@ -76,6 +76,9 @@ Errors (E) stop a Server or Route from working; warnings (W) point at something 
 | `E110` | error | Write the Callback URL starting with http:// or https://. |
 | `E111` | error | Use a standard HTTP method for the Callback. |
 | `E112` | error | Lower `retries` to the allowed maximum. |
+| `E113` | error | Use a path like `/__docs`: starts with `/`, no trailing slash, and no `:`, `*` or `{`. |
+| `E114` | error | Use a unique operation_id without spaces, and an openapi.path that starts with `/`. |
+| `E115` | error | Point the schema at a workspace file containing a valid JSON Schema. |
 | `W042` | warning | Create the file, fix the path, or remove `body_file`; the Response sends an empty body meanwhile. |
 | `W043` | warning | Keep one default Response; clear `default` on the others. |
 | `W044` | warning | Enable the default Response, or choose another default. |
@@ -91,3 +94,6 @@ Errors (E) stop a Server or Route from working; warnings (W) point at something 
 | `W092` | warning | Set the Route to an http Route, or remove `proxy` and `pinned`. |
 | `W093` | warning | Remove `when`, or change the trigger to `message`. |
 | `W094` | warning | Pick a fault that keeps the connection open, or remove the Callbacks. |
+| `W095` | warning | Bind the Server to 127.0.0.1, or turn off API documentation; anyone on the network can read it. |
+| `W096` | warning | Move the Route away from the docs path, or change `docs_site.path`. |
+| `W097` | warning | Give the Route an `openapi.path`, or set `openapi.hidden = true` to silence this. |

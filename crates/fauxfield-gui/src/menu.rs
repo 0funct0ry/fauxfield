@@ -268,6 +268,22 @@ pub const NOT_IN_MENU: &[(&str, &str)] = &[
         "context-menu only; not in the spec'd Server menu",
     ),
     (
+        "toggle_api_docs",
+        "Server editor API documentation section, context menu and palette",
+    ),
+    (
+        "open_api_docs",
+        "Server editor API documentation section, context menu and palette",
+    ),
+    (
+        "copy_api_docs_url",
+        "Server editor API documentation section, context menu and palette",
+    ),
+    (
+        "export_openapi",
+        "Server editor API documentation section, context menu and palette",
+    ),
+    (
         "toggle_unmatched_hint",
         "context-menu only; not in the spec'd Server menu",
     ),
@@ -682,6 +698,8 @@ pub fn enabled(id: &str, ctx: &MenuContext) -> bool {
         // A disabled server stays startable on purpose: starting it explains itself with the
         // M3.1 "Enable and start" toast (SPEC §20.14).
         "toggle_server" | "toggle_chaos" | "toggle_proxy" => ctx.current_server.is_some(),
+        "toggle_api_docs" | "export_openapi" => ctx.current_server.is_some(),
+        "open_api_docs" | "copy_api_docs_url" => ctx.current_server_running,
         "switch_network_profile" => ctx.workspace_open,
         "restart_server" => ctx.current_server_running,
         "edit_server_port" => ctx.current_server.is_some(),
@@ -780,7 +798,13 @@ pub fn why_disabled(id: &str, ctx: &MenuContext) -> &'static str {
         "no workspace open"
     } else if matches!(
         id,
-        "new_route" | "new_folder" | "edit_server_port" | "toggle_server" | "toggle_chaos"
+        "new_route"
+            | "new_folder"
+            | "edit_server_port"
+            | "toggle_server"
+            | "toggle_chaos"
+            | "toggle_api_docs"
+            | "export_openapi"
     ) {
         "no server selected"
     } else if id == "undo" || id == "redo" {

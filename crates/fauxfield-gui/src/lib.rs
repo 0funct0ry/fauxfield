@@ -27,6 +27,8 @@ pub mod dataset_ui;
 pub mod date_picker;
 #[cfg(feature = "dev-mcp")]
 pub mod dev_mcp;
+mod docs_edit;
+mod docs_ui;
 pub mod dropdown_menu;
 pub mod editor;
 pub mod empty_ui;

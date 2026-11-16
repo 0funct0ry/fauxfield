@@ -211,6 +211,12 @@ pub struct RouteState {
     /// `proxy = true` (Forward to upstream) and `pinned = true` (Pin mock), M11.
     pub forward: bool,
     pub pinned: bool,
+    /// Markdown docs length in characters and the `[routes.openapi]` overrides (M17.06).
+    pub docs_len: usize,
+    pub openapi_summary: String,
+    pub openapi_tags: Vec<String>,
+    pub openapi_operation_id: String,
+    pub openapi_hidden: bool,
     pub sub_tab: usize,
     pub selected_response: usize,
     /// Route headers in file order (M6).
@@ -706,6 +712,10 @@ pub struct ServerState {
     pub cert_days_left: Option<i64>,
     /// `[cors]` as written; absent when the table is.
     pub cors: Option<CorsState>,
+    /// `[docs_site]` and the live page (M17.06); absent when the table is.
+    pub docs: Option<DocsState>,
+    /// Docs badge on the tree row (running with docs on).
+    pub docs_badge: bool,
     /// `[proxy]` as written; absent when the table is (M11).
     pub proxy: Option<ProxyState>,
 }
@@ -723,6 +733,20 @@ pub struct ProxyState {
     pub insecure: bool,
     pub request_headers: Vec<(String, String)>,
     pub response_headers: Vec<(String, String)>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct DocsState {
+    pub enabled: bool,
+    pub path: String,
+    pub title: String,
+    pub version: String,
+    /// Page URL while the Server runs with docs on.
+    pub url: Option<String>,
+    pub documented: usize,
+    pub skipped: usize,
+    /// Route ids the document cannot express (W097).
+    pub unrepresentable: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -1071,6 +1095,20 @@ pub fn snapshot(shell: &Shell, window: &Window, cx: &App, workspace_path: Option
                     },
                     also_http_port: s.tls.as_ref().and_then(|t| t.also_http_port),
                     cert_days_left: s.cert.as_ref().map(|c| c.days_left),
+                    docs: s.docs_site.as_ref().map(|d| {
+                        let info = shell.docs_info(&s.id, false);
+                        DocsState {
+                            enabled: d.enabled,
+                            path: d.path_or_default().to_string(),
+                            title: d.title.clone().unwrap_or_default(),
+                            version: d.version.clone().unwrap_or_default(),
+                            url: info.as_ref().and_then(|i| i.url.clone()),
+                            documented: info.as_ref().map_or(0, |i| i.documented),
+                            skipped: info.as_ref().map_or(0, |i| i.skipped),
+                            unrepresentable: info.map(|i| i.unrepresentable).unwrap_or_default(),
+                        }
+                    }),
+                    docs_badge: s.running && s.docs_site.as_ref().is_some_and(|d| d.enabled),
                     cors: s.cors.as_ref().map(|c| CorsState {
                         enabled: c.enabled,
                         origins: c.origins.clone(),
@@ -1261,6 +1299,11 @@ fn route_state(shell: &Shell) -> Option<RouteState> {
         response_mode: r.response_mode.clone(),
         forward: r.forward,
         pinned: r.pinned,
+        docs_len: r.docs.chars().count(),
+        openapi_summary: r.openapi.summary.clone().unwrap_or_default(),
+        openapi_tags: r.openapi.tags.clone(),
+        openapi_operation_id: r.openapi.operation_id.clone().unwrap_or_default(),
+        openapi_hidden: r.openapi.hidden,
         ws: r.is_websocket().then(|| {
             let mine = || shell.ws_frames.iter().filter(|f| f.route_id == r.id);
             WsState {

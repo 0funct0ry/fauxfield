@@ -29,6 +29,8 @@ pub struct Response {
     pub body: String,
     /// Workspace-relative file served as the body instead of `body`.
     pub body_file: Option<String>,
+    /// JSON Schema file for the API documentation (M17.06).
+    pub schema: Option<String>,
     pub headers: Vec<(String, String)>,
     /// Rendered with Tera (default); false sends body, file and headers verbatim.
     pub template: bool,
@@ -70,6 +72,10 @@ pub struct Route {
     /// websocket Routes: `echo`, `script` or `broadcast`, and the scripted messages (M13).
     pub ws_mode: String,
     pub ws_messages: Vec<WsMsg>,
+    /// Markdown docs (SPEC §12.4: the operation description).
+    pub docs: String,
+    /// `[routes.openapi]` overrides (M17.06).
+    pub openapi: fauxfield_model::RouteOpenapi,
 }
 
 /// A scripted message of a websocket Route as the editor shows it (M13).
@@ -105,6 +111,8 @@ pub struct Folder {
     pub name: String,
     pub enabled: bool,
     pub collapsed: bool,
+    /// Markdown docs (the tag description in the API documentation).
+    pub docs: String,
     pub routes: Vec<Route>,
 }
 
@@ -133,6 +141,8 @@ pub struct Server {
     pub tls: Option<fauxfield_model::Tls>,
     /// `[cors]` as written (M10).
     pub cors: Option<fauxfield_model::Cors>,
+    /// `[docs_site]` as written (M17.06).
+    pub docs_site: Option<fauxfield_model::DocsSite>,
     /// `[proxy]` as written (M11).
     pub proxy: Option<fauxfield_model::Proxy>,
     /// Certificate details while an HTTPS Server runs (engine status).
@@ -142,6 +152,8 @@ pub struct Server {
     pub listen: Option<String>,
     /// Last start error while failed (engine status).
     pub error: Option<String>,
+    /// Markdown docs (the API documentation intro).
+    pub docs: String,
     pub folders: Vec<Folder>,
     pub routes: Vec<Route>,
 }
@@ -405,6 +417,8 @@ impl Workspace {
             index: r.index.clone(),
             forward: r.proxy,
             pinned: r.pinned,
+            docs: r.docs.clone().unwrap_or_default(),
+            openapi: r.openapi.clone().unwrap_or_default(),
             ws_mode: r.mode.clone().unwrap_or_else(|| "echo".into()),
             ws_messages: r
                 .messages
@@ -473,6 +487,7 @@ impl Workspace {
                     fault_rate: x.fault_rate.map(|r| r.to_string()).unwrap_or_default(),
                     body: x.body.clone().unwrap_or_default(),
                     body_file: x.body_file.clone(),
+                    schema: x.schema.clone(),
                     template: x.template.unwrap_or(true),
                     headers: x
                         .headers
@@ -550,11 +565,13 @@ impl Workspace {
                     chaos: None,
                     tls: s.tls.clone(),
                     cors: s.cors.clone(),
+                    docs_site: s.docs_site.clone(),
                     proxy: s.proxy.clone(),
                     cert: None,
                     running: false,
                     listen: None,
                     error: None,
+                    docs: s.docs.clone().unwrap_or_default(),
                     folders: s
                         .folders
                         .iter()
@@ -563,6 +580,7 @@ impl Workspace {
                             name: f.name.clone(),
                             enabled: f.enabled,
                             collapsed: f.collapsed,
+                            docs: f.docs.clone().unwrap_or_default(),
                             routes: s
                                 .routes
                                 .iter()

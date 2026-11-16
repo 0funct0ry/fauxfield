@@ -30,6 +30,9 @@ fauxfield.ws.list/v1
 fauxfield.ws.log/v1
 fauxfield.ws.send/v1
 fauxfield.ws.disconnect/v1
+fauxfield.docs.spec/v1
+fauxfield.docs.url/v1
+fauxfield.docs.open/v1
 fauxfield.data.list/v1
 fauxfield.data.show/v1
 fauxfield.data.reset/v1

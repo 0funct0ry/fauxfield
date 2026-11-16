@@ -24,9 +24,9 @@ pub mod vars;
 pub use actions::DatasetChange;
 pub use data::{DatasetInfo, PLAIN_FIELD_KINDS, crud_seed_template, source_kind};
 pub use engine::{
-    CallbackPreview, Engine, EngineConfig, EngineError, EngineEvent, ServerInfo, ServerStatus,
-    TrafficFilter, WsConnectionInfo, WsFrame, callback_preview, parse_status_filter,
-    ws_apply_format,
+    CallbackPreview, Engine, EngineConfig, EngineError, EngineEvent, OpenapiInfo, ServerInfo,
+    ServerStatus, TrafficFilter, WsConnectionInfo, WsFrame, callback_preview, openapi_document,
+    parse_status_filter, ws_apply_format,
 };
 pub use recording::{Recording, Timing, to_curl};
 pub use render::{Preview, SampleRequest, preview, preview_with};

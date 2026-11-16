@@ -18,6 +18,7 @@ use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 
 mod callbacks;
+mod docs;
 pub use callbacks::{CallbackPreview, callback_preview};
 mod proxy;
 mod ws;
@@ -31,6 +32,7 @@ use crate::sim::{self, BodyMode, Fault, FaultIo, Limiter, NetworkProfile, SimBod
 use crate::testreq::{self, TEST_HEADER, TestRequest, TestResponse};
 use crate::time::{now_ms, rfc3339};
 use crate::tls::Conn;
+pub use docs::{OpenapiInfo, openapi_document};
 
 /// In-memory recordings kept per server (SPEC §4.2 `[recording] buffer`).
 const DEFAULT_BUFFER: usize = 2000;
@@ -196,6 +198,7 @@ struct ServerRt {
     limiter: Limiter,
     chaos: Mutex<Option<f64>>,
     ws: ws::WsHub,
+    docs_cache: Mutex<Option<(String, Arc<docs::Cached>)>>,
 }
 
 struct Inner {
@@ -323,6 +326,7 @@ impl Engine {
                             limiter: Default::default(),
                             chaos: Mutex::new(self.inner.cfg.chaos),
                             ws: Default::default(),
+                            docs_cache: Default::default(),
                         }),
                     ));
                 }
@@ -1214,6 +1218,11 @@ async fn handle(
         })
         .collect();
     let is_test = parts.headers.contains_key(TEST_HEADER);
+
+    // `docs path?` (SPEC §12.4): before CORS, rate limit and matching; not recorded.
+    if let Some(r) = docs::respond(&engine, &rt, &id, &method, &path, &req_headers) {
+        return Ok(r);
+    }
 
     let match_start = Instant::now();
     let table = rt.table.read().unwrap().clone();

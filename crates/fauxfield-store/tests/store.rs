@@ -829,3 +829,87 @@ fn dataset_column_constraints_round_trip_and_keep_comments() {
     bad.default = Some(toml::Value::String("x".into()));
     assert!(s.set_dataset_columns(&srv, "products", &[bad]).is_err());
 }
+
+#[test]
+fn docs_site_edits_keep_comments_and_untouched_files_are_byte_identical() {
+    let (dir, store) = ws();
+    let id = store.create_server("Docs", 4100).unwrap();
+    store.flush().unwrap();
+    let file = dir.path().join("servers/docs.toml");
+    let before = std::fs::read_to_string(&file).unwrap();
+    // Add a comment, reopen: unchanged bytes when nothing edits docs_site.
+    let with_comment = format!("# keep me\n{before}");
+    std::fs::write(&file, &with_comment).unwrap();
+    let store = Store::open(dir.path()).unwrap();
+    store.flush().unwrap();
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), with_comment);
+    store
+        .set_server_table_bool(&id, "docs_site", "enabled", true)
+        .unwrap();
+    store
+        .set_server_table_str(&id, "docs_site", "path", Some("/spec"))
+        .unwrap();
+    store.flush().unwrap();
+    let after = std::fs::read_to_string(&file).unwrap();
+    assert!(after.starts_with("# keep me\n"));
+    assert!(after.contains("[docs_site]") && after.contains("path = \"/spec\""));
+    let d = Store::open(dir.path()).unwrap().snapshot().servers[0]
+        .1
+        .docs_site
+        .clone()
+        .unwrap();
+    assert!(d.enabled && d.path.as_deref() == Some("/spec"));
+}
+
+#[test]
+fn route_openapi_edits_keep_comments_and_remove_the_empty_table() {
+    let (dir, s) = ws();
+    let id = s.create_server("Open", 4101).unwrap();
+    s.flush().unwrap();
+    let file = dir.path().join("servers/open.toml");
+    let rid = Store::open(dir.path())
+        .unwrap()
+        .snapshot()
+        .servers
+        .iter()
+        .find(|(_, x)| x.id == id)
+        .unwrap()
+        .1
+        .routes
+        .first()
+        .map(|r| r.id.clone());
+    let rid = match rid {
+        Some(r) => r,
+        None => s.create_route(&id, None, "GET", "/x").unwrap(),
+    };
+    s.flush().unwrap();
+    let before = std::fs::read_to_string(&file).unwrap();
+    s.set_route_openapi_str(&rid, "summary", Some("Hello"))
+        .unwrap();
+    s.set_route_openapi_list(&rid, "tags", &["A".into(), "B".into()])
+        .unwrap();
+    s.set_route_openapi_bool(&rid, "hidden", true).unwrap();
+    s.flush().unwrap();
+    let mid = std::fs::read_to_string(&file).unwrap();
+    assert!(mid.contains("[routes.openapi]") && mid.contains("tags = [\"A\", \"B\"]"));
+    let snap = Store::open(dir.path()).unwrap().snapshot();
+    let o = snap
+        .servers
+        .iter()
+        .find(|(_, x)| x.id == id)
+        .unwrap()
+        .1
+        .routes
+        .iter()
+        .find(|r| r.id == rid)
+        .unwrap()
+        .openapi
+        .clone()
+        .unwrap();
+    assert!(o.hidden && o.summary.as_deref() == Some("Hello"));
+    s.set_route_openapi_str(&rid, "summary", None).unwrap();
+    s.set_route_openapi_list(&rid, "tags", &[]).unwrap();
+    s.set_route_openapi_bool(&rid, "hidden", false).unwrap();
+    s.flush().unwrap();
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), before);
+}

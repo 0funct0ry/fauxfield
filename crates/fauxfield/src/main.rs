@@ -6,6 +6,7 @@ mod certs_cmd;
 mod cli;
 mod data_cmd;
 mod docs_cmd;
+mod docs_site_cmd;
 mod doctor_cmd;
 mod env_cmd;
 mod host_cmd;

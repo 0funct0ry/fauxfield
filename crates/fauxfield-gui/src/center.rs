@@ -405,6 +405,7 @@ impl Shell {
                     1 => self.render_rules(t, r, cx),
                     2 => self.render_route_headers(t, r, cx),
                     3 => self.render_route_callbacks(t, r, cx),
+                    4 => self.render_route_docs(t, r, cx).into_any_element(),
                     5 => self.render_route_settings(t, s, r, cx).into_any_element(),
                     n => div()
                         .p(px(16.))
@@ -497,6 +498,15 @@ impl Shell {
                 "folder_toggle_collapsed",
                 cx.listener(move |this, _, _, cx| this.folder_toggle(&fid_col, false, cx)),
             )))
+            .child(div().mt(px(12.)).child(section_heading(t, "Docs")))
+            .child(self.docs_block(
+                t,
+                format!("folder:{}", f.id),
+                "folder-docs",
+                &f.docs,
+                crate::copy::DOCS_FOLDER_HINT,
+                cx,
+            ))
             .child(div().mt(px(12.)).child(section_heading(t, "Routes")))
             .child(crate::dev_id!(
                 div()
@@ -1135,7 +1145,11 @@ impl Shell {
                             return self.server_tls_section(t, s, cx);
                         }
                         if i == 2 {
-                            return self.server_cors_section(t, s, cx);
+                            return div()
+                                .flex()
+                                .flex_col()
+                                .child(self.server_cors_section(t, s, cx))
+                                .child(self.server_docs_section(t, s, cx));
                         }
                         if i == 3 {
                             return self.server_network_section(t, s, cx);
@@ -1161,16 +1175,19 @@ impl Shell {
                                 ),
                             );
                         }
+                        // i == 8: the Server's Markdown docs (the API documentation intro).
                         div()
                             .mt(px(14.))
                             .flex()
                             .flex_col()
                             .child(section_heading(t, name))
-                            .child(div().text_size(px(12.)).text_color(t.text_muted).child(
-                                format!(
-                                    "Settings arrive in {}.",
-                                    ["", "M10", "M10", "M9", "M9", "M11", "M8", "", "M15"][i]
-                                ),
+                            .child(self.docs_block(
+                                t,
+                                format!("server:{}", s.id),
+                                "server-docs",
+                                &s.docs,
+                                crate::copy::DOCS_SERVER_HINT,
+                                cx,
                             ))
                     })),
             )

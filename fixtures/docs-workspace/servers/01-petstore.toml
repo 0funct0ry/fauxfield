@@ -1,0 +1,51 @@
+# M17.06 fixture: a Server with an http Route, a CRUD Route on a Dataset and a hidden Route.
+schema = 1
+id = "srv_pets"
+name = "Pet Store"
+enabled = true
+host = "127.0.0.1"
+port = 4730
+
+[[datasets]]
+name = "pets"
+seed = "data/pets.json"
+id_strategy = "increment"
+
+[[folders]]
+id = "fld_pets"
+name = "Pets"
+
+[[routes]]
+id = "rte_health"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_health"
+  default = true
+  status = 200
+  content_type = "application/json"
+  body = '{"status":"ok"}'
+
+[[routes]]
+id = "rte_pets"
+folder = "fld_pets"
+name = "Pets"
+kind = "crud"
+path = "/pets"
+dataset = "pets"
+
+[[routes]]
+id = "rte_internal"
+name = "Internal"
+method = "GET"
+path = "/internal"
+  [routes.openapi]
+  hidden = true
+
+  [[routes.responses]]
+  id = "rsp_internal"
+  default = true
+  status = 200
+  body = "internal"

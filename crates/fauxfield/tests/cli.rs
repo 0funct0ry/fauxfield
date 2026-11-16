@@ -980,3 +980,41 @@ fn theme_list_and_set_write_settings_without_clobbering() {
     let (code, _) = theme(&["theme", "set", "nope"]);
     assert_eq!(code, 2);
 }
+
+#[test]
+fn docs_spec_json_is_stable_and_writes_files() {
+    let dir = workspace();
+    let p = dir.path().to_str().unwrap();
+    let (code, out, _) = run(&["docs", "spec", "example-api", "-w", p, "--json"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&redact(out)).unwrap();
+    assert_eq!(v["schema"], "fauxfield.docs.spec/v1");
+    assert_eq!(v["document"]["openapi"], "3.1.0");
+    snap_json(Some("docs_spec"), &v);
+    let file = dir.path().join("openapi.json");
+    let (code, _, _) = run(&[
+        "docs",
+        "spec",
+        "example-api",
+        "-w",
+        p,
+        "-o",
+        file.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0);
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap();
+    assert_eq!(doc["openapi"], "3.1.0");
+    assert_eq!(run(&["docs", "spec", "nope", "-w", p]).0, 2);
+}
+
+#[test]
+fn docs_url_and_open_need_a_host() {
+    let dir = workspace();
+    let p = dir.path().to_str().unwrap();
+    assert_eq!(run(&["docs", "url", "-w", p]).0, 4);
+    assert_eq!(
+        run(&["docs", "open", "example-api", "-w", p, "--no-launch"]).0,
+        4
+    );
+}

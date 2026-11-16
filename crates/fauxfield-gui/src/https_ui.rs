@@ -24,6 +24,11 @@ pub enum HttpsField {
     Methods,
     Headers,
     MaxAge,
+    /// API documentation (M17.06).
+    DocsPath,
+    DocsTitle,
+    DocsVersion,
+    DocsDescription,
 }
 
 impl HttpsField {
@@ -36,6 +41,10 @@ impl HttpsField {
             Self::Methods => "Methods",
             Self::Headers => "Headers",
             Self::MaxAge => "Max age (s)",
+            Self::DocsPath => "Path",
+            Self::DocsTitle => "Title",
+            Self::DocsVersion => "Version",
+            Self::DocsDescription => "Description",
         }
     }
     fn id(self) -> &'static str {
@@ -47,6 +56,10 @@ impl HttpsField {
             Self::Methods => "cors-methods",
             Self::Headers => "cors-headers",
             Self::MaxAge => "cors-max-age",
+            Self::DocsPath => "docs.path",
+            Self::DocsTitle => "docs.title",
+            Self::DocsVersion => "docs.version",
+            Self::DocsDescription => "docs.description",
         }
     }
     fn placeholder(self) -> &'static str {
@@ -58,11 +71,16 @@ impl HttpsField {
             Self::Methods => "GET, POST, PUT, PATCH, DELETE",
             Self::Headers => "* or content-type, authorization",
             Self::MaxAge => "600",
+            Self::DocsPath => "/__docs",
+            Self::DocsTitle => "Server name",
+            Self::DocsVersion => "1.0.0",
+            Self::DocsDescription => "Markdown; defaults to the Server docs",
         }
     }
     fn value(self, s: &Server) -> String {
         let t = s.tls.clone().unwrap_or_default();
         let c = s.cors.clone().unwrap_or_default();
+        let d = s.docs_site.clone().unwrap_or_default();
         match self {
             Self::AlsoHttp => t.also_http_port.map(|p| p.to_string()).unwrap_or_default(),
             Self::Cert => t.cert.unwrap_or_default(),
@@ -71,6 +89,10 @@ impl HttpsField {
             Self::Methods => c.methods.join(", "),
             Self::Headers => c.headers.join(", "),
             Self::MaxAge => c.max_age.map(|p| p.to_string()).unwrap_or_default(),
+            Self::DocsPath => d.path.unwrap_or_default(),
+            Self::DocsTitle => d.title.unwrap_or_default(),
+            Self::DocsVersion => d.version.unwrap_or_default(),
+            Self::DocsDescription => d.description.unwrap_or_default(),
         }
     }
 }
@@ -123,7 +145,7 @@ impl Shell {
             .child(el)
     }
 
-    fn https_field(
+    pub(crate) fn https_field(
         &self,
         t: &Theme,
         s: &Server,
@@ -620,6 +642,10 @@ impl Shell {
         let v = text.trim();
         let sid = server.to_string();
         match f {
+            HttpsField::DocsPath
+            | HttpsField::DocsTitle
+            | HttpsField::DocsVersion
+            | HttpsField::DocsDescription => self.commit_docs_field(server, f, text, cx),
             HttpsField::AlsoHttp | HttpsField::MaxAge => {
                 let n = if v.is_empty() {
                     None

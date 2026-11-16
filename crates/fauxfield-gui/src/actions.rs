@@ -127,6 +127,10 @@ actions!(
         MockThisRoute,
         RefireCallback,
         ToggleServerProxy,
+        ToggleApiDocs,
+        OpenApiDocs,
+        CopyApiDocsUrl,
+        ExportOpenapi,
         ToggleRouteForward,
         ToggleRoutePinned,
         EditServerPort,
@@ -266,6 +270,26 @@ pub static ACTIONS: &[ActionInfo] = &[
         RefireCallback
     ),
     row!("toggle_proxy", "Server: Toggle Proxy", ToggleServerProxy),
+    row!(
+        "toggle_api_docs",
+        "Server: Toggle API Documentation",
+        ToggleApiDocs
+    ),
+    row!(
+        "open_api_docs",
+        "Server: Open API Documentation",
+        OpenApiDocs
+    ),
+    row!(
+        "copy_api_docs_url",
+        "Server: Copy API Documentation URL",
+        CopyApiDocsUrl
+    ),
+    row!(
+        "export_openapi",
+        "Server: Export OpenAPI Document…",
+        ExportOpenapi
+    ),
     row!(
         "toggle_route_forward",
         "Route: Toggle Forward to Upstream",

@@ -2172,6 +2172,7 @@ dependencies = [
  "directories",
  "fake",
  "fauxfield-model",
+ "fauxfield-openapi",
  "form_urlencoded",
  "futures-util",
  "getrandom 0.3.4",
@@ -2287,6 +2288,13 @@ dependencies = [
 [[package]]
 name = "fauxfield-openapi"
 version = "0.1.0"
+dependencies = [
+ "fauxfield-model",
+ "flate2",
+ "insta",
+ "serde_json",
+ "toml 0.8.23",
+]
 
 [[package]]
 name = "fauxfield-store"

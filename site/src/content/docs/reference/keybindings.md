@@ -157,6 +157,7 @@ description: Every default binding and the vim list-navigation preset. Generated
 | `add_dataset_column` | `secondary-alt-c` | any |
 | `edit_dataset_schema` | `secondary-alt-s` | any |
 | `open_settings` | `secondary-,` | any |
+| `open_api_docs` | `secondary-alt-o` | any |
 
 ## Vim list navigation preset
 

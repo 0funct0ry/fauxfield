@@ -1,0 +1,36 @@
+# M17.06 scenario: publish API documentation. Needs fixtures/docs-workspace as the launch workspace.
+# The Server editor has an API documentation section (docs.enabled, docs.path, docs.open,
+# docs.copy_url, docs.save). Enabling it and starting the Server serves Swagger UI on the Server's
+# own port; the document lists the http Route and the CRUD operations but not the hidden Route.
+# `call` steps fail only when the tool fails, so response bodies and statuses are checked by the
+# engine tests (crates/fauxfield-engine/tests/docs_site.rs) and by hand (demo-M17.06). Not yet run in CI.
+name: m17-06-api-docs
+size: default
+steps:
+  - state: [reset]
+  - click_element: {id: row-srv_pets}
+  - wait_for_idle: {}
+  - assert_find: {text: API documentation, ids: [docs.enabled, docs.path, docs.open, docs.copy_url, docs.save]}
+  - click_element: {id: docs.enabled}
+  - wait_for_idle: {}
+  - assert: {pointer: /servers/0/docs/enabled, equals: true}
+  - assert: {pointer: /servers/0/docs/path, equals: /__docs}
+  - invoke: toggle_server
+  - wait_for: {condition: {pointer: /servers/0/status, equals: running}}
+  - assert: {pointer: /servers/0/docs_badge, equals: true}
+  - assert: {pointer: /servers/0/docs/documented, equals: 2}
+  - assert: {pointer: /servers/0/docs/skipped, equals: 1}
+  - screenshot: {name: m17-06-docs-section}
+  # The page, document, asset and a method the page does not allow.
+  - call: {tool: send_test_request, arguments: {server: srv_pets, path: /__docs/}}
+  - call: {tool: send_test_request, arguments: {server: srv_pets, path: /__docs/openapi.json}}
+  - call: {tool: send_test_request, arguments: {server: srv_pets, path: /__docs/assets/init.js}}
+  - call: {tool: send_test_request, arguments: {server: srv_pets, method: POST, path: /__docs/}}
+  - call: {tool: get_openapi, arguments: {server: srv_pets}}
+  # Docs requests are not recorded; only a normal request shows in Traffic.
+  - assert: {pointer: /traffic/row_count, equals: 0}
+  - click_element: {id: docs.enabled}
+  - wait_for_idle: {}
+  - assert: {pointer: /servers/0/docs_badge, equals: false}
+  - call: {tool: send_test_request, arguments: {server: srv_pets, path: /__docs/}}
+  - audit: {themes: [one-dark, one-light], sizes: [default, min]}

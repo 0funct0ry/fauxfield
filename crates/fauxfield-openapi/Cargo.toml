@@ -1,11 +1,20 @@
 [package]
 name = "fauxfield-openapi"
-description = "Fauxfield openapi crate (stub until its milestone)."
+description = "Fauxfield OpenAPI 3.1 generator and embedded Swagger UI (M17.06)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+
+[dependencies]
+fauxfield-model.workspace = true
+serde_json = { workspace = true, features = ["preserve_order"] }
+toml.workspace = true
+flate2 = "1"
+
+[dev-dependencies]
+insta = { version = "1", features = ["json"] }
 
 [lints]
 workspace = true

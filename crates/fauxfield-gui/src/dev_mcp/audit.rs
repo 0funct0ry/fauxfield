@@ -28,6 +28,7 @@ pub const SPEC_BINDINGS: &[(&str, &str)] = &[
     ("toggle_left_dock", "secondary-b"),
     ("toggle_bottom_dock", "secondary-`"),
     ("toggle_right_dock", "secondary-alt-b"),
+    ("open_api_docs", "secondary-alt-o"),
     ("show_sidebar_servers", "secondary-alt-1"),
     ("show_sidebar_environments", "secondary-alt-2"),
     ("show_sidebar_datasets", "secondary-alt-3"),

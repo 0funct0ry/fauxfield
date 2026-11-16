@@ -25,6 +25,7 @@ description: Every tool, resource and prompt of the Fauxfield MCP server, with i
 | `certs_status` | read | yes | no | yes | Development CA status: path, fingerprint, expiry and whether this machine trusts it. Never changes a trust store. |
 | `certs_trust_command` | read | yes | no | yes | The exact platform command that trusts the development CA. It is only returned, never run: ask the user to run it. |
 | `dataset_references` | read | yes | no | yes | Everything that uses a Dataset: CRUD Routes, free-text `data.<name>` uses, seed files and persisted state. |
+| `get_openapi` | read | yes | no | yes | The generated OpenAPI 3.1 document of a Server, built from its files (works while stopped). The document is capped at 64 KB; `truncated: true` means it was left out, so use `fauxfield docs spec` for the whole document. |
 | `get_route` | read | yes | no | yes | A Route with its Responses. |
 | `get_server` | read | yes | no | yes | Full Server including folders and routes. Secret-looking variables are redacted. |
 | `get_traffic` | read | yes | no | yes | Recent recorded requests (newest last) with the route that matched, status and timing. Secret headers are masked. |
@@ -46,7 +47,7 @@ description: Every tool, resource and prompt of the Fauxfield MCP server, with i
 | `delete_server` | write | no | yes | yes | Delete a Server and its file. |
 | `import_dataset` | write | no | no | yes | Import a JSON, CSV or Parquet file into a Dataset's static seed (data/<name>.json). One-time conversion; the file is not referenced afterwards. Returns row count, inferred columns, key and warnings (ragged rows, duplicate keys, unparseable cells). Rows above the hard limit are refused. |
 | `set_variable` | write | no | no | yes | Set or remove a variable at a scope (global, environment, server, route). Values for secret-looking names (*token*, *secret*, *password*, *key*) are never echoed back. |
-| `update_server` | write | no | no | yes | Update Server fields (name, port, host, enabled, prefix, unmatched_hint, fake_seed) and the `proxy` settings. |
+| `update_server` | write | no | no | yes | Update Server fields (name, port, host, enabled, prefix, unmatched_hint, fake_seed), the `proxy` settings and the `docs_site` settings (published API documentation). |
 | `update_workspace` | write | no | no | yes | Rename the workspace (the `name` in fauxfield.toml; comments and key order are kept). |
 | `upsert_dataset` | write | no | no | yes | Create or replace a Dataset (seed file plus [[datasets]] entry). Without crud_path no Route is written (`route` is null); with it a CRUD Route is added when none serves the Dataset. |
 | `upsert_route` | write | no | no | yes | Create or update a Route and its Responses in one call (also `proxy` and `pinned` flags). |
@@ -147,6 +148,12 @@ No arguments.
 | Argument | Required | Description |
 |---|---|---|
 | `name` | yes | Dataset name. |
+| `server` | yes | Server ID, name or file slug. |
+
+### `get_openapi`
+
+| Argument | Required | Description |
+|---|---|---|
 | `server` | yes | Server ID, name or file slug. |
 
 ### `get_route`
@@ -309,6 +316,8 @@ No arguments.
 | Argument | Required | Description |
 |---|---|---|
 | `clear_seed` | no | Remove the seed (output becomes random). |
+| `docs` | no | Markdown docs of the Server (the API documentation intro). Empty removes it. |
+| `docs_site` | no | Published API documentation (`[docs_site]`, SPEC §12.4); only the given keys change. |
 | `enabled` | no |  |
 | `fake_seed` | no | Seed for fake data and random template functions; 0 or omitted keeps it, `clear_seed` removes it. |
 | `host` | no |  |
@@ -345,11 +354,13 @@ No arguments.
 
 | Argument | Required | Description |
 |---|---|---|
+| `docs` | no | Markdown docs (the API documentation operation description); empty removes it. |
 | `folder` | no | Folder ID (`fld_…`). |
 | `headers` | no | Route headers (values are templated); set or replace by name. |
 | `match` | no | Match mode: exact, param or regex; omit to keep (create: inferred). |
 | `method` | no |  |
 | `name` | no |  |
+| `openapi` | no | API documentation overrides (`[routes.openapi]`); only the given keys change. |
 | `path` | no |  |
 | `pinned` | no | Keep this Route mocked when the proxy is in `passthrough` mode. |
 | `priority` | no | Higher wins; 0 is the default and is not written. |

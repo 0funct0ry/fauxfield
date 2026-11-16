@@ -107,6 +107,11 @@ pub enum Command {
         #[command(subcommand)]
         action: crate::ws_cmd::WsAction,
     },
+    /// Generate the OpenAPI document of a Server; show or open its published API documentation.
+    Docs {
+        #[command(subcommand)]
+        action: crate::docs_site_cmd::DocsAction,
+    },
     /// List, show, reset, export and import Datasets.
     Data {
         #[command(subcommand)]
@@ -272,6 +277,7 @@ pub fn run() -> i32 {
         Some(Command::Env { action }) => crate::env_cmd::env(action),
         Some(Command::Var { action }) => crate::env_cmd::var(action),
         Some(Command::Ws { action }) => crate::ws_cmd::ws(action),
+        Some(Command::Docs { action }) => crate::docs_site_cmd::docs(action),
         Some(Command::Callback { action }) => crate::callback_cmd::callback(action),
         Some(Command::Data { action }) => crate::data_cmd::data(action),
         Some(Command::Certs { action }) => crate::certs_cmd::certs(action),

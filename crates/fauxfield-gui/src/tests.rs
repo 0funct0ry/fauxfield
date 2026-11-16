@@ -2303,6 +2303,126 @@ fn network_and_fault_controls(cx: &mut TestAppContext) {
     assert_eq!(read(&view, cx, |s| s.ws.servers[0].chaos), None);
 }
 
+/// M15 and M17.06: Docs editors and the OpenAPI fields write the files.
+#[gpui::test]
+fn docs_and_openapi_fields_are_editable(cx: &mut TestAppContext) {
+    use crate::docs_edit::OpenapiField;
+    let (view, cx) = setup(cx, None);
+    let (sid, rid, resp) = read(&view, cx, |s| {
+        let sv = &s.ws.servers[0];
+        let r = sv.all_routes().next().unwrap();
+        (sv.id.clone(), r.id.clone(), r.responses[0].id.clone())
+    });
+    // Markdown docs of a Route and of the Server.
+    for key in [format!("route:{rid}"), format!("server:{sid}")] {
+        view.update(cx, |s, cx| {
+            let ed = s.docs_editor(&key, "", cx);
+            ed.update(cx, |e, cx| e.set_text("# Hello\n\nSome *docs*.", cx));
+            s.commit_docs(&key, cx);
+        });
+    }
+    assert_eq!(
+        read(&view, cx, |s| s.ws.find_route(&rid).unwrap().1.docs.clone()),
+        "# Hello\n\nSome *docs*."
+    );
+    assert!(read(&view, cx, |s| s.ws.servers[0]
+        .docs
+        .starts_with("# Hello")));
+    // An empty text removes the key.
+    view.update(cx, |s, cx| {
+        let key = format!("route:{rid}");
+        let ed = s.docs_editor(&key, "# Hello\n\nSome *docs*.", cx);
+        ed.update(cx, |e, cx| e.set_text("", cx));
+        s.commit_docs(&key, cx);
+    });
+    assert_eq!(
+        read(&view, cx, |s| s.ws.find_route(&rid).unwrap().1.docs.clone()),
+        ""
+    );
+    // OpenAPI overrides.
+    view.update(cx, |s, cx| {
+        s.commit_openapi_field(&rid, OpenapiField::Summary, "List things", cx);
+        s.commit_openapi_field(&rid, OpenapiField::Tags, "Orders, Billing", cx);
+        s.commit_openapi_field(&rid, OpenapiField::OperationId, "list_things", cx);
+        s.commit_openapi_field(&rid, OpenapiField::OperationId, "has space", cx); // refused
+        s.commit_openapi_field(&rid, OpenapiField::RequestSchema, "../x.json", cx); // refused
+        s.commit_openapi_field(&rid, OpenapiField::RequestSchema, "schemas/req.json", cx);
+        s.toggle_openapi_hidden(&rid, cx);
+        s.commit_response_schema(&resp, "schemas/resp.json", cx);
+        s.commit_response_schema(&resp, "/abs.json", cx); // refused
+    });
+    let o = read(&view, cx, |s| {
+        s.ws.find_route(&rid).unwrap().1.openapi.clone()
+    });
+    assert_eq!(o.summary.as_deref(), Some("List things"));
+    assert_eq!(o.tags, vec!["Orders".to_string(), "Billing".to_string()]);
+    assert_eq!(o.operation_id.as_deref(), Some("list_things"));
+    assert_eq!(o.request_schema.as_deref(), Some("schemas/req.json"));
+    assert!(o.hidden);
+    assert_eq!(
+        read(&view, cx, |s| s.ws.find_route(&rid).unwrap().1.responses[0]
+            .schema
+            .clone())
+        .as_deref(),
+        Some("schemas/resp.json")
+    );
+    // Clearing every key removes the table.
+    view.update(cx, |s, cx| {
+        for f in OpenapiField::ALL {
+            s.commit_openapi_field(&rid, f, "", cx);
+        }
+        s.toggle_openapi_hidden(&rid, cx);
+    });
+    let o = read(&view, cx, |s| {
+        s.ws.find_route(&rid).unwrap().1.openapi.clone()
+    });
+    assert_eq!(o, fauxfield_model::RouteOpenapi::default());
+}
+
+/// M17.06: the API documentation section's fields, toggle and the docs state.
+#[gpui::test]
+fn api_documentation_controls(cx: &mut TestAppContext) {
+    use crate::https_ui::HttpsField;
+    use crate::response_pane::{InlineTarget as I, Nav};
+    let (view, cx) = setup(cx, None);
+    let sid = read(&view, cx, |s| s.ws.servers[0].id.clone());
+    let type_field =
+        |view: &Entity<Shell>, cx: &mut VisualTestContext, f: HttpsField, text: &str| {
+            let t = I::Https {
+                server: sid.clone(),
+                field: f,
+            };
+            view.update_in(cx, |s, w, cx| {
+                s.begin_inline(t, "", false, w, cx);
+                s.set_inline_text(text, cx);
+                s.commit_inline(Nav::Stay, w, cx);
+            });
+        };
+    assert!(read(&view, cx, |s| s.ws.servers[0].docs_site.is_none()));
+    view.update(cx, |s, cx| s.toggle_docs(&sid, cx));
+    let d = read(&view, cx, |s| s.ws.servers[0].docs_site.clone().unwrap());
+    assert!(d.enabled);
+    type_field(&view, cx, HttpsField::DocsPath, "/spec/");
+    type_field(&view, cx, HttpsField::DocsPath, "/spec"); // the first is rejected (E113)
+    type_field(&view, cx, HttpsField::DocsTitle, "My API");
+    type_field(&view, cx, HttpsField::DocsVersion, "2.0.0");
+    let d = read(&view, cx, |s| s.ws.servers[0].docs_site.clone().unwrap());
+    assert_eq!(
+        (d.path.as_deref(), d.title.as_deref(), d.version.as_deref()),
+        (Some("/spec"), Some("My API"), Some("2.0.0"))
+    );
+    view.update(cx, |s, cx| s.toggle_docs(&sid, cx));
+    assert!(!read(&view, cx, |s| s.ws.servers[0]
+        .docs_site
+        .clone()
+        .unwrap()
+        .enabled));
+    assert!(crate::docs_ui::docs_path_ok("/__docs"));
+    for bad in ["", "/", "/a/", "a", "/a:b", "/a*", "/a{b}"] {
+        assert!(!crate::docs_ui::docs_path_ok(bad), "{bad}");
+    }
+}
+
 /// M10: TLS and CORS fields of the Server tab, the CORS presets and static Route editing.
 #[gpui::test]
 fn tls_cors_and_static_controls(cx: &mut TestAppContext) {

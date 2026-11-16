@@ -133,6 +133,12 @@ pub trait ControlApi: Send + Sync {
         server: String,
         route: Option<String>,
     ) -> Result<Vec<WsConnectionInfo>, ControlError>;
+    /// OpenAPI state of a Server and, when asked, the generated document (SPEC §12.4).
+    async fn openapi_get(
+        &self,
+        server: String,
+        include_document: bool,
+    ) -> Result<fauxfield_engine::OpenapiInfo, ControlError>;
     /// WebSocket timeline frames with id greater than `after` (`limit` 0 = all).
     async fn ws_messages(
         &self,
@@ -401,6 +407,16 @@ impl ControlApi for LocalControl {
         route: Option<String>,
     ) -> Result<Vec<WsConnectionInfo>, ControlError> {
         Ok(self.engine.ws_connections(&server, route.as_deref())?)
+    }
+
+    async fn openapi_get(
+        &self,
+        server: String,
+        include_document: bool,
+    ) -> Result<fauxfield_engine::OpenapiInfo, ControlError> {
+        self.blocking(move |e| e.openapi_get(&server, include_document))
+            .await?
+            .map_err(Into::into)
     }
 
     async fn ws_messages(
