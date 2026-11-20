@@ -5,13 +5,24 @@ import "@fontsource/ibm-plex-sans/600.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import release from "../data/release.json";
+import Shot from "../components/Shot.astro";
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 const docs = `${base}/docs/`;
 const origin = Astro.site?.origin ?? "";
 const og = `${origin}${base}/og/index.png`;
-const title = "Fauxfield: mock APIs at the speed of your GPU";
-const description = "Fauxfield is a fast, local-first mock API server with a GPU-accelerated desktop app, a headless runner, and a built-in MCP server for coding agents.";
+const title = "Fauxfield: design and mock APIs in minutes";
+const description = "Fauxfield is a local-first mock API tool. Design servers in a desktop app, shape behaviour with rules, back routes with realistic datasets and CRUD, template responses, and let your coding agent drive it over MCP.";
+
+/* Flowing line ribbons for the hero and the closing band (Stripe-style, drawn once at build). */
+function ribbon(count: number, flip = false) {
+  return Array.from({ length: count }, (_, i) => {
+    const y = (v: number) => (flip ? 600 - v : v);
+    return `M-40 ${y(330 + i * 9)} C 320 ${y(150 + i * 15)}, 660 ${y(560 - i * 7)}, 1060 ${y(300 + i * 6)} S 1560 ${y(70 + i * 13)}, 1960 ${y(190 + i * 10)}`;
+  });
+}
+const heroWaves = ribbon(22);
+const footWaves = ribbon(18, true);
 ---
 <!doctype html>
 <html lang="en">
@@ -33,6 +44,8 @@ const description = "Fauxfield is a fast, local-first mock API server with a GPU
   --code-bg:#282c33; --code-panel:#2f343e; --code-line:#363c46; --code-text:#dce0e5; --code-muted:#9ea2af;
   --c-str:#a1c181; --c-key:#e58f94; --c-num:#bf956a; --c-kw:#c792e0; --c-fn:#73ade9; --c-tag:#c792e0; --c-ok:#a1c181;
   --ok:#2f7a2a; --no:#a63b2e; --part:#7a5f0c;
+  --wave-a:#6b8cff; --wave-b:#b48cf2; --wave-c:#4fc4cf; --wave-o:.55;
+  --wash-a:rgba(107,140,255,.14); --wash-b:rgba(180,140,242,.12); --wash-c:rgba(79,196,207,.10);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -40,6 +53,8 @@ const description = "Fauxfield is a fast, local-first mock API server with a GPU
     --paper:#282c33; --paper-2:#2f343e; --ink:#dce0e5; --muted:#a9afbc; --line:#3e4450; --accent:#74ade8;
     --code-bg:#21252b; --code-panel:#2b2f36; --code-line:#343a44;
     --ok:#a1c181; --no:#d07277; --part:#dec184;
+    --wave-a:#74ade8; --wave-b:#c792e0; --wave-c:#6fc3c9; --wave-o:.35;
+    --wash-a:rgba(116,173,232,.10); --wash-b:rgba(199,146,224,.08); --wash-c:rgba(111,195,201,.06);
   }
 }
 :root[data-theme="dark"] {
@@ -47,19 +62,21 @@ const description = "Fauxfield is a fast, local-first mock API server with a GPU
   --paper:#282c33; --paper-2:#2f343e; --ink:#dce0e5; --muted:#a9afbc; --line:#3e4450; --accent:#74ade8;
   --code-bg:#21252b; --code-panel:#2b2f36; --code-line:#343a44;
   --ok:#a1c181; --no:#d07277; --part:#dec184;
+  --wave-a:#74ade8; --wave-b:#c792e0; --wave-c:#6fc3c9; --wave-o:.35;
+  --wash-a:rgba(116,173,232,.10); --wash-b:rgba(199,146,224,.08); --wash-c:rgba(111,195,201,.06);
 }
 :root { box-sizing: border-box; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
-html { scroll-padding-top: calc(env(safe-area-inset-top, 0px) + 64px); }
+html { scroll-padding-top: calc(env(safe-area-inset-top, 0px) + 72px); scroll-behavior: smooth; }
 *, *::before, *::after { box-sizing: inherit; }
-body { margin: 0; background: var(--paper); color: var(--ink); font: 17px/1.6 "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 17px/1.6 "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; overflow-x: clip; }
 a { color: var(--accent); text-underline-offset: 3px; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 code, pre, .mono { font-family: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace; }
-.wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; position: relative; }
 img, svg { max-width: 100%; }
 
 /* Nav */
-.nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10; background: color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+.nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10; background: color-mix(in srgb, var(--paper) 82%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent); }
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 11; background: color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter: blur(10px); }
 .nav .wrap { display: flex; align-items: center; gap: 28px; height: 56px; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--ink); text-decoration: none; font-size: 16px; }
@@ -68,31 +85,105 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .nav nav a { color: var(--muted); text-decoration: none; }
 .nav nav a:hover { color: var(--ink); }
 .nav .end { margin-left: auto; display: flex; gap: 10px; align-items: center; }
-.btn { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border-radius: 6px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font: 500 15px "IBM Plex Sans", sans-serif; text-decoration: none; cursor: pointer; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 38px; padding: 0 16px; border-radius: 6px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font: 500 15px "IBM Plex Sans", sans-serif; text-decoration: none; cursor: pointer; white-space: nowrap; }
 .btn:hover { background: var(--paper-2); }
 .btn.solid { background: var(--ink); color: var(--paper); border-color: var(--ink); }
-.btn.solid:hover { opacity: .9; }
+.btn.solid:hover { opacity: .9; background: var(--ink); }
 .btn.small { height: 32px; padding: 0 12px; font-size: 14px; }
+.btn.big { height: 46px; padding: 0 22px; font-size: 16px; border-radius: 8px; }
+.btn .arr { transition: transform .15s ease; }
+.btn:hover .arr { transform: translateX(3px); }
+
+/* Background patterns */
+.pattern { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.pattern .wash { position: absolute; inset: 0; background:
+  radial-gradient(42% 60% at 82% 18%, var(--wash-a), transparent 70%),
+  radial-gradient(36% 50% at 62% 6%, var(--wash-b), transparent 70%),
+  radial-gradient(30% 45% at 96% 52%, var(--wash-c), transparent 70%); }
+.pattern svg { position: absolute; left: 50%; width: max(1900px, 140vw); height: auto; transform: translateX(-50%); opacity: var(--wave-o); }
+.pattern path { fill: none; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.hero .pattern svg { top: -60px; -webkit-mask-image: linear-gradient(100deg, transparent 18%, #000 52%, #000 85%, transparent 100%), linear-gradient(180deg, #000 55%, transparent 95%); -webkit-mask-composite: source-in; mask-image: linear-gradient(100deg, transparent 18%, #000 52%, #000 85%, transparent 100%), linear-gradient(180deg, #000 55%, transparent 95%); mask-composite: intersect; }
+.closing .pattern svg { bottom: -40px; -webkit-mask-image: linear-gradient(80deg, #000 0%, #000 40%, transparent 78%), linear-gradient(0deg, #000 50%, transparent 100%); -webkit-mask-composite: source-in; mask-image: linear-gradient(80deg, #000 0%, #000 40%, transparent 78%), linear-gradient(0deg, #000 50%, transparent 100%); mask-composite: intersect; }
+.closing .pattern .wash { background:
+  radial-gradient(40% 60% at 14% 88%, var(--wash-a), transparent 70%),
+  radial-gradient(34% 50% at 36% 100%, var(--wash-b), transparent 70%),
+  radial-gradient(28% 40% at 4% 50%, var(--wash-c), transparent 70%); }
 
 /* Hero */
-.hero { padding: 72px 0 48px; }
-.hero h1 { font-size: clamp(40px, 6.4vw, 76px); line-height: 1.02; letter-spacing: -0.035em; font-weight: 600; margin: 0; max-width: 15ch; }
-.hero .lede { font-size: 20px; color: var(--muted); max-width: 54ch; margin: 22px 0 30px; }
+.hero { position: relative; padding: 88px 0 24px; isolation: isolate; }
+.hero .wrap { z-index: 1; }
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; font: 500 13px "IBM Plex Mono", monospace; color: var(--accent); letter-spacing: .02em; text-transform: uppercase; margin-bottom: 18px; }
+.hero h1 { font-size: clamp(42px, 6.6vw, 78px); line-height: 1.02; letter-spacing: -0.035em; font-weight: 600; margin: 0; max-width: 14ch; }
+.hero .lede { font-size: 20px; color: var(--muted); max-width: 56ch; margin: 24px 0 32px; }
 .cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-.install { display: inline-flex; align-items: center; gap: 12px; height: 44px; padding: 0 8px 0 16px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-2); font: 15px "IBM Plex Mono", monospace; }
-.install .p { color: var(--muted); }
-.copy { height: 30px; padding: 0 10px; border-radius: 4px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font: 13px "IBM Plex Sans", sans-serif; cursor: pointer; }
-.platforms { color: var(--muted); font-size: 14px; margin-top: 14px; }
+.platforms { color: var(--muted); font-size: 14px; margin-top: 16px; }
+.hero .shot { margin-top: 64px; }
 
-/* Live demo — the one memorable moment */
-.demo { margin-top: 56px; border-radius: 10px; overflow: hidden; background: var(--code-bg); color: var(--code-text); border: 1px solid var(--code-line); display: grid; grid-template-columns: 1.05fr 1fr; box-shadow: 0 30px 60px -30px rgba(20,24,40,.45); }
+/* Feature sections */
+section.block { padding: 112px 0 0; position: relative; }
+.block h2 { font-size: clamp(30px, 4vw, 44px); line-height: 1.1; letter-spacing: -0.025em; font-weight: 600; margin: 0 0 18px; max-width: 20ch; }
+.block .intro { color: var(--muted); font-size: 19px; max-width: 60ch; margin: 0 0 40px; }
+.feature { display: grid; grid-template-columns: 0.85fr 1.15fr; gap: 64px; align-items: center; }
+.feature.rev { grid-template-columns: 1.15fr 0.85fr; }
+.feature.rev .copy-col { order: 2; }
+.feature .copy-col p { color: var(--muted); font-size: 18px; margin: 0 0 20px; max-width: 48ch; }
+.ticks { list-style: none; padding: 0; margin: 0 0 28px; display: grid; gap: 10px; }
+.ticks li { position: relative; padding-left: 28px; font-size: 16px; }
+.ticks li::before { content: ""; position: absolute; left: 0; top: 6px; width: 16px; height: 16px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 14%, transparent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 8.2l2.2 2.2 4.8-4.8' fill='none' stroke='%233d57c4' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/16px no-repeat; }
+.ticks code { font-size: 14px; }
+.doclink { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font: 500 13px "IBM Plex Sans", sans-serif; text-decoration: none; white-space: nowrap; transition: background .15s ease, border-color .15s ease; }
+.doclink:hover { background: var(--paper-2); border-color: color-mix(in srgb, var(--ink) 25%, var(--line)); }
+.doclink.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.doclink.primary:hover { opacity: .88; background: var(--ink); }
+.doclinks { display: flex; flex-wrap: nowrap; gap: 8px; align-items: center; }
+@media (max-width: 420px) { .doclinks { flex-wrap: wrap; } }
+
+/* Code panels */
+.k { color: var(--c-key); } .s { color: var(--c-str); } .n { color: var(--c-num); } .kw { color: var(--c-kw); } .f { color: var(--c-fn); } .t { color: var(--c-tag); } .c { color: var(--code-muted); }
+.panel { border-radius: 10px; background: var(--code-bg); color: var(--code-text); border: 1px solid var(--code-line); overflow: hidden; }
+.panel .bar { height: 34px; display: flex; align-items: center; padding: 0 14px; background: var(--code-panel); border-bottom: 1px solid var(--code-line); font-size: 13px; color: var(--code-muted); }
+.panel pre { margin: 0; padding: 14px 16px; font-size: 13.5px; line-height: 1.65; overflow-x: auto; }
+.stack { display: grid; gap: 20px; min-width: 0; }
+
+
+/* Agent flow infographic */
+.flow { margin: 0; display: grid; gap: 0; }
+.flow .node { border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 18px 20px; box-shadow: 0 12px 30px -18px rgba(30,40,90,.25); }
+.flow .nt { font: 500 12px "IBM Plex Mono", monospace; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); margin-bottom: 10px; }
+.flow .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.flow .chips span { font-size: 13px; font-weight: 500; padding: 4px 10px; border-radius: 6px; background: var(--paper-2); border: 1px solid var(--line); }
+.flow .nd { font-size: 15px; color: var(--muted); font-style: italic; }
+.flow .link { display: grid; grid-template-columns: 44px 1fr 44px; gap: 14px; align-items: stretch; padding: 8px 20px; }
+.flow .link svg { width: 24px; height: 100%; min-height: 48px; fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; align-self: stretch; }
+.flow .link svg path { vector-effect: non-scaling-stroke; }
+.flow .ar { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+.flow .ar svg { height: 64px; flex: none; }
+.flow .ar span { font: 500 10.5px "IBM Plex Mono", monospace; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.flow .ar.up svg { opacity: .55; }
+
+.flow .tag { font-size: 13px; color: var(--muted); margin: 6px 0 8px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.flow .tag small { font-size: 12.5px; }
+.flow .tag code { color: var(--ink); font-size: 12.5px; }
+.flow ol { list-style: none; counter-reset: st; margin: 0 0 6px; padding: 0; display: grid; gap: 6px; }
+.flow li { counter-increment: st; display: grid; grid-template-columns: 24px auto 1fr; gap: 10px; align-items: center; padding: 8px 12px; border-radius: 8px; background: var(--code-bg); color: var(--code-text); font-size: 13px; }
+.flow li::before { content: counter(st); width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--paper); font: 600 12px "IBM Plex Sans", sans-serif; display: grid; place-items: center; }
+.flow li code { color: var(--c-fn); font-size: 13px; }
+.flow li small { color: var(--code-muted); font-size: 12.5px; text-align: right; }
+.flow .trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.flow .trio div { padding: 12px; border-radius: 8px; background: var(--paper-2); border: 1px solid var(--line); display: grid; gap: 4px; align-content: start; }
+.flow .trio b { font-size: 14px; font-weight: 600; }
+.flow .trio span { font-size: 13px; color: var(--muted); line-height: 1.45; }
+.flow figcaption { margin-top: 14px; }
+@media (max-width: 600px) { .flow .trio { grid-template-columns: 1fr; } .flow li { grid-template-columns: 24px 1fr; } .flow li small { grid-column: 2; text-align: left; } }
+
+/* Live template demo */
+.demo { margin-top: 48px; border-radius: 10px; overflow: hidden; background: var(--code-bg); color: var(--code-text); border: 1px solid var(--code-line); display: grid; grid-template-columns: 1.05fr 1fr; box-shadow: 0 30px 60px -30px rgba(20,24,40,.45); }
 .demo .col { min-width: 0; display: flex; flex-direction: column; }
 .demo .col + .col { border-left: 1px solid var(--code-line); }
 .demo .bar { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 14px; background: var(--code-panel); border-bottom: 1px solid var(--code-line); font-size: 13px; color: var(--code-muted); }
 .demo .bar strong { color: var(--code-text); font-weight: 500; }
 .demo .bar .sp { flex: 1; }
 .demo pre { margin: 0; padding: 16px 18px; font-size: 13.5px; line-height: 1.65; overflow-x: auto; white-space: pre; }
-.k { color: var(--c-key); } .s { color: var(--c-str); } .n { color: var(--c-num); } .kw { color: var(--c-kw); } .f { color: var(--c-fn); } .t { color: var(--c-tag); } .c { color: var(--code-muted); }
 .req { font: 13px "IBM Plex Mono", monospace; padding: 10px 18px; border-bottom: 1px solid var(--code-line); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .req .g { color: var(--c-str); }
 .req .st { color: var(--c-ok); margin-left: auto; }
@@ -102,52 +193,21 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .send:hover { background: var(--code-line); }
 .demo-note { color: var(--muted); font-size: 14px; margin-top: 12px; }
 
-/* Sections */
-section.block { padding: 96px 0 24px; }
-.block h2 { font-size: clamp(30px, 4vw, 44px); line-height: 1.1; letter-spacing: -0.025em; font-weight: 600; margin: 0 0 18px; max-width: 20ch; }
-.block .intro { color: var(--muted); font-size: 19px; max-width: 60ch; margin: 0 0 40px; }
+/* Workspace + more */
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; }
-
-.files { border: 1px solid var(--line); border-radius: 8px; background: var(--paper-2); padding: 18px 20px; font: 14.5px/1.9 "IBM Plex Mono", monospace; }
+.files { border: 1px solid var(--line); border-radius: 8px; background: var(--paper-2); padding: 18px 20px; font: 14.5px/1.9 "IBM Plex Mono", monospace; overflow-x: auto; }
 .files .d { color: var(--muted); }
 .files .h { color: var(--ink); }
 .files .note { font-family: "IBM Plex Sans", sans-serif; color: var(--muted); font-size: 13.5px; margin-left: 10px; }
 .points p { margin: 0 0 18px; max-width: 52ch; }
 .points strong { font-weight: 600; }
-
-.caps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 56px; border-top: 1px solid var(--line); }
-.cap { padding: 26px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 180px 1fr; gap: 20px; }
-.cap h3 { margin: 0; font-size: 17px; font-weight: 600; }
-.cap p { margin: 0; color: var(--muted); }
+.caps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 40px; border-top: 1px solid var(--line); }
+.cap { padding: 24px 0; border-bottom: 1px solid var(--line); }
+.cap h3 { margin: 0 0 6px; font-size: 17px; font-weight: 600; }
+.cap h3 a { color: inherit; text-decoration: none; }
+.cap h3 a:hover { color: var(--accent); }
+.cap p { margin: 0; color: var(--muted); font-size: 15.5px; }
 .cap code { font-size: 14px; color: var(--ink); }
-
-.agent { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 40px; align-items: start; }
-.panel { border-radius: 8px; background: var(--code-bg); color: var(--code-text); border: 1px solid var(--code-line); overflow: hidden; }
-.panel .bar { height: 34px; display: flex; align-items: center; padding: 0 14px; background: var(--code-panel); border-bottom: 1px solid var(--code-line); font-size: 13px; color: var(--code-muted); }
-.panel pre { margin: 0; padding: 14px 16px; font-size: 13.5px; line-height: 1.65; overflow-x: auto; }
-.transcript { padding: 6px 16px 14px; font-size: 14.5px; }
-.transcript .who { font-size: 12.5px; color: var(--code-muted); margin: 12px 0 2px; }
-.transcript .tool { font: 13px "IBM Plex Mono", monospace; color: var(--c-fn); }
-.transcript .res { font: 13px "IBM Plex Mono", monospace; color: var(--code-muted); }
-
-/* App frame */
-.frame { margin-top: 8px; border-radius: 10px; border: 1px solid var(--line); overflow: hidden; background: #282c33; color: #dce0e5; font-size: 12.5px; }
-.frame .tb { height: 32px; background: #3b414d; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid #464b57; }
-.frame .tb i { width: 11px; height: 11px; border-radius: 50%; background: #5d636f; display: inline-block; }
-.frame .tb span { color: #a9afbc; margin-left: 12px; }
-.frame .body { display: grid; grid-template-columns: 220px 1fr; min-height: 340px; }
-.frame .side { background: #2f343e; border-right: 1px solid #464b57; padding: 8px 0; font-family: "IBM Plex Sans", sans-serif; }
-.frame .side div { padding: 3px 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.frame .side .sel { background: #454a56; }
-.frame .side .lbl { color: #9ea2af; font-size: 11.5px; padding-top: 10px; }
-.mg { color: #b9d79a; font: 500 10px "IBM Plex Mono", monospace; display: inline-block; width: 38px; } .mp { color: #8dbdf0; font: 500 10px "IBM Plex Mono", monospace; display: inline-block; width: 38px; } .md { color: #ee9aa0; font: 500 10px "IBM Plex Mono", monospace; display: inline-block; width: 38px; }
-.dt { width: 7px; height: 7px; border-radius: 50%; display: inline-block; background: #a1c181; margin-right: 6px; }
-.frame .main { display: flex; flex-direction: column; min-width: 0; }
-.frame .tabs { height: 30px; background: #2f343e; border-bottom: 1px solid #464b57; display: flex; }
-.frame .tabs div { padding: 0 14px; display: flex; align-items: center; border-right: 1px solid #464b57; color: #a9afbc; }
-.frame .tabs .on { background: #282c33; color: #dce0e5; }
-.frame .rows { font: 12px/1.9 "IBM Plex Mono", monospace; padding: 8px 14px; overflow-x: auto; white-space: pre; }
-.frame .traffic { border-top: 1px solid #464b57; background: #2f343e; font: 12px/1.9 "IBM Plex Mono", monospace; padding: 6px 14px; white-space: pre; overflow-x: auto; color: #a9afbc; }
 
 /* Comparison */
 .cmp-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
@@ -162,17 +222,27 @@ table.cmp { width: 100%; border-collapse: collapse; min-width: 760px; font-size:
 .cmp small { display: block; color: var(--muted); font-size: 13px; }
 .honest { color: var(--muted); font-size: 15px; margin-top: 14px; max-width: 70ch; }
 
-/* Install */
-.tabs-r { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 0; flex-wrap: wrap; }
+/* Install + closing band */
+.closing { position: relative; isolation: isolate; margin-top: 112px; padding: 0 0 120px; }
+.closing .wrap { z-index: 1; }
+.install-card { border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); padding: 36px 36px 28px; box-shadow: 0 30px 60px -40px rgba(30,40,90,.25); }
+.install-card h2 { margin-bottom: 8px; }
+.install-card .intro { margin-bottom: 24px; }
+.tabs-r { display: flex; gap: 4px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .tabs-r button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 14px; font: 500 15px "IBM Plex Sans", sans-serif; color: var(--muted); cursor: pointer; margin-bottom: -1px; }
 .tabs-r button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
-.tabpanel { display: none; padding: 24px 0; }
+.tabpanel { display: none; padding: 24px 0 8px; }
 .tabpanel.on { display: block; }
 .cmdline { display: flex; align-items: center; gap: 12px; background: var(--paper-2); border: 1px solid var(--line); border-radius: 6px; padding: 12px 12px 12px 16px; font: 15px "IBM Plex Mono", monospace; overflow-x: auto; margin-bottom: 10px; }
 .cmdline code { flex: 1; white-space: nowrap; }
+.cmdline .p { color: var(--muted); user-select: none; }
 .tabpanel p { color: var(--muted); margin: 6px 0 0; }
+.copy { height: 30px; padding: 0 10px; border-radius: 4px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font: 13px "IBM Plex Sans", sans-serif; cursor: pointer; flex: none; }
+.next { margin-top: 56px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; }
+.next h3 { margin: 0; font-size: clamp(22px, 3vw, 30px); letter-spacing: -0.02em; font-weight: 600; }
+.next p { margin: 4px 0 0; color: var(--muted); }
 
-footer { margin-top: 110px; border-top: 1px solid var(--line); padding: 36px 0 48px; color: var(--muted); font-size: 14px; }
+footer { position: relative; z-index: 1; border-top: 1px solid var(--line); padding: 36px 0 48px; color: var(--muted); font-size: 14px; background: var(--paper); }
 footer .wrap { display: flex; flex-wrap: wrap; gap: 24px 48px; justify-content: space-between; }
 footer a { color: var(--muted); text-decoration: none; }
 footer a:hover { color: var(--ink); }
@@ -180,17 +250,22 @@ footer .cols { display: flex; gap: 48px; flex-wrap: wrap; }
 footer .cols div { display: flex; flex-direction: column; gap: 6px; }
 footer .cols strong { color: var(--ink); font-weight: 500; margin-bottom: 4px; }
 
-@media (max-width: 900px) {
+@media (max-width: 960px) {
   .nav nav { display: none; }
-  .demo, .two, .agent { grid-template-columns: 1fr; }
+  .feature, .feature.rev, .demo, .two { grid-template-columns: 1fr; gap: 36px; }
+  .feature.rev .copy-col { order: 0; }
   .demo .col + .col { border-left: 0; border-top: 1px solid var(--code-line); }
-  .caps { grid-template-columns: 1fr; }
-  .cap { grid-template-columns: 1fr; gap: 6px; }
-  .frame .body { grid-template-columns: 1fr; }
-  .frame .side { display: none; }
-  .hero { padding-top: 48px; }
+  .caps { grid-template-columns: 1fr 1fr; }
+  .hero { padding-top: 56px; }
+  section.block { padding-top: 88px; }
 }
-@media (prefers-reduced-motion: reduce) { .fresh { transition: none; } }
+@media (max-width: 600px) {
+  .caps { grid-template-columns: 1fr; }
+  .install-card { padding: 24px 18px 18px; }
+  .nav .end .btn:not(.solid) { display: none; }
+  .cta .btn { flex: 1; }
+}
+@media (prefers-reduced-motion: reduce) { .fresh { transition: none; } html { scroll-behavior: auto; } .btn .arr { transition: none; } }
 </style>
 </head>
 <body>
@@ -202,7 +277,7 @@ footer .cols strong { color: var(--ink); font-weight: 500; margin-bottom: 4px; }
       Fauxfield
     </a>
     <nav aria-label="Primary">
-      <a href="#workspace">Workspace</a><a href="#features">Features</a><a href="#agents">Agents</a><a href="#compare">Compare</a><a href={docs}>Docs</a>
+      <a href="#design">Design</a><a href="#rules">Rules</a><a href="#datasets">Datasets</a><a href="#crud">CRUD</a><a href="#templates">Templates</a><a href="#agents">Agents</a><a href={docs}>Docs</a>
     </nav>
     <div class="end">
       <a class="btn small" href="https://github.com/0funct0ry/fauxfield">GitHub</a>
@@ -212,57 +287,228 @@ footer .cols strong { color: var(--ink); font-weight: 500; margin-bottom: 4px; }
 </header>
 
 <main id="top">
+  <!-- Hero -->
   <section class="hero">
+    <div class="pattern" aria-hidden="true">
+      <div class="wash"></div>
+      <svg viewBox="0 0 1900 600" preserveAspectRatio="xMidYMin slice">
+        <defs>
+          <linearGradient id="g-hero" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0" stop-color="var(--wave-c)"/><stop offset=".5" stop-color="var(--wave-a)"/><stop offset="1" stop-color="var(--wave-b)"/>
+          </linearGradient>
+        </defs>
+        {heroWaves.map((d) => <path d={d} stroke="url(#g-hero)" />)}
+      </svg>
+    </div>
     <div class="wrap">
-      <h1>Mock the API your frontend is waiting for.</h1>
-      <p class="lede">Fauxfield is a fast, local-first mock API server. Design routes in a GPU-accelerated desktop app, keep them as plain TOML in your repo, and run the same folder headless in CI or hand it to your coding agent.</p>
+      <div class="eyebrow">Local-first mock API tool</div>
+      <h1>Design and mock APIs in minutes.</h1>
+      <p class="lede">Create a mock server in a desktop app, shape how every endpoint behaves with rules, back it with realistic data, and keep it all as plain TOML in your repository. The same folder runs headless in CI and is fully drivable by your coding agent.</p>
       <div class="cta">
-        <div class="install"><span><span class="p">$</span> brew install --cask fauxfield</span><button class="copy" data-copy="brew install --cask fauxfield">Copy</button></div>
-        <a class="btn" href="#install">Other platforms</a>
+        <a class="btn solid big" href="#install">Get Started <span class="arr" aria-hidden="true">→</span></a>
+        <a class="btn big" href={docs}>Learn More</a>
       </div>
-      <p class="platforms">macOS, Linux, and Windows. MIT licensed. No account, no telemetry.</p>
+      <p class="platforms">macOS, Linux and Windows. MIT licensed. No account, no telemetry.</p>
 
-      <div class="demo" aria-label="Live example of a templated mock route">
-        <div class="col">
-          <div class="bar"><strong>servers/users-api.toml</strong><span class="sp"></span><span>Tera template</span></div>
-<pre><span class="kw">[[routes]]</span>
-<span class="k">method</span> = <span class="s">"GET"</span>
-<span class="k">path</span>   = <span class="s">"/users/:id"</span>
-
-  <span class="kw">[[routes.responses]]</span>
-  <span class="k">name</span>     = <span class="s">"Found user"</span>
-  <span class="k">status</span>   = <span class="n">200</span>
-  <span class="k">delay_ms</span> = <span class="s">"40..120"</span>
-  <span class="k">body</span> = <span class="s">'''
-  &#123;
-    "id": "<span class="t">&#123;&#123; request.params.id &#125;&#125;</span>",
-    "name": "<span class="t">&#123;&#123; <span class="f">fake</span>(kind="name") &#125;&#125;</span>",
-    "email": "<span class="t">&#123;&#123; <span class="f">fake</span>(kind="internet.email") &#125;&#125;</span>",
-    "plan": "<span class="t">&#123;&#123; <span class="f">pick</span>(from=["free","team","pro"]) &#125;&#125;</span>",
-    "seats": <span class="t">&#123;&#123; <span class="f">random_int</span>(min=1, max=40) &#125;&#125;</span>
-  &#125;
-  '''</span></pre>
-        </div>
-        <div class="col">
-          <div class="req"><span class="g">GET</span><span>localhost:3001/users/<span id="uid">42</span></span><span class="st" id="status">200 OK, <span id="ms">86</span> ms</span></div>
-<pre id="out" aria-live="polite"></pre>
-          <div class="bar" style="border-top:1px solid var(--code-line);border-bottom:0;margin-top:auto"><span id="count">Request 1</span><span class="sp"></span><button class="send" id="send">Send again</button></div>
-        </div>
-      </div>
-      <p class="demo-note">Every request renders fresh fake data. Set <code>fake_seed</code> and the same requests return the same data, so CI stays deterministic.</p>
+      <Shot file="hero.png" size="2400×1500" alt="The Fauxfield desktop app with a workspace open" caption="One workspace, several mock servers, every change saved to plain TOML.">
+        The full app window with a realistic workspace open (e.g. <code>acme-frontend</code>). Left: the sidebar tree with two or three Servers (running status dots and ports), Folders and Routes with method badges. Centre: the Route editor for <code>GET /users/:id</code> showing its Responses list and the selected Response's status, delay and templated body. Bottom: the Traffic panel with a handful of recent requests in mixed statuses (200, 404, 503).
+      </Shot>
     </div>
   </section>
 
+  <!-- 1. Easy server creation -->
+  <section class="block" id="design">
+    <div class="wrap feature">
+      <div class="copy-col">
+        <div class="eyebrow">Design</div>
+        <h2>A mock server in under a minute.</h2>
+        <p>Create a Server, pick a port, add a Route and hit run. The editor is built for speed: everything is a click or a keystroke away, and the server reloads the moment you change something.</p>
+        <ul class="ticks">
+          <li>Servers, Folders and Routes in one tree, with drag to reorder</li>
+          <li>Start, stop and restart from the sidebar or the status bar</li>
+          <li>Live Traffic panel shows every request and the Response it got</li>
+          <li><code>⌘K</code> to jump to any Route, <code>⌘⇧P</code> for every command</li>
+        </ul>
+        <div class="doclinks">
+          <a class="doclink primary" href={docs + "getting-started/first-mock/"}>Build your first mock</a>
+          <a class="doclink" href={docs + "guides/routes/"}>Routes and matching</a>
+        </div>
+      </div>
+      <Shot file="command-palette.png" size="1600×1100" ratio="16 / 11" alt="The Command Palette open over the Fauxfield app" caption="Every action is one keystroke away.">
+        The Command Palette (<code>⌘⇧P</code>) open over a dimmed app window with <code>new</code> typed in the search box. The result list shows actions such as <em>New Server</em>, <em>New Route</em>, <em>New Folder</em> and <em>New Dataset</em>, each with its keyboard shortcut on the right and the first result highlighted. Keep the sidebar tree visible behind it so the context is clear.
+      </Shot>
+    </div>
+  </section>
+
+  <!-- 2. Rules -->
+  <section class="block" id="rules">
+    <div class="wrap feature rev">
+      <div class="copy-col">
+        <div class="eyebrow">Rules</div>
+        <h2>Realistic behaviour and every edge case.</h2>
+        <p>Give a Route several Responses and let Rules on the incoming request decide which one is sent. Reproduce the 401, the empty list, the slow third call and the flaky upstream without touching a real backend.</p>
+        <ul class="ticks">
+          <li>Match on header, query, cookie, path param, JSON body path, IP, variable or Dataset contents</li>
+          <li>Operators from <code>eq</code> and <code>regex</code> to <code>in</code> and <code>json_schema</code>, combined with and/or</li>
+          <li>Call-count rules for "fail on the 3rd request" scenarios</li>
+          <li>Latency ranges, timeouts, resets, truncated bodies, rate limits and a chaos switch</li>
+        </ul>
+        <div class="doclinks">
+          <a class="doclink primary" href={docs + "guides/routes/#multiple-and-conditional-responses"}>Conditional responses</a>
+          <a class="doclink" href={docs + "guides/network-and-errors/"}>Network and errors</a>
+        </div>
+      </div>
+      <Shot file="rules.png" size="1600×1100" ratio="16 / 11" alt="A Route with several Responses and the Rules editor">
+        A Route editor with four Responses listed: <em>200 Found user</em> (default), <em>404 Unknown user</em>, <em>401 Missing token</em>, <em>503 Flaky upstream</em>. The 401 Response is selected and its Rules section shows <code>header authorization absent</code>. If possible, the Traffic panel below shows a 401 row with the matched Response name.
+      </Shot>
+    </div>
+  </section>
+
+  <!-- 3. Datasets -->
+  <section class="block" id="datasets">
+    <div class="wrap feature">
+      <div class="copy-col">
+        <div class="eyebrow">Datasets</div>
+        <h2>Realistic data, designed in a table.</h2>
+        <p>A Dataset is a named collection of rows your Routes read from and write to. Design its fields in the schema designer, generate hundreds of believable rows, or import the data you already have.</p>
+        <ul class="ticks">
+          <li>Generators for names, emails, UUIDs, dates, enums with weights, references to other Datasets and more</li>
+          <li>Import from JSON, CSV or Parquet; edit rows directly in the table</li>
+          <li>Seeded generation, so the same rows come back on every start and in CI</li>
+          <li>Optional persistence of changes across restarts</li>
+        </ul>
+        <div class="doclinks">
+          <a class="doclink primary" href={docs + "guides/datasets-and-crud/"}>Datasets guide</a>
+          <a class="doclink" href={docs + "reference/seed-generators/"}>Seed generators</a>
+        </div>
+      </div>
+      <Shot file="datasets.png" size="1600×1100" ratio="16 / 11" alt="The Dataset table with generated user rows">
+        The Dataset tab for a <code>users</code> Dataset: the table filled with ~20 generated rows (id, name, email, role, plan, created_at) and the schema designer or column header showing which generator each field uses (e.g. <code>fake: internet.email</code>, <code>one_of: free/team/pro</code>).
+      </Shot>
+    </div>
+  </section>
+
+  <!-- 4. CRUD -->
+  <section class="block" id="crud">
+    <div class="wrap feature rev">
+      <div class="copy-col">
+        <div class="eyebrow">CRUD</div>
+        <h2>A full REST resource in one Route. Then make it yours.</h2>
+        <p>Point a CRUD Route at a Dataset and get list, get, create, replace, patch and delete, with pagination, filtering and sorting. When one operation needs special behaviour, add Responses and Rules to just that operation and let the rest fall through to the built-in handler.</p>
+        <ul class="ticks">
+          <li><code>GET /users?role=admin&amp;_sort=name&amp;_page=2</code> works out of the box</li>
+          <li><code>X-Total-Count</code> and <code>Link</code> headers, <code>201</code> + <code>Location</code> on create</li>
+          <li>Optional JSON Schema validation returning <code>422</code> problem details</li>
+          <li>Per-operation Responses, or override any operation with a regular Route</li>
+        </ul>
+        <div class="doclinks">
+          <a class="doclink primary" href={docs + "guides/datasets-and-crud/#operation-responses-and-rules-on-crud-routes"}>Operation Responses and Rules</a>
+          <a class="doclink" href={docs + "recipes/paginated-list/"}>Recipe: paginated list</a>
+        </div>
+      </div>
+      <Shot file="crud.png" size="1600×1100" ratio="16 / 11" alt="A CRUD Route expanded into its operations with an operation Response">
+        A CRUD Route <code>/users</code> expanded in the tree into its operations (list, get, create, update, patch, delete). The <em>create</em> operation is selected and shows one operation Response, <em>409 Duplicate email</em>, with the Rule <code>body $.email eq taken@example.com</code>, and the "Falls through to built-in create" line underneath.
+      </Shot>
+    </div>
+  </section>
+
+  <!-- 5. Templates -->
+  <section class="block" id="templates">
+    <div class="wrap">
+      <div class="feature">
+        <div class="copy-col">
+          <div class="eyebrow">Templates</div>
+          <h2>Dynamic responses with rich generators.</h2>
+          <p>Every body and header can be a Tera template. Read the request, variables and Datasets, and generate data with a library of functions, all with a live preview while you type.</p>
+          <ul class="ticks">
+            <li><code>fake()</code> with dozens of kinds: names, addresses, companies, IBANs, IPs, dates</li>
+            <li><code>uuid()</code>, <code>now()</code>, <code>random_int()</code>, <code>pick()</code>, <code>weighted()</code>, <code>seq()</code>, <code>jwt()</code></li>
+            <li>Filters such as <code>pretty_json</code>, <code>base64_encode</code>, <code>money</code>, <code>sha256</code></li>
+            <li>Set <code>fake_seed</code> and the same requests return the same data</li>
+          </ul>
+          <div class="doclinks">
+            <a class="doclink primary" href={docs + "guides/templating/"}>Templating guide</a>
+            <a class="doclink" href={docs + "reference/template-functions/"}>Function reference</a>
+          </div>
+        </div>
+        <Shot file="templates.png" size="1600×1100" ratio="16 / 11" alt="Editing a templated Response body with live preview">
+          The Response body editor with a Tera template using <code>request.params.id</code>, <code>fake(kind="name")</code> and <code>pick(...)</code>, next to (or below) the template preview rendering it against a sample request, so the generated JSON is visible.
+        </Shot>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 6. Agents -->
+  <section class="block" id="agents">
+    <div class="wrap feature rev">
+      <div class="copy-col">
+        <div class="eyebrow">Coding agents</div>
+        <h2>Your coding agent can build the mock for you.</h2>
+        <p>Fauxfield ships an MCP server. Claude Code, Codex and Cursor can create Servers, Routes and Datasets from your OpenAPI file or from the feature they are building, start the server and check the traffic, while you watch the changes appear in the app.</p>
+        <ul class="ticks">
+          <li>One command wires it up: <code>fauxfield agents init</code></li>
+          <li>Writes go through the same validation as the app and keep your TOML formatting</li>
+          <li>Read-only mode and loopback-only servers by default; secrets are redacted</li>
+          <li>Every MCP tool has a CLI twin with <code>--json</code> output</li>
+        </ul>
+        <div class="doclinks">
+          <a class="doclink primary" href={docs + "guides/agents/"}>Agents and MCP</a>
+          <a class="doclink" href={docs + "reference/mcp-tools/"}>MCP tool reference</a>
+        </div>
+      </div>
+      <div class="stack">
+<figure class="flow" aria-label="How a coding agent talks to Fauxfield">
+          <div class="node agent">
+            <div class="nt">Your coding agent</div>
+            <div class="chips"><span>Claude Code</span><span>Codex</span><span>Cursor</span></div>
+            <div class="nd">“Mock the billing API for this page.”</div>
+          </div>
+
+          <div class="link">
+            <div class="ar"><svg viewBox="0 0 24 48" aria-hidden="true"><path d="M12 2v38M5 33l7 8 7-8" /></svg><span>calls</span></div>
+            <div class="steps">
+              <div class="tag">MCP <code>fauxfield mcp</code> <small>or CLI with <code>--json</code></small></div>
+              <ol>
+                <li><code>upsert_dataset</code><small>invoices, 24 seeded rows</small></li>
+                <li><code>upsert_route</code><small>GET /invoices with rules</small></li>
+                <li><code>start_server</code><small>billing on :3004</small></li>
+                <li><code>send_test_request</code><small>checks the real response</small></li>
+              </ol>
+            </div>
+            <div class="ar up"><svg viewBox="0 0 24 48" aria-hidden="true"><path d="M12 46V8M5 15l7-8 7 8" /></svg><span>results</span></div>
+          </div>
+
+          <div class="node fx">
+            <div class="nt">Fauxfield</div>
+            <div class="trio">
+              <div><b>Workspace</b><span>Validated writes to plain TOML; your comments and key order stay</span></div>
+              <div><b>Mock server</b><span>Hot-reloads and serves on loopback; traffic comes back to the agent</span></div>
+              <div><b>Desktop app</b><span>Shows every change as it happens, so you can review it</span></div>
+            </div>
+          </div>
+          <figcaption>The agent calls the same tools the app uses. Read-only mode and secret redaction are built in.</figcaption>
+        </figure>
+        <div class="panel"><div class="bar">One command adds it to your project</div>
+<pre><span class="c">$</span> fauxfield agents init --claude
+<span class="c">  wrote .mcp.json and a section in AGENTS.md</span></pre></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Workspace as files -->
   <section class="block" id="workspace">
     <div class="wrap two">
       <div>
+        <div class="eyebrow">Files are the source of truth</div>
         <h2>Your mocks are a folder you can review.</h2>
         <div class="points">
-          <p>A workspace is plain files: one TOML file per server, environments beside it, seed data as JSON. The desktop app edits those files and keeps your comments and key order intact.</p>
+          <p>A Workspace is plain files: one TOML file per Server, Environments beside it, seed data as JSON. The app edits those files and keeps your comments and key order intact.</p>
           <p><strong>Diff it in a pull request.</strong> Changes to a mock read like code changes, because they are.</p>
-          <p><strong>Edit it anywhere.</strong> Save from Vim or VS Code and the running server reloads in milliseconds.</p>
-          <p><strong>Run it anywhere.</strong> <code>fauxfield run</code> serves the same folder in CI, Docker, or a teammate’s laptop with no GUI installed.</p>
+          <p><strong>Edit it anywhere.</strong> Save from your editor and the running server reloads in milliseconds.</p>
+          <p><strong>Run it anywhere.</strong> <code>fauxfield run</code> serves the same folder in CI, Docker or a teammate’s laptop with no GUI installed.</p>
         </div>
+        <a class="doclink primary" href={docs + "getting-started/workspace-layout/"}>Workspace layout</a>
       </div>
       <div class="files" aria-label="Example workspace layout">
         <div class="h">acme-frontend/</div>
@@ -280,86 +526,23 @@ footer .cols strong { color: var(--ink); font-weight: 500; margin-bottom: 4px; }
     </div>
   </section>
 
-  <section class="block" id="features">
+  <!-- More capabilities -->
+  <section class="block" id="more">
     <div class="wrap">
-      <h2>Everything a fake backend needs to feel real.</h2>
-      <p class="intro">Start with a static JSON response. Add rules, state, and failure modes when the UI you are building needs them.</p>
+      <h2>And the rest of what a fake backend needs.</h2>
+      <p class="intro">Reach for these when the frontend you are building calls for them.</p>
       <div class="caps">
-        <div class="cap"><h3>Conditional responses</h3><p>Pick a response by header, query, cookie, path param, JSON body path, or call count. The traffic panel shows which rule matched and why.</p></div>
-        <div class="cap"><h3>Templates and fake data</h3><p>Tera templates with request data, variables, and realistic fake names, emails, addresses, and IBANs. Live preview while you type.</p></div>
-        <div class="cap"><h3>Stateful CRUD</h3><p>Point a route at a dataset and get list, get, create, replace, patch, and delete with pagination, filters, and sorting.</p></div>
-        <div class="cap"><h3>Failure on demand</h3><p>Latency and jitter, Slow 3G, timeouts, connection resets, truncated bodies, rate limits with <code>Retry-After</code>, and a chaos switch.</p></div>
-        <div class="cap"><h3>Proxy and partial mocks</h3><p>Forward unmatched requests to a real API, or override one endpoint of it. Proxied responses get your CORS settings too.</p></div>
-        <div class="cap"><h3>Record, then replay</h3><p>Capture real traffic, select what you need, and turn it into routes. <code>:id</code> segments are detected for you.</p></div>
-        <div class="cap"><h3>WebSockets and webhooks</h3><p>Scripted socket messages on connect, on a timer, or in reply. Signed webhook callbacks that fire after a response.</p></div>
-        <div class="cap"><h3>HTTPS that just works</h3><p>A local development CA issues certificates per server. Fauxfield shows you the trust command instead of running it silently.</p></div>
-        <div class="cap"><h3>OpenAPI in and out</h3><p>Import Swagger 2.0 or OpenAPI 3.x and get a working server with generated data. Export back without losing anything.</p></div>
-        <div class="cap"><h3>Keyboard first</h3><p><code>⌘K</code> to jump to any route, <code>⌘⇧P</code> for every command, Zed-compatible themes, and a Vim-style list preset.</p></div>
+        <div class="cap"><h3><a href={docs + "guides/proxy-and-recording/"}>Proxy and partial mocks</a></h3><p>Forward unmatched requests to a real API, or override one endpoint of it.</p></div>
+        <div class="cap"><h3><a href={docs + "guides/workspaces/#environments-and-variables"}>Environments and variables</a></h3><p>Switch between <code>local</code> and <code>staging</code> sets of variables and use them in any template.</p></div>
+        <div class="cap"><h3><a href={docs + "guides/websockets/"}>WebSockets</a></h3><p>Scripted messages on connect, on a timer or in reply to the client.</p></div>
+        <div class="cap"><h3><a href={docs + "guides/callbacks/"}>Webhook callbacks</a></h3><p>Signed outgoing requests fired after a Response is sent.</p></div>
+        <div class="cap"><h3><a href={docs + "guides/https/"}>HTTPS that just works</a></h3><p>A local development CA issues certificates per Server; the trust command is shown, never run silently.</p></div>
+        <div class="cap"><h3><a href={docs + "guides/ci/"}>Headless in CI</a></h3><p>The same binary runs your Workspace in pipelines and Docker with deterministic data.</p></div>
       </div>
     </div>
   </section>
 
-  <section class="block">
-    <div class="wrap">
-      <h2>Feels like your editor.</h2>
-      <p class="intro">The interface follows Zed’s design system and renders on the GPU, so a traffic log with a hundred thousand requests scrolls at your display’s refresh rate.</p>
-      <div class="frame" role="img" aria-label="Fauxfield desktop app showing a workspace tree, a route editor, and live traffic">
-        <div class="tb"><i></i><i></i><i></i><span>acme-frontend</span><span>env local</span></div>
-        <div class="body">
-          <div class="side">
-            <div class="lbl">Servers</div>
-            <div><span class="dt"></span>Users API <span style="color:#9ea2af">:3001</span></div>
-            <div style="padding-left:28px"><span class="mg">GET</span>/users</div>
-            <div class="sel" style="padding-left:28px"><span class="mg">GET</span>/users/:id</div>
-            <div style="padding-left:28px"><span class="mp">POST</span>/users</div>
-            <div style="padding-left:28px"><span class="md">DELETE</span>/users/:id</div>
-            <div><span class="dt"></span>Payments <span style="color:#9ea2af">:3002</span></div>
-            <div><span class="dt" style="background:#6e7380"></span>Catalog <span style="color:#9ea2af">:3003</span></div>
-            <div class="lbl">Environments</div><div>local</div><div>staging</div>
-          </div>
-          <div class="main">
-            <div class="tabs"><div>Users API</div><div class="on">GET /users/:id</div><div>local.toml</div></div>
-<div class="rows"><span style="color:#a1c181">200</span>  Found user          <span style="color:#9ea2af">default</span>
-<span style="color:#dec184">404</span>  Unknown user        <span style="color:#9ea2af">param id matches ^9\d&#123;3&#125;$</span>
-<span style="color:#dec184">401</span>  Missing token       <span style="color:#9ea2af">header authorization is absent</span>
-<span style="color:#d07277">503</span>  Flaky upstream      <span style="color:#9ea2af">call count = 3, reset 10%</span></div>
-<div class="traffic" style="margin-top:auto">12:16:11.368  GET   /api/v2/users/42        <span style="color:#a1c181">200</span>  rte_get_user    86 ms
-12:16:11.201  GET   /api/v2/users/9001      <span style="color:#dec184">404</span>  rte_get_user    48 ms
-12:16:10.947  POST  /v1/charges             <span style="color:#a1c181">202</span>  rte_charge     112 ms
-12:16:10.512  GET   /api/v2/teams           <span style="color:#a1c181">200</span>  proxy          233 ms</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="block" id="agents">
-    <div class="wrap agent">
-      <div>
-        <h2>Your coding agent can set it up for you.</h2>
-        <p class="intro" style="margin-bottom:24px">Fauxfield ships an MCP server. Claude Code, Codex, and Cursor can create routes from your OpenAPI file or from the page they are building, start the server, and check the traffic. You watch the changes appear in the app as they happen.</p>
-        <div class="panel"><div class="bar">One command adds it to your project</div>
-<pre><span class="c">$</span> fauxfield agents init --claude
-<span class="c">  wrote .mcp.json and a section in AGENTS.md</span></pre></div>
-        <p class="demo-note">Prefer shell? Every MCP tool has a CLI twin with <code>--json</code> output.</p>
-      </div>
-      <div class="panel">
-        <div class="bar">Claude Code</div>
-        <div class="transcript">
-          <div class="who">You</div>
-          <div>The billing page needs invoices with paid, overdue, and void states. Mock it and start it.</div>
-          <div class="who">Claude</div>
-          <div class="tool">fauxfield · upsert_dataset  invoices (24 rows, seeded)</div>
-          <div class="tool">fauxfield · upsert_route  GET /invoices  rules: ?status=</div>
-          <div class="tool">fauxfield · start_server  billing :3004</div>
-          <div class="tool">fauxfield · send_test_request  GET /invoices?status=overdue</div>
-          <div class="res">200  6 items  41 ms</div>
-          <div style="margin-top:8px">Billing mock is running on :3004 with a CRUD route for invoices and a filtered list. I pointed <span class="mono">VITE_API_URL</span> at it.</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
+  <!-- Comparison -->
   <section class="block" id="compare">
     <div class="wrap">
       <h2>How it compares.</h2>
@@ -368,14 +551,14 @@ footer .cols strong { color: var(--ink); font-weight: 500; margin-bottom: 4px; }
         <table class="cmp">
           <thead><tr><th scope="col"></th><th scope="col" class="us">Fauxfield</th><th scope="col">Mockoon</th><th scope="col">WireMock</th><th scope="col">Prism</th><th scope="col">json-server</th></tr></thead>
           <tbody>
-            <tr><th scope="row">Desktop app</th><td class="us y">Native, GPU</td><td class="y">Electron</td><td class="p">Cloud UI only</td><td class="x">No</td><td class="x">No</td></tr>
+            <tr><th scope="row">Desktop app</th><td class="us y">Native</td><td class="y">Electron</td><td class="p">Cloud UI only</td><td class="x">No</td><td class="x">No</td></tr>
             <tr><th scope="row">Headless runner for CI</th><td class="us y">Same binary</td><td class="y">Separate CLI</td><td class="y">Yes</td><td class="y">Yes</td><td class="y">Yes</td></tr>
             <tr><th scope="row">Mocks stored as reviewable files</th><td class="us y">TOML per server</td><td class="p">One JSON file</td><td class="y">JSON mappings</td><td class="y">Your OpenAPI</td><td class="y">One JSON file</td></tr>
             <tr><th scope="row">Conditional responses</th><td class="us y">Yes</td><td class="y">Yes</td><td class="y">Yes</td><td class="p">By example name</td><td class="x">No</td></tr>
             <tr><th scope="row">Stateful CRUD</th><td class="us y">Yes</td><td class="y">Yes</td><td class="p">Via scenarios</td><td class="x">No</td><td class="y">Yes</td></tr>
             <tr><th scope="row">Record and replay</th><td class="us y">Yes</td><td class="y">Yes</td><td class="y">Yes</td><td class="x">No</td><td class="x">No</td></tr>
             <tr><th scope="row">Built-in MCP server for agents</th><td class="us y">Yes</td><td class="x">No</td><td class="x">No</td><td class="x">No</td><td class="x">No</td></tr>
-            <tr><th scope="row">Validates traffic against an OpenAPI contract</th><td class="us x">Not in v1.0</td><td class="x">No</td><td class="p">Extension</td><td class="y">Yes</td><td class="x">No</td></tr>
+            <tr><th scope="row">Validates traffic against an OpenAPI contract</th><td class="us x">No</td><td class="x">No</td><td class="p">Extension</td><td class="y">Yes</td><td class="x">No</td></tr>
             <tr><th scope="row">Team cloud sync and hosted mocks</th><td class="us x">No<small>By design: local-first</small></td><td class="y">Paid plan</td><td class="y">Paid plan</td><td class="x">No</td><td class="x">No</td></tr>
             <tr><th scope="row">JVM test-library integration</th><td class="us x">No</td><td class="x">No</td><td class="y">JUnit, Spring</td><td class="x">No</td><td class="x">No</td></tr>
             <tr><th scope="row">Years in production, ecosystem size</th><td class="us x">New</td><td class="y">Large</td><td class="y">Very large</td><td class="y">Large</td><td class="y">Very large</td></tr>
@@ -386,34 +569,64 @@ footer .cols strong { color: var(--ink); font-weight: 500; margin-bottom: 4px; }
     </div>
   </section>
 
-  <section class="block" id="install">
+  <!-- Install + closing band -->
+  <section class="closing" id="install">
+    <div class="pattern" aria-hidden="true">
+      <div class="wash"></div>
+      <svg viewBox="0 0 1900 600" preserveAspectRatio="xMidYMax slice">
+        <defs>
+          <linearGradient id="g-foot" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0" stop-color="var(--wave-b)"/><stop offset=".5" stop-color="var(--wave-a)"/><stop offset="1" stop-color="var(--wave-c)"/>
+          </linearGradient>
+        </defs>
+        {footWaves.map((d) => <path d={d} stroke="url(#g-foot)" />)}
+      </svg>
+    </div>
     <div class="wrap">
-      <h2>Install</h2>
-      <div class="tabs-r" role="tablist" aria-label="Platform">
-        <button role="tab" aria-selected="true" aria-controls="p-mac" id="t-mac">macOS</button>
-        <button role="tab" aria-selected="false" aria-controls="p-linux" id="t-linux">Linux</button>
-        <button role="tab" aria-selected="false" aria-controls="p-win" id="t-win">Windows</button>
-        <button role="tab" aria-selected="false" aria-controls="p-docker" id="t-docker">Docker</button>
+      <div class="install-card">
+        <h2>Get started</h2>
+        <p class="intro">One binary: the desktop app, the <code>fauxfield</code> command, the headless runner and the MCP server.</p>
+        <div class="tabs-r" role="tablist" aria-label="Install method">
+          <button role="tab" aria-selected="true" aria-controls="p-brew" id="t-brew">Homebrew</button>
+          <button role="tab" aria-selected="false" aria-controls="p-shell" id="t-shell">Shell script</button>
+          <button role="tab" aria-selected="false" aria-controls="p-win" id="t-win">Windows</button>
+          <button role="tab" aria-selected="false" aria-controls="p-linux" id="t-linux">Linux packages</button>
+          <button role="tab" aria-selected="false" aria-controls="p-docker" id="t-docker">Docker</button>
+        </div>
+        <div class="tabpanel on" id="p-brew" role="tabpanel" aria-labelledby="t-brew">
+          <div class="cmdline"><code><span class="p">$ </span>brew install --cask fauxfield</code><button class="copy" data-copy="brew install --cask fauxfield">Copy</button></div>
+          <div class="cmdline"><code><span class="p">$ </span>brew install 0funct0ry/tap/fauxfield-cli</code><button class="copy" data-copy="brew install 0funct0ry/tap/fauxfield-cli">Copy</button></div>
+          <p>The cask installs the app and the <code>fauxfield</code> command. The formula is the headless CLI only. Apple silicon and Intel.</p>
+        </div>
+        <div class="tabpanel" id="p-shell" role="tabpanel" aria-labelledby="t-shell">
+          <div class="cmdline"><code><span class="p">$ </span>curl -fsSL https://0funct0ry.github.io/fauxfield/install.sh | sh</code><button class="copy" data-copy="curl -fsSL https://0funct0ry.github.io/fauxfield/install.sh | sh">Copy</button></div>
+          <p>Works on macOS and Linux. Downloads the latest release for your platform and puts <code>fauxfield</code> on your <code>PATH</code>.</p>
+        </div>
+        <div class="tabpanel" id="p-win" role="tabpanel" aria-labelledby="t-win">
+          <div class="cmdline"><code><span class="p">&gt; </span>winget install 0funct0ry.Fauxfield</code><button class="copy" data-copy="winget install 0funct0ry.Fauxfield">Copy</button></div>
+          <div class="cmdline"><code><span class="p">&gt; </span>irm https://0funct0ry.github.io/fauxfield/install.ps1 | iex</code><button class="copy" data-copy="irm https://0funct0ry.github.io/fauxfield/install.ps1 | iex">Copy</button></div>
+          <p>Or download the MSI installer from the releases page. Windows 10 and 11, x64 and Arm64.</p>
+        </div>
+        <div class="tabpanel" id="p-linux" role="tabpanel" aria-labelledby="t-linux">
+          <p style="margin-top:0">Download the <code>.deb</code>, <code>.rpm</code>, AppImage or static headless build from the <a href={release.url}>releases page</a>, or use the shell script. The app needs Vulkan; X11 and Wayland are supported. The headless build needs neither.</p>
+        </div>
+        <div class="tabpanel" id="p-docker" role="tabpanel" aria-labelledby="t-docker">
+          <div class="cmdline"><code><span class="p">$ </span>docker run -p 3001:3001 -v "$PWD:/workspace" ghcr.io/0funct0ry/fauxfield</code><button class="copy" data-copy='docker run -p 3001:3001 -v "$PWD:/workspace" ghcr.io/0funct0ry/fauxfield'>Copy</button></div>
+          <p>The image runs <code>fauxfield run /workspace</code> with the headless build. Add <code>--env staging</code> to pick an Environment.</p>
+        </div>
+        <p style="margin:12px 0 0;font-size:15px"><a href={release.url}>All downloads and checksums</a>{release.tag && <span> (latest {release.tag})</span>} · <a href={docs + "getting-started/install/"}>Install guide</a></p>
       </div>
-      <div class="tabpanel on" id="p-mac" role="tabpanel" aria-labelledby="t-mac">
-        <div class="cmdline"><code>brew install --cask fauxfield</code><button class="copy" data-copy="brew install --cask fauxfield">Copy</button></div>
-        <div class="cmdline"><code>brew install 0funct0ry/tap/fauxfield-cli</code><button class="copy" data-copy="brew install 0funct0ry/tap/fauxfield-cli">Copy</button></div>
-        <p>The cask installs the app and the <code>fauxfield</code> command. The formula is the headless CLI only. Signed and notarised; Apple silicon and Intel.</p>
+
+      <div class="next">
+        <div>
+          <h3>Installed? Build your first mock.</h3>
+          <p>Create a Workspace, add a Route and send it a request in five minutes.</p>
+        </div>
+        <div class="cta">
+          <a class="btn solid big" href={docs + "getting-started/first-mock/"}>Your first mock <span class="arr" aria-hidden="true">→</span></a>
+          <a class="btn big" href={docs}>Read the docs</a>
+        </div>
       </div>
-      <div class="tabpanel" id="p-linux" role="tabpanel" aria-labelledby="t-linux">
-        <div class="cmdline"><code>curl -fsSL https://0funct0ry.github.io/fauxfield/install.sh | sh</code><button class="copy" data-copy="curl -fsSL https://0funct0ry.github.io/fauxfield/install.sh | sh">Copy</button></div>
-        <p>Also available as .deb, .rpm, AppImage, and a static headless build. Needs Vulkan; X11 and Wayland are supported.</p>
-      </div>
-      <div class="tabpanel" id="p-win" role="tabpanel" aria-labelledby="t-win">
-        <div class="cmdline"><code>winget install 0funct0ry.Fauxfield</code><button class="copy" data-copy="winget install 0funct0ry.Fauxfield">Copy</button></div>
-        <div class="cmdline"><code>irm https://0funct0ry.github.io/fauxfield/install.ps1 | iex</code><button class="copy" data-copy="irm https://0funct0ry.github.io/fauxfield/install.ps1 | iex">Copy</button></div>
-        <p>Or download the MSI installer from the releases page. Windows 10 and 11, x64 and Arm64.</p>
-      </div>
-      <div class="tabpanel" id="p-docker" role="tabpanel" aria-labelledby="t-docker">
-        <div class="cmdline"><code>docker run -p 3001:3001 -v "$PWD:/workspace" ghcr.io/0funct0ry/fauxfield</code><button class="copy" data-copy='docker run -p 3001:3001 -v "$PWD:/workspace" ghcr.io/0funct0ry/fauxfield'>Copy</button></div>
-        <p>The image runs <code>fauxfield run /workspace</code> with the headless build. Add <code>--env staging</code> to pick an environment.</p>
-      </div>
-      <p style="margin-top:8px"><a href={release.url}>All downloads and checksums</a>{release.tag && <span> (latest {release.tag})</span>}</p>
     </div>
   </section>
 </main>
@@ -425,7 +638,7 @@ footer .cols strong { color: var(--ink); font-weight: 500; margin-bottom: 4px; }
       <div>MIT licensed. Built in Rust with GPUI.</div>
     </div>
     <div class="cols">
-      <div><strong>Product</strong><a href="#features">Features</a><a href="#install">Install</a><a href={docs + "changelog/"}>Changelog</a></div>
+      <div><strong>Product</strong><a href="#design">Features</a><a href="#install">Install</a><a href={docs + "changelog/"}>Changelog</a></div>
       <div><strong>Docs</strong><a href={docs + "getting-started/install/"}>Getting started</a><a href={docs + "guides/templating/"}>Templating</a><a href={docs + "reference/cli/"}>CLI reference</a></div>
       <div><strong>Project</strong><a href="https://github.com/0funct0ry/fauxfield">GitHub</a><a href="https://github.com/0funct0ry/fauxfield/issues">Issues</a><a href="https://github.com/0funct0ry">0funct0ry</a></div>
     </div>
@@ -434,35 +647,6 @@ footer .cols strong { color: var(--ink); font-weight: 500; margin-bottom: 4px; }
 
 
 <script is:inline>
-const first = ["Maya","Leo","Ana","Kenji","Priya","Tomás","Ingrid","Kofi","Sara","Arjun","Noor","Elena"];
-const last = ["Chatterjee","Fischer","Souza","Mori","Nair","Ruiz","Lindqvist","Mensah","Haddad","Banerjee","Okafor","Novak"];
-const plans = ["free","team","pro"];
-const r = a => a[Math.floor(Math.random() * a.length)];
-let n = 0;
-function render() {
-  n++;
-  const f = r(first), l = r(last), id = 10 + Math.floor(Math.random() * 990);
-  const email = `${f}.${l}@example.com`.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  const v = { id, name: `${f} ${l}`, email, plan: r(plans), seats: 1 + Math.floor(Math.random() * 40) };
-  const fresh = x => `<span class="fresh">${x}</span>`;
-  document.getElementById("uid").textContent = id;
-  document.getElementById("ms").textContent = 40 + Math.floor(Math.random() * 80);
-  document.getElementById("count").textContent = `Request ${n}`;
-  document.getElementById("out").innerHTML =
-`<span style="color:#acb2be">{</span>
-  <span class="k">"id"</span>: <span class="s">"${fresh(v.id)}"</span>,
-  <span class="k">"name"</span>: <span class="s">"${fresh(v.name)}"</span>,
-  <span class="k">"email"</span>: <span class="s">"${fresh(v.email)}"</span>,
-  <span class="k">"plan"</span>: <span class="s">"${fresh(v.plan)}"</span>,
-  <span class="k">"seats"</span>: <span class="n">${fresh(v.seats)}</span>
-<span style="color:#acb2be">}</span>`;
-  requestAnimationFrame(() => requestAnimationFrame(() => document.querySelectorAll(".fresh").forEach(e => e.classList.add("fade"))));
-}
-render();
-const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-let timer = reduce ? null : setInterval(render, 2800);
-document.getElementById("send").addEventListener("click", () => { render(); if (timer) { clearInterval(timer); timer = setInterval(render, 2800); } });
-
 document.querySelectorAll("[data-copy]").forEach(b => b.addEventListener("click", async () => {
   try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copied"; } catch { b.textContent = "Select and copy"; }
   setTimeout(() => b.textContent = "Copy", 1600);
@@ -480,7 +664,7 @@ tabs.forEach((t, i) => {
 });
 const ua = navigator.userAgent;
 if (/Windows/.test(ua)) selectTab(document.getElementById("t-win"));
-else if (/Linux/.test(ua) && !/Android/.test(ua)) selectTab(document.getElementById("t-linux"));
+else if (/Linux/.test(ua) && !/Android/.test(ua)) selectTab(document.getElementById("t-shell"));
 </script>
 </body>
 </html>

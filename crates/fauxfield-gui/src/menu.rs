@@ -175,6 +175,8 @@ pub struct MenuDef {
 
 /// Actions that are deliberately not in the menu, each with the reason.
 pub const NOT_IN_MENU: &[(&str, &str)] = &[
+    ("clear_logs", "Logs tab button and palette"),
+    ("picker_open_pinned", "Cmd/Ctrl+Enter inside Quick Search"),
     (
         "add_operation_response",
         "CRUD operation row menu, editor button and palette",
@@ -580,7 +582,7 @@ pub fn build_menus(ctx: &MenuContext) -> Vec<MenuDef> {
         title: "Route",
         mnemonic: Some('R'),
         entries: vec![
-            act("send_test", "Send Test Request"),
+            act("copy_route_curl", "Copy as cURL"),
             MenuEntry::Separator,
             act("edit_route_method", "Edit Method…"),
             act("edit_route_path", "Edit Path…"),
@@ -713,7 +715,7 @@ pub fn enabled(id: &str, ctx: &MenuContext) -> bool {
         "clear_traffic" => ctx.traffic_rows > 0,
         "copy_as_curl" | "mock_this_route" | "refire_callback" => ctx.traffic_row_selected,
         "copy_dataset_cell" | "copy_dataset_row" | "delete_dataset_row" => ctx.dataset_row_target,
-        "send_test"
+        "copy_route_curl"
         | "edit_route_method"
         | "edit_route_path"
         | "new_response"
@@ -1168,7 +1170,7 @@ mod tests {
         assert!(enabled("clear_traffic", &c) && enabled("copy_as_curl", &c));
         // route / response
         for id in [
-            "send_test",
+            "copy_route_curl",
             "edit_route_method",
             "edit_route_path",
             "new_response",
@@ -1177,7 +1179,7 @@ mod tests {
         }
         c.current_route = Some("r".into());
         for id in [
-            "send_test",
+            "copy_route_curl",
             "edit_route_method",
             "edit_route_path",
             "new_response",

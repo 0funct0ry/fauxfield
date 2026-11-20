@@ -96,7 +96,10 @@ fn json_value(s: &str) -> serde_json::Value {
 
 /// `base` is e.g. `http://127.0.0.1:4010`; `path` the Route path under the Server prefix.
 pub fn build(base: &str, prefix: &str, method: &str, path: &str, rules: &[&Rule]) -> String {
-    let mut method = if method.eq_ignore_ascii_case("any") || method.eq_ignore_ascii_case("crud") {
+    let mut method = if ["any", "crud", "files"]
+        .iter()
+        .any(|m| method.eq_ignore_ascii_case(m))
+    {
         "GET".to_string()
     } else {
         method.to_ascii_uppercase()
@@ -148,7 +151,7 @@ pub fn build(base: &str, prefix: &str, method: &str, path: &str, rules: &[&Rule]
     let path = path
         .split('/')
         .map(|seg| {
-            if seg.starts_with(':') || (seg.starts_with('{') && seg.ends_with('}')) {
+            if seg.starts_with([':', '*']) || (seg.starts_with('{') && seg.ends_with('}')) {
                 "1"
             } else {
                 seg
@@ -324,5 +327,15 @@ mod tests {
         let q = rule("query", "q", "eq", s("it's"), false);
         let out = build("http://h:1", "", "ANY", "/a/{x}", &[&q]);
         assert_eq!(out, "curl -X GET 'http://h:1/a/1?q=it%27s'");
+    }
+
+    #[test]
+    fn route_curl_keeps_the_prefix_and_fills_placeholders() {
+        let c = build("http://127.0.0.1:4010", "/api/v1", "GET", "/users/:id", &[]);
+        assert_eq!(c, "curl -X GET 'http://127.0.0.1:4010/api/v1/users/1'");
+        let c = build("http://h", "/api/v1/", "FILES", "/assets/*rest", &[]);
+        assert_eq!(c, "curl -X GET 'http://h/api/v1/assets/1'");
+        let c = build("http://h", "", "ANY", "/ping", &[]);
+        assert_eq!(c, "curl -X GET 'http://h/ping'");
     }
 }

@@ -1,7 +1,9 @@
 //! The Route Headers sub-tab: a key/value table for `Route.headers` (SPEC §5.5). Values are
 //! Tera templates (checked inline); the headers are sent with every Response of the Route.
 //! Same cell editing as the Response headers table (`header_table`): click a cell, Tab walks
-//! Key → Value → next row, Enter ends the edit, a press elsewhere saves. A new row exists only
+//! Key → Value → next row, Enter ends the edit, a press elsewhere saves. Header names and common
+//! values complete as in the Response table, and a Value inside `{{ }}` completes template
+//! variables, functions, filters and `fake` kinds. A new row exists only
 //! in the table until it has a Key and a Value.
 
 use gpui::{
@@ -20,7 +22,6 @@ use crate::view::Route;
 
 const ROW_PX: f32 = 36.0;
 const KEY_W: f32 = 280.0;
-const VALUE_W: f32 = 460.0;
 
 /// Rows of a Route's header table: its headers in file order, then the pending row.
 pub fn route_header_rows(
@@ -48,7 +49,54 @@ pub fn value_error(value: &str) -> Option<String> {
         .map(|(_, m)| m)
 }
 
+/// Turn a Tera "Variable `x` not found" render error about the request into advice; other render
+/// errors (Environment variables are not known to the sample render) are not reported.
+pub fn missing_request_hint(err: &str) -> Option<String> {
+    let rest = err.split("Variable `").nth(1)?;
+    let name = rest.split('`').next()?;
+    (name.starts_with("request.") && err.contains("not found in context")).then(|| {
+        format!(
+            "`{name}` is not in the sample request. A client that omits it makes this fail; \
+             use `{name} | default(value=\"...\")`."
+        )
+    })
+}
+
 impl Shell {
+    /// Problem with a header value, shown under its row: a Tera syntax error, else a lookup of
+    /// request data that the sample request does not have. `route` gives the context.
+    pub(crate) fn header_value_problem(
+        &self,
+        route: &str,
+        value: &str,
+        template: bool,
+    ) -> Option<String> {
+        if !template || !value.contains("{{") && !value.contains("{%") {
+            return None;
+        }
+        if let Some(e) = value_error(value) {
+            return Some(e);
+        }
+        let store = self.store.as_ref()?;
+        let snap = store.snapshot();
+        let (ms, mr) = snap
+            .servers
+            .iter()
+            .find_map(|(_, s)| s.routes.iter().find(|r| r.id == route).map(|r| (s, r)))?;
+        let (vs, vr) = self.ws.find_route(route)?;
+        let t = crate::sample::Sample::default().request(vs, vr);
+        let req = fauxfield_engine::SampleRequest {
+            method: t.method,
+            url: t.path,
+            headers: t.headers,
+            body: t.body,
+            datasets: None,
+        };
+        fauxfield_engine::render_sample(&snap.root, ms, mr, &req, value)
+            .err()
+            .and_then(|e| missing_request_hint(&e))
+    }
+
     pub(crate) fn route_rows(&self, route: &str) -> Vec<(String, String, bool)> {
         self.ws
             .find_route(route)
@@ -216,6 +264,16 @@ impl Shell {
             matches!(&e.target, InlineTarget::RouteHeaderKey { route: r, row }
                 if *r == route.id && *row >= n)
         });
+        let sugg = self.inline_suggestions();
+        let active = self.inline.as_ref().and_then(|e| match &e.target {
+            InlineTarget::RouteHeaderKey { route: r, row } if *r == route.id => {
+                Some((*row, Col::Key))
+            }
+            InlineTarget::RouteHeaderValue { route: r, row } if *r == route.id => {
+                Some((*row, Col::Value))
+            }
+            _ => None,
+        });
         let rid = route.id.clone();
         let row_el = |i: usize, key: &str, value: &str, cx: &mut Context<Self>| -> AnyElement {
             let r_del = rid.clone();
@@ -226,7 +284,15 @@ impl Shell {
                 }
                 _ => None,
             });
-            let err = value_error(editing.as_deref().unwrap_or(value));
+            let err = self.header_value_problem(&rid, editing.as_deref().unwrap_or(value), true);
+            let popup = (active.map(|(r, _)| r) == Some(i) && !sugg.is_empty()).then(|| {
+                let left = if active.map(|(_, c)| c) == Some(Col::Key) {
+                    0.0
+                } else {
+                    KEY_W + 8.0
+                };
+                self.header_popup(t, &sugg, left, cx)
+            });
             div()
                 .flex()
                 .flex_col()
@@ -234,6 +300,7 @@ impl Shell {
                 .border_color(t.border_variant)
                 .child(
                     div()
+                        .relative()
                         .h(px(ROW_PX))
                         .flex()
                         .flex_row()
@@ -261,7 +328,7 @@ impl Shell {
                             },
                             value,
                             "Value",
-                            VALUE_W,
+                            0.,
                             true,
                             cx,
                         ))
@@ -283,7 +350,8 @@ impl Shell {
                             Button,
                             format!("Remove header {key}"),
                             Press(format!("route-header-remove:{rid}:{i}"))
-                        )),
+                        ))
+                        .children(popup),
                 )
                 .children(err.map(|m| {
                     crate::dev_id!(
@@ -314,7 +382,7 @@ impl Shell {
                 .border_b_1()
                 .border_color(t.border_variant)
                 .child(div().w(px(KEY_W)).pl(px(8.)).child("Key"))
-                .child(div().w(px(VALUE_W)).pl(px(8.)).child("Value")),
+                .child(div().flex_1().min_w(px(0.)).pl(px(8.)).child("Value")),
         );
         for (i, (k, v, _)) in rows.iter().enumerate() {
             table = table.child(row_el(i, k, v, cx));
@@ -375,5 +443,14 @@ mod tests {
         assert!(value_error("plain").is_none());
         assert!(value_error("{{ uuid() }}").is_none());
         assert!(value_error("{{ oops ").is_some());
+    }
+
+    #[test]
+    fn missing_request_data_gets_advice() {
+        let e = "Failed to render 'x': Variable `request.headers[\"x-t\"]` not found in context while rendering 'x'";
+        let h = missing_request_hint(e).unwrap();
+        assert!(h.contains("default(value"), "{h}");
+        assert!(missing_request_hint("Variable `vars.nope` not found in context").is_none());
+        assert!(missing_request_hint("something else").is_none());
     }
 }

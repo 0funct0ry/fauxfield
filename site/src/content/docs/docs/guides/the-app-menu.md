@@ -13,7 +13,7 @@ greyed, never hidden, and a greyed item does nothing from its key either.
 | **Edit** | Undo, Redo, Cut, Copy, Paste, Select All, Duplicate, Rename, Delete |
 | **View** | Quick Search, Command Palette, the three docks, Traffic/Problems/Logs, Theme, Full Screen |
 | **Server** | Run/Stop All, Start/Stop, Restart, Change Port, Switch Environment, Traffic |
-| **Route** | Send Test Request, Edit Method and Path, New and default Response, Response fields |
+| **Route** | Copy as cURL, Edit Method and Path, New and default Response, Response fields |
 | **Window** | Minimize, Zoom or Maximize, Go to Tab |
 | **Help** | Documentation, Release Notes, Report an Issue, About (Windows, Linux) |
 

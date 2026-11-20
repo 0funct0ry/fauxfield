@@ -2121,7 +2121,7 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
 name = "fauxfield"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "assert_cmd",
  "base64 0.22.1",
@@ -2145,7 +2145,7 @@ dependencies = [
 
 [[package]]
 name = "fauxfield-control"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "async-trait",
  "fauxfield-engine",
@@ -2162,7 +2162,7 @@ dependencies = [
 
 [[package]]
 name = "fauxfield-engine"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -2212,7 +2212,7 @@ dependencies = [
 
 [[package]]
 name = "fauxfield-gui"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2248,7 +2248,7 @@ dependencies = [
 
 [[package]]
 name = "fauxfield-mcp"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -2272,7 +2272,7 @@ dependencies = [
 
 [[package]]
 name = "fauxfield-model"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "getrandom 0.3.4",
  "indexmap",
@@ -2287,7 +2287,7 @@ dependencies = [
 
 [[package]]
 name = "fauxfield-openapi"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "fauxfield-model",
  "flate2",
@@ -2298,7 +2298,7 @@ dependencies = [
 
 [[package]]
 name = "fauxfield-store"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "fauxfield-model",
  "indexmap",
@@ -8647,7 +8647,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "fauxfield-engine",
  "fauxfield-mcp",

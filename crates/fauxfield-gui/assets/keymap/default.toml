@@ -36,7 +36,7 @@ action = "run_all"
 keys = "secondary-shift-r"
 
 [[binding]]
-action = "send_test"
+action = "picker_open_pinned"
 keys = "secondary-enter"
 
 [[binding]]

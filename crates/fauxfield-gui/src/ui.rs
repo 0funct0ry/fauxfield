@@ -28,6 +28,49 @@ pub fn icon(name: &str, size: f32, color: Hsla) -> impl IntoElement {
         .text_color(color)
 }
 
+/// The Fauxfield mark as on the marketing site: a rounded tile, three left-aligned bars and an
+/// accent dot, drawn on a 24-unit grid scaled to `size`.
+pub fn app_mark(t: &Theme, size: f32) -> Div {
+    let u = size / 24.0;
+    let bar = |y: f32, w: f32| {
+        div()
+            .absolute()
+            .left(px(6. * u))
+            .top(px((y - 1.1) * u))
+            .w(px((w + 2.2) * u))
+            .h(px(2.2 * u))
+            .rounded_full()
+            .bg(t.text)
+    };
+    div()
+        .relative()
+        .flex_none()
+        .size(px(size))
+        .child(
+            div()
+                .absolute()
+                .left(px(2. * u))
+                .top(px(2. * u))
+                .size(px(20. * u))
+                .rounded(px(5. * u))
+                .bg(t.editor)
+                .border_1()
+                .border_color(t.border),
+        )
+        .child(bar(7., 8.))
+        .child(bar(12., 4.))
+        .child(bar(17., 1.))
+        .child(
+            div()
+                .absolute()
+                .left(px(14.5 * u))
+                .top(px(14.5 * u))
+                .size(px(4. * u))
+                .rounded_full()
+                .bg(t.accent),
+        )
+}
+
 /// HTTP method badge: fixed width, monospaced, coloured from syntax tokens.
 pub fn method_badge(t: &Theme, method: &str) -> Div {
     div()

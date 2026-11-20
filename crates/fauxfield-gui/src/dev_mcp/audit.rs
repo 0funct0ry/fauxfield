@@ -23,7 +23,7 @@ pub const SPEC_BINDINGS: &[(&str, &str)] = &[
     ("new_server", "secondary-shift-n"),
     ("toggle_server", "secondary-r"),
     ("run_all", "secondary-shift-r"),
-    ("send_test", "secondary-enter"),
+    ("picker_open_pinned", "secondary-enter"),
     ("save", "secondary-s"),
     ("toggle_left_dock", "secondary-b"),
     ("toggle_bottom_dock", "secondary-`"),

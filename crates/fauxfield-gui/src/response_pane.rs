@@ -119,7 +119,10 @@ impl InlineTarget {
     pub fn is_header(&self) -> bool {
         matches!(
             self,
-            InlineTarget::HeaderKey { .. } | InlineTarget::HeaderValue { .. }
+            InlineTarget::HeaderKey { .. }
+                | InlineTarget::HeaderValue { .. }
+                | InlineTarget::RouteHeaderKey { .. }
+                | InlineTarget::RouteHeaderValue { .. }
         )
     }
 }
@@ -129,6 +132,8 @@ pub struct InlineEdit {
     pub target: InlineTarget,
     /// Mirror of the input's text (completions and validation read it without a context).
     pub text: String,
+    /// Caret (byte offset) as of the last change; template completions read it.
+    pub caret: usize,
     /// The field's input.
     pub input: gpui::Entity<TextInput>,
     /// Highlighted completion.
@@ -219,6 +224,7 @@ impl Shell {
         self.inline = Some(InlineEdit {
             target,
             text: initial.to_string(),
+            caret: initial.len(),
             input,
             ac_sel: 0,
             ac_explicit: false,
@@ -431,8 +437,10 @@ impl Shell {
         match ev {
             InputEvent::Change => {
                 let v = input.read(cx).value().to_string();
+                let caret = input.read(cx).cursor();
                 if let Some(i) = self.inline.as_mut() {
                     i.text = v;
+                    i.caret = caret;
                     i.ac_sel = 0;
                     i.ac_explicit = false;
                     i.ac_open = true;
@@ -453,7 +461,13 @@ impl Shell {
                     .as_ref()
                     .and_then(|i| chosen(&sugg, i.ac_sel, i.ac_explicit));
                 if let Some(at) = pick {
-                    self.set_inline_text(sugg[at].label, cx);
+                    // A template completion edits the text in place and keeps the cell open.
+                    if sugg[at].apply.is_some() {
+                        self.apply_template_suggestion(&sugg[at], cx);
+                        cx.notify();
+                        return;
+                    }
+                    self.set_inline_text(&sugg[at].label, cx);
                 }
                 let nav = match ev {
                     InputEvent::Tab { reverse: true } => Nav::Prev,

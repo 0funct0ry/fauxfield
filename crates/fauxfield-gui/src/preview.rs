@@ -40,7 +40,12 @@ impl Shell {
         let Some((route, _, _)) = self.find_response(response) else {
             return vec![];
         };
-        let Some((server, _)) = self.ws.find_route(&route) else {
+        self.variable_names_for_route(&route)
+    }
+
+    /// Names of the variables in scope for the Route `route` (same sources).
+    pub(crate) fn variable_names_for_route(&self, route: &str) -> Vec<String> {
+        let Some((server, _)) = self.ws.find_route(route) else {
             return vec![];
         };
         let from_file: Vec<String> = self

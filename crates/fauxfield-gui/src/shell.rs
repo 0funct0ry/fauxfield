@@ -481,6 +481,8 @@ pub struct Shell {
     pub(crate) test_path: HashMap<String, String>,
     pub(crate) server_section: HashMap<String, usize>,
     pub(crate) reveal_secrets: bool,
+    /// Inspector sections the user collapsed (runtime-only).
+    pub(crate) inspector_collapsed: HashSet<&'static str>,
     /// Dev-only: render volatile text (Traffic time and duration) as fixed placeholders so
     /// repeated screenshots compare equal.
     #[cfg(feature = "dev-mcp")]
@@ -533,7 +535,6 @@ pub struct Shell {
     pub(crate) update_notice: Option<fauxfield_store::update::UpdateInfo>,
     pub(crate) quit_confirm: bool,
     pub(crate) quit_confirmed: bool,
-    pub(crate) select_next_test: bool,
     pub(crate) port_offset: u16,
     /// Workspace network profile (runtime only, SPEC §5.6); mirrors the engine.
     pub(crate) network_profile: fauxfield_engine::NetworkProfile,
@@ -604,6 +605,8 @@ pub struct Shell {
     /// Markdown editors of the Docs sub-tab, Folder tab and Server Docs section (M15, M17.06).
     pub(crate) docs_editors: std::cell::RefCell<crate::docs_edit::DocsEditors>,
     /// Read-only request and response body viewers of the Traffic detail.
+    /// Recording whose bodies the Traffic editors currently show.
+    pub(crate) traffic_shown: Option<u64>,
     pub(crate) traffic_editors: Option<[gpui::Entity<crate::code_editor::CodeEditor>; 2]>,
     /// Painted bounds of the picker's text input, and a drag in progress in it.
     /// Painted bounds of the body editor's text area (mouse → line/column).
@@ -857,6 +860,7 @@ impl Shell {
             test_path: HashMap::new(),
             server_section: HashMap::new(),
             reveal_secrets: false,
+            inspector_collapsed: HashSet::new(),
             #[cfg(feature = "dev-mcp")]
             mask_volatile: false,
             notice: None,
@@ -890,7 +894,6 @@ impl Shell {
             update_notice: None,
             quit_confirm: false,
             quit_confirmed: false,
-            select_next_test: false,
             port_offset: opts.port_offset,
             network_profile: Default::default(),
             trust_confirm: None,
@@ -946,6 +949,7 @@ impl Shell {
             editor_settings,
             body_editors: Default::default(),
             docs_editors: Default::default(),
+            traffic_shown: None,
             traffic_editors: None,
             mono_w: 0.0,
             inline: None,
@@ -1846,6 +1850,7 @@ impl Shell {
                 }
             }
             MenuAct::CopyCrudCurl => self.copy_crud_op_curl(&m.row_id, cx),
+            MenuAct::CopyRouteCurl => self.copy_route_curl(&m.row_id, cx),
             MenuAct::CopyCell => self.dataset_row_action(&m.row_id, DsRowAction::CopyCell, cx),
             MenuAct::CopyRowJson => {
                 self.dataset_row_action(&m.row_id, DsRowAction::CopyRowJson, cx)
@@ -3958,13 +3963,15 @@ impl Render for Shell {
                 Some(r) => this.add_dataset_action(&r, cx),
                 None => this.notify("Open a Response first.".into(), cx),
             },
-            SendTest => |this, w, cx| {
-                // Cmd+Enter is also "open pinned" inside Quick Search.
+            // Cmd+Enter inside Quick Search.
+            PickerOpenPinned => |this, w, cx| {
                 if this.picker.is_some() {
                     this.run_picker_selection(OpenMode::Pinned, w, cx);
-                } else {
-                    this.send_test(cx);
                 }
+            },
+            CopyRouteCurl => |this, _w, cx| match this.current_route_id() {
+                Some(r) => this.copy_route_curl(&r, cx),
+                None => this.notify("Open a route first.".into(), cx),
             },
             // Cmd+S writes the Response body or field being edited to its file.
             Save => |this, w, cx| {
@@ -4078,6 +4085,7 @@ impl Render for Shell {
             },
             RestartServer => |this, _w, cx| this.restart_current(cx),
             ClearTraffic => |this, _w, cx| this.clear_traffic(cx),
+            ClearLogs => |this, _w, cx| this.clear_logs(cx),
             CopyAsCurl => |this, _w, cx| this.copy_curl(cx),
             MockThisRoute => |this, _w, cx| this.mock_this_route(cx),
             RefireCallback => |this, _w, cx| this.refire_callback(cx),

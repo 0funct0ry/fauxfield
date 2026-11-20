@@ -1,9 +1,9 @@
 //! Running servers from the shell (M3): the host (engine, control socket), start/stop/restart,
-//! Send test, live Traffic and Logs, Copy as cURL, and the quit confirmation. The workspace
+//! live Traffic and Logs, Copy as cURL, and the quit confirmation. The workspace
 //! files stay authoritative; run state and traffic are runtime-only.
 
 use fauxfield_control::{Host, HostError, HostOptions};
-use fauxfield_engine::{EngineError, EngineEvent, ServerStatus, TestRequest, to_curl};
+use fauxfield_engine::{EngineError, EngineEvent, ServerStatus, to_curl};
 use gpui::{
     ClipboardItem, Context, InteractiveElement, IntoElement, ParentElement,
     StatefulInteractiveElement, Styled, div, px,
@@ -193,7 +193,6 @@ impl Shell {
                         "{} {} {} -> {} ({}ms) [{}]",
                         rec.ts, rec.method, rec.url, rec.status, rec.timing.total_ms, rec.route
                     ));
-                    let is_test = rec.source == "test";
                     if let Some(err) = rec.error.as_ref().filter(|_| rec.source == "callback") {
                         let msg = format!(
                             "Callback {} failed: {err}",
@@ -207,11 +206,6 @@ impl Shell {
                         self.traffic.drain(..extra);
                         self.traffic_selected =
                             self.traffic_selected.and_then(|i| i.checked_sub(extra));
-                    }
-                    if is_test && self.select_next_test {
-                        self.select_next_test = false;
-                        self.traffic_selected = Some(self.traffic.len() - 1);
-                        self.layout.right_open = true;
                     }
                 }
                 EngineEvent::Dataset { .. } => {}
@@ -423,40 +417,29 @@ impl Shell {
         .detach();
     }
 
-    // ---- send test, cURL, clear ------------------------------------------------------------
+    // ---- cURL, clear ------------------------------------------------------------
 
-    /// Fire the open route's request at its running server; the result lands in Traffic.
-    pub fn send_test(&mut self, cx: &mut Context<Self>) {
-        let Some(host) = &self.host else {
-            return self.notify("Open a workspace first.".into(), cx);
-        };
-        let Some((server, route)) = self
-            .current_route_id()
-            .and_then(|id| self.ws.find_route(&id).map(|(s, r)| (s.clone(), r.clone())))
-        else {
+    /// `curl` for a Route (row id = Route id): the Server's address, the prefix and the path,
+    /// with the default Response's Rules satisfied.
+    pub(crate) fn copy_route_curl(&mut self, route_id: &str, cx: &mut Context<Self>) {
+        let Some((server, route)) = self.ws.find_route(route_id) else {
             return self.notify("Open a route first.".into(), cx);
         };
-        if !server.running {
-            return self.notify(format!("Start {} first (Cmd/Ctrl+R).", server.name), cx);
-        }
-        let req: TestRequest = crate::sample::Sample::default().request(&server, &route);
-        let engine = host.engine().clone();
-        let id = server.id.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        host.handle().spawn(async move {
-            let _ = tx.send(engine.send_test(&id, &req).await);
-        });
-        self.select_next_test = true;
-        cx.spawn(async move |this, cx| {
-            if let Ok(Err(e)) = rx.await {
-                this.update(cx, |this, cx| {
-                    this.select_next_test = false;
-                    this.notify(format!("Send test failed: {e}"), cx);
-                })
-                .ok();
-            }
-        })
-        .detach();
+        let rules: Vec<&fauxfield_model::Rule> = route
+            .responses
+            .iter()
+            .find(|r| r.default)
+            .or(route.responses.first())
+            .map(|r| r.rules.iter().collect())
+            .unwrap_or_default();
+        let base = self.server_base_url(server);
+        let curl =
+            crate::rule_curl::build(&base, &server.prefix, &route.method, &route.path, &rules);
+        cx.write_to_clipboard(ClipboardItem::new_string(curl));
+        self.notify(
+            format!("Copied cURL for {} {}", route.method, route.path),
+            cx,
+        );
     }
 
     /// Traffic: fire the Callbacks of the selected request again. On a Callback entry only that
@@ -657,9 +640,15 @@ impl Shell {
     pub fn clear_traffic(&mut self, cx: &mut Context<Self>) {
         self.traffic.clear();
         self.traffic_selected = None;
+        self.traffic_shown = None;
         if let Some(h) = &self.host {
             h.engine().clear_traffic();
         }
+        cx.notify();
+    }
+
+    pub fn clear_logs(&mut self, cx: &mut Context<Self>) {
+        self.logs.clear();
         cx.notify();
     }
 

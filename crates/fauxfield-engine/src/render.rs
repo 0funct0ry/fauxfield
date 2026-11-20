@@ -279,6 +279,47 @@ pub fn preview(
     )
 }
 
+/// Render one template string (a header value, say) against `sample` in the context of `route`.
+/// `Err` carries the template error text.
+pub fn render_sample(
+    root: &Path,
+    server: &Server,
+    route: &Route,
+    sample: &SampleRequest,
+    src: &str,
+) -> Result<String, String> {
+    let lc: Vec<(String, String)> = sample
+        .headers
+        .iter()
+        .map(|(k, v)| (k.to_ascii_lowercase(), v.clone()))
+        .collect();
+    let params: Vec<(String, String)> = crate::router::RouteTable::compile(server)
+        .find(&sample.method, sample.url.split('?').next().unwrap_or("/"))
+        .map(|m| m.params.into_iter().collect())
+        .unwrap_or_default();
+    let context = context(
+        server,
+        &sample.method,
+        &sample.url,
+        &lc,
+        &params,
+        Some("127.0.0.1"),
+        sample.body.as_bytes(),
+        1,
+        1,
+        &crate::vars::VarContext::default(),
+        Some(&route.id),
+    );
+    let env = TplEnv {
+        context,
+        seed: server.fake_seed,
+        route_id: route.id.clone(),
+        counter: 1,
+        seq: None,
+    };
+    env.render(root, src).map_err(|e| e.to_string())
+}
+
 /// [`preview`] with the workspace variable context (active Environment, globals, runtime).
 pub fn preview_with(
     root: &Path,

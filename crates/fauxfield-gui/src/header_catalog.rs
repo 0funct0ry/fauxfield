@@ -211,11 +211,62 @@ pub enum Col {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Suggestion {
-    pub label: &'static str,
+    pub label: String,
     /// One-line description (names only).
-    pub detail: &'static str,
+    pub detail: String,
     /// Byte range of the match inside `label`, for highlighting.
     pub hit: (usize, usize),
+    /// Template completion: replace this byte range of the cell text with the snippet (`$0` is
+    /// the caret). `None` for a header name or value, which replaces the whole text.
+    pub apply: Option<(std::ops::Range<usize>, String)>,
+}
+
+impl Suggestion {
+    /// The text and caret offset after accepting this suggestion over `text`.
+    pub fn applied(&self, text: &str) -> (String, usize) {
+        match &self.apply {
+            Some((r, snippet)) if r.end <= text.len() => {
+                let (ins, at) = crate::code_editor::completion::expand_snippet(snippet);
+                let out = format!("{}{}{}", &text[..r.start], ins, &text[r.end..]);
+                (out, r.start + at)
+            }
+            _ => (self.label.clone(), self.label.len()),
+        }
+    }
+}
+
+/// Template completions (variables, functions, filters, `fake` kinds) for a header Value whose
+/// caret sits inside `{{ }}` or `{% %}`; `None` outside a tag.
+pub fn template_suggest(text: &str, caret: usize, variables: &[String]) -> Option<Vec<Suggestion>> {
+    use crate::code_editor::completion::{CompletionProvider, Trigger, rank};
+    let caret = caret.min(text.len());
+    if !text.is_char_boundary(caret) {
+        return None;
+    }
+    let c = crate::code_editor::tera_ctx::TeraCompletions {
+        variables: variables.to_vec(),
+    }
+    .completions(text, caret, Trigger::Typing)?;
+    let query = text.get(c.replace.clone()).unwrap_or("").to_string();
+    let items = rank(c.items, &query);
+    Some(
+        items
+            .into_iter()
+            .take(MAX_SUGGESTIONS)
+            .map(|it| Suggestion {
+                label: it.label,
+                detail: if it.group.is_empty() {
+                    it.detail
+                } else if it.detail.is_empty() {
+                    it.group
+                } else {
+                    format!("{} · {}", it.group, it.detail)
+                },
+                hit: (0, 0),
+                apply: Some((c.replace.clone(), it.insert)),
+            })
+            .collect(),
+    )
 }
 
 /// Most suggestions the popup lists; the rest are reachable by typing more.
@@ -241,13 +292,14 @@ pub fn suggest(col: Col, name: &str, text: &str) -> Vec<Suggestion> {
         .filter_map(|(label, detail)| {
             let at = label.to_ascii_lowercase().find(&q)?;
             Some(Suggestion {
-                label,
-                detail,
+                label: label.to_string(),
+                detail: detail.to_string(),
                 hit: (at, at + q.len()),
+                apply: None,
             })
         })
         .collect();
-    out.sort_by_key(|s| (s.hit.0 != 0, s.label));
+    out.sort_by(|a, b| (a.hit.0 != 0, &a.label).cmp(&(b.hit.0 != 0, &b.label)));
     out.truncate(MAX_SUGGESTIONS);
     if out.len() == 1 && out[0].label.eq_ignore_ascii_case(text.trim()) {
         out.clear();
@@ -296,5 +348,27 @@ mod tests {
         for (n, _) in HEADERS {
             let _ = values_for(n);
         }
+    }
+
+    #[test]
+    fn template_completions_apply_in_place() {
+        let vars = vec!["host".to_string()];
+        // Outside a tag: no template suggestions.
+        assert!(template_suggest("Bearer ", 7, &vars).is_none());
+        assert!(template_suggest("{{ x }} ", 8, &vars).is_none());
+        let text = "Bearer {{ vars.ho";
+        let s = template_suggest(text, text.len(), &vars).unwrap();
+        let host = s.iter().find(|x| x.label == "vars.host").unwrap();
+        assert_eq!(host.applied(text).0, "Bearer {{ vars.host");
+        // Functions insert a snippet with the caret between the parentheses.
+        let text = "{{ uui";
+        let s = template_suggest(text, text.len(), &vars).unwrap();
+        let f = s.iter().find(|x| x.label == "uuid").unwrap();
+        let (out, at) = f.applied(text);
+        assert!(out.starts_with("{{ uuid"), "{out}");
+        assert!(at <= out.len());
+        // Plain suggestions replace the whole cell.
+        let k = suggest(Col::Key, "", "cont");
+        assert_eq!(k[0].applied("cont").0, k[0].label);
     }
 }

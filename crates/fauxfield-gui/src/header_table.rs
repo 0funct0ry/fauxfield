@@ -25,7 +25,6 @@ use crate::view::Response;
 /// Height of one table row.
 const ROW_PX: f32 = 36.0;
 const KEY_W: f32 = 280.0;
-const VALUE_W: f32 = 460.0;
 
 /// One row of the table. `content_type` rows edit the Response's `content_type` field (the
 /// engine lets it win over a `content-type` header).
@@ -118,6 +117,7 @@ impl Shell {
         let Some(InlineEdit {
             target,
             text,
+            caret,
             ac_open: true,
             ..
         }) = &self.inline
@@ -125,14 +125,40 @@ impl Shell {
             return Vec::new();
         };
         match target {
-            InlineTarget::HeaderKey { .. } => header_catalog::suggest(Col::Key, "", text),
+            InlineTarget::HeaderKey { .. } | InlineTarget::RouteHeaderKey { .. } => {
+                header_catalog::suggest(Col::Key, "", text)
+            }
             InlineTarget::HeaderValue { response, row } => {
                 let rows = self.rows_of(response);
                 let name = rows.get(*row).map_or("", |r| r.key.as_str());
-                header_catalog::suggest(Col::Value, name, text)
+                let vars = self.variable_names_for(response);
+                header_catalog::template_suggest(text, *caret, &vars)
+                    .unwrap_or_else(|| header_catalog::suggest(Col::Value, name, text))
+            }
+            InlineTarget::RouteHeaderValue { route, row } => {
+                let rows = self.route_rows(route);
+                let name = rows.get(*row).map_or("", |r| r.0.as_str());
+                let vars = self.variable_names_for_route(route);
+                header_catalog::template_suggest(text, *caret, &vars)
+                    .unwrap_or_else(|| header_catalog::suggest(Col::Value, name, text))
             }
             _ => Vec::new(),
         }
+    }
+
+    /// Insert a template completion into the active cell, leaving the caret after it.
+    pub(crate) fn apply_template_suggestion(&mut self, sg: &Suggestion, cx: &mut Context<Self>) {
+        let Some(e) = self.inline.as_mut() else {
+            return;
+        };
+        let (text, caret) = sg.applied(&e.text);
+        e.text = text.clone();
+        e.caret = caret;
+        e.ac_sel = 0;
+        e.ac_explicit = false;
+        e.ac_open = true;
+        let input = e.input.clone();
+        input.update(cx, |t, cx| t.set_value_caret(&text, caret, cx));
     }
 
     /// Accept completion `i` (popup click): the text becomes the label and the cell commits.
@@ -144,12 +170,20 @@ impl Shell {
     ) {
         let sugg = self.inline_suggestions();
         let Some(sg) = sugg.get(i) else { return };
+        if sg.apply.is_some() {
+            self.apply_template_suggestion(sg, cx);
+            if let Some(e) = self.inline.as_ref() {
+                e.input.read(cx).focus(window);
+            }
+            cx.notify();
+            return;
+        }
         let is_key = matches!(
             self.inline.as_ref().map(|e| &e.target),
-            Some(InlineTarget::HeaderKey { .. })
+            Some(InlineTarget::HeaderKey { .. } | InlineTarget::RouteHeaderKey { .. })
         );
-        let label = sg.label;
-        self.set_inline_text(label, cx);
+        let label = sg.label.clone();
+        self.set_inline_text(&label, cx);
         self.commit_inline(if is_key { Nav::Next } else { Nav::Stay }, window, cx);
     }
 
@@ -304,7 +338,7 @@ impl Shell {
     // ---- rendering ----------------------------------------------------------------------------
 
     /// The completion popup under the active cell: names with descriptions, or values.
-    fn header_popup(
+    pub(crate) fn header_popup(
         &self,
         t: &Theme,
         sugg: &[Suggestion],
@@ -457,7 +491,7 @@ impl Shell {
                     },
                     value,
                     "Value",
-                    VALUE_W,
+                    0.,
                     true,
                     cx,
                 ))
@@ -495,10 +529,39 @@ impl Shell {
                 .border_b_1()
                 .border_color(t.border_variant)
                 .child(div().w(px(KEY_W)).pl(px(8.)).child("Key"))
-                .child(div().w(px(VALUE_W)).pl(px(8.)).child("Value")),
+                .child(div().flex_1().min_w(px(0.)).pl(px(8.)).child("Value")),
         );
+        let template_on = resp.template;
+        let route_id = self.find_response(&resp.id).map(|x| x.0);
         for (i, r) in rows.iter().enumerate() {
             table = table.child(row_el(i, &r.key, &r.value, cx));
+            // Live text while the cell is being edited, else the stored value.
+            let live = self.inline.as_ref().and_then(|e| match &e.target {
+                InlineTarget::HeaderValue { response, row }
+                    if *response == resp.id && *row == i =>
+                {
+                    Some(e.text.clone())
+                }
+                _ => None,
+            });
+            let err = route_id.as_ref().and_then(|rt| {
+                self.header_value_problem(rt, live.as_deref().unwrap_or(&r.value), template_on)
+            });
+            if let Some(m) = err {
+                table = table.child(crate::dev_id!(
+                    div()
+                        .id(crate::ui::eid(format!("hdr-error-{i}")))
+                        .pl(px(KEY_W + 16.))
+                        .pb(px(4.))
+                        .text_size(px(11.))
+                        .text_color(t.deleted)
+                        .child(format!("✗ {m}")),
+                    format!("hdr-error-{i}"),
+                    Text,
+                    m,
+                    None
+                ));
+            }
         }
         if draft {
             table = table.child(row_el(n, "", "", cx));

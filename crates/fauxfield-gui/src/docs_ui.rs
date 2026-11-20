@@ -151,6 +151,7 @@ impl Shell {
                       tip: &'static str,
                       handler: DocsHandler,
                       cx: &mut Context<Self>| {
+            #[allow(clippy::let_and_return)] // the dev id macro is the identity without dev-mcp
             let el = toolbar_button(t, crate::ui::eid(format!("{id}-{}", s.id)))
                 .child(label)
                 .when(!enabled, |d| {

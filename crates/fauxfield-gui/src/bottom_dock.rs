@@ -79,6 +79,35 @@ impl Shell {
                         )
                     }))
                     .child(div().flex_1())
+                    .children(
+                        match active {
+                            BottomTab::Traffic => Some(("clear_traffic", "Clear all traffic")),
+                            BottomTab::Logs => Some(("clear_logs", "Clear all logs")),
+                            BottomTab::Problems => None,
+                        }
+                        .map(|(act, tip)| {
+                            crate::dev_id!(
+                                div()
+                                    .id(crate::ui::eid(format!("bottom-{act}")))
+                                    .size(px(20.))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded(px(4.))
+                                    .cursor_pointer()
+                                    .hover(move |s| s.bg(hover))
+                                    .tooltip(crate::ui::tooltip(tip.to_string()))
+                                    .on_click(cx.listener(move |this, _, w, cx| {
+                                        this.run_action_id(act, w, cx)
+                                    }))
+                                    .child(icon("trash-2", 12., t.icon_muted)),
+                                format!("bottom-{act}"),
+                                Button,
+                                tip,
+                                Action(act)
+                            )
+                        }),
+                    )
                     .child(crate::dev_id!(
                         div()
                             .id("bottom-close")

@@ -1,10 +1,9 @@
-//! The request Send test and the template preview fire at a Route (the Route's own method and
-//! path, no extras).
+//! The sample request the template preview renders against.
 
 use crate::view::{Route, Server};
 use fauxfield_engine::TestRequest;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Sample {
     /// Empty: the Route's own method.
     pub method: String,
@@ -17,8 +16,29 @@ pub struct Sample {
     pub body: String,
 }
 
+/// The headers a typical client sends, so templates that read them preview without errors.
+/// A header outside this list is missing from the preview, as it would be for a client that
+/// omits it (use `| default(value=...)`).
+pub const SAMPLE_HEADERS: &str = "accept: application/json\n\
+content-type: application/json\n\
+user-agent: fauxfield-preview\n\
+authorization: Bearer sample-token\n\
+x-request-id: 3f2b8c1e-5d4a-4e6f-9a7b-0c1d2e3f4a5b";
+
+impl Default for Sample {
+    fn default() -> Self {
+        Sample {
+            method: String::new(),
+            query: String::new(),
+            headers: SAMPLE_HEADERS.to_string(),
+            cookies: String::new(),
+            body: String::new(),
+        }
+    }
+}
+
 impl Sample {
-    /// The request Send test fires for `route` on `server`.
+    /// The request the template preview renders for `route` on `server`.
     pub fn request(&self, server: &Server, route: &Route) -> TestRequest {
         let base = if route.method.eq_ignore_ascii_case("any") {
             "GET"

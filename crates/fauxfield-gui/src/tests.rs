@@ -508,30 +508,27 @@ fn starting_a_server_serves_requests_and_fills_traffic(cx: &mut TestAppContext) 
             .position(|x| x.all_routes().any(|r| r.id == "rt_users_get"))
             .unwrap()
     });
-    // Sending before the server runs explains what to do instead of failing silently.
-    view.update(cx, |s, cx| s.send_test(cx));
-    assert!(read(&view, cx, |s| s.notice.clone().unwrap().1).contains("Start"));
-
     view.update(cx, |s, cx| s.toggle_server_at(index, cx));
     settle(cx, &view, |s| s.ws.servers[index].running);
 
-    view.update(cx, |s, cx| s.send_test(cx));
+    // A request over loopback fills Traffic.
+    view.update(cx, |s, _| {
+        let (srv, route) = s.ws.find_route("rt_users_get").unwrap();
+        let req = crate::sample::Sample::default().request(srv, route);
+        let host = s.host.as_ref().unwrap();
+        let engine = host.engine().clone();
+        let id = srv.id.clone();
+        host.handle().spawn(async move {
+            let _ = engine.send_test(&id, &req).await;
+        });
+    });
     settle(cx, &view, |s| s.traffic.iter().any(|r| r.id > 0));
-    let (route, source, selected) = read(&view, cx, |s| {
+    let (route, source) = read(&view, cx, |s| {
         let r = s.traffic.last().unwrap();
-        (
-            r.route.clone(),
-            r.rec.as_ref().unwrap().source.clone(),
-            s.traffic_selected,
-        )
+        (r.route.clone(), r.rec.as_ref().unwrap().source.clone())
     });
     assert_eq!(route, "rt_users_get");
     assert_eq!(source, "test");
-    assert_eq!(
-        selected,
-        Some(0),
-        "Send test selects its row for the Inspector"
-    );
     assert!(read(&view, cx, |s| s
         .logs
         .iter()
@@ -1380,12 +1377,12 @@ fn response_menu_body_editor_and_headers(cx: &mut TestAppContext) {
     // The test window draws a different Route, so the editor is not in the focus tree.
     view.update_in(cx, |s, w, cx| {
         w.focus(&s.focus);
-        s.run_action_id("send_test", w, cx)
+        s.run_action_id("picker_open_pinned", w, cx)
     });
     cx.run_until_parked();
     assert!(
         read(&view, cx, |s| s.body_edit.is_some()),
-        "Send Test must not save"
+        "Cmd+Enter must not save"
     );
     view.update_in(cx, |s, w, cx| s.run_action_id("save", w, cx));
     cx.run_until_parked();
@@ -1550,7 +1547,7 @@ fn headers_table_edits_completes_and_navigates(cx: &mut TestAppContext) {
     view.update_in(cx, |s, w, cx| s.begin_header_cell(&r, 0, Col::Key, w, cx));
     typed(&view, cx, "content-ty");
     assert_eq!(
-        read(&view, cx, |s| s.inline_suggestions()[0].label),
+        read(&view, cx, |s| s.inline_suggestions()[0].label.clone()),
         "Content-Type"
     );
     key(&view, cx, "enter", None);
@@ -1854,7 +1851,7 @@ fn templating_preview_route_headers_seed_and_dice(cx: &mut TestAppContext) {
     view.update_in(cx, |s, w, cx| {
         s.begin_route_header_cell("rt_users_get", 0, Col::Key, w, cx)
     });
-    typed(&view, cx, "x-req");
+    typed(&view, cx, "x-mine");
     key(&view, cx, "tab", None);
     assert_eq!(
         read(&view, cx, |s| s.inline.as_ref().map(|i| i.target.clone())),
@@ -1863,7 +1860,24 @@ fn templating_preview_route_headers_seed_and_dice(cx: &mut TestAppContext) {
             row: 0
         })
     );
-    typed(&view, cx, "{{ uuid() }}");
+    // A Value inside `{{ }}` completes template functions; Tab inserts and keeps editing.
+    typed(&view, cx, "{{ uui");
+    assert!(read(&view, cx, |s| s
+        .inline_suggestions()
+        .iter()
+        .any(|x| x.label == "uuid")));
+    key(&view, cx, "tab", None);
+    assert!(read(&view, cx, |s| s
+        .inline
+        .as_ref()
+        .unwrap()
+        .text
+        .starts_with("{{ uuid")));
+    assert!(matches!(
+        read(&view, cx, |s| s.inline.as_ref().map(|i| i.target.clone())),
+        Some(I::RouteHeaderValue { .. })
+    ));
+    view.update(cx, |s, cx| s.set_inline_text("{{ uuid() }}", cx));
     key(&view, cx, "enter", None);
     assert_eq!(
         read(&view, cx, |s| s
@@ -1873,8 +1887,26 @@ fn templating_preview_route_headers_seed_and_dice(cx: &mut TestAppContext) {
             .1
             .headers
             .clone()),
-        vec![("x-req".to_string(), "{{ uuid() }}".to_string())]
+        vec![("x-mine".to_string(), "{{ uuid() }}".to_string())]
     );
+    // Inline problems: request data the sample lacks is reported with advice; the sample has
+    // the common headers, and `default` makes a missing one fine.
+    read(&view, cx, |s| {
+        let p = |v: &str| s.header_value_problem("rt_users_get", v, true);
+        assert!(
+            p("{{ request.headers[\"x-tenant\"] }}")
+                .unwrap()
+                .contains("default(value")
+        );
+        assert!(p("{{ request.headers[\"x-tenant\"] | default(value=\"a\") }}").is_none());
+        assert!(p("{{ request.headers[\"x-request-id\"] }}").is_none());
+        assert!(p("{{ oops ").is_some());
+        assert!(p("{{ request.headers[\"x-tenant\"] }}").is_some());
+        assert!(
+            s.header_value_problem("rt_users_get", "{{ request.headers[\"x-tenant\"] }}", false)
+                .is_none()
+        );
+    });
     view.update(cx, |s, cx| s.remove_route_header_row("rt_users_get", 0, cx));
     assert!(read(&view, cx, |s| s
         .ws

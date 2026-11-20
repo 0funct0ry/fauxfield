@@ -750,7 +750,7 @@ impl Shell {
         let running = self.ws.find_server(&m.row_id).is_some_and(|s| s.running);
         let is_server = matches!(m.kind, RowKind::Server { .. });
         if matches!(m.kind, RowKind::Workspace) {
-            return tree::workspace_menu_items(&self.recents)
+            return tree::workspace_menu_items(&self.recents, self.store.is_some())
                 .into_iter()
                 .map(|(l, a)| (l, format!("menu-workspace-{}", a.key()), a))
                 .collect();

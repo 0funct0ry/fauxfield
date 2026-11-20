@@ -349,16 +349,19 @@ impl Shell {
                     )
                     .child(div().flex_1())
                     .child(crate::dev_id!(
-                        toolbar_button(t, "route-send")
-                            .child(icon("play", 12., t.created))
-                            .child("Send test")
+                        toolbar_button(t, "route-copy-curl")
+                            .w(px(24.))
+                            .h(px(24.))
+                            .justify_center()
+                            .child(icon("copy", 14., t.icon_muted))
+                            .tooltip(crate::ui::tooltip("Copy as cURL".to_string()))
                             .on_click(cx.listener(|this, _, w, cx| {
-                                this.run_action_id("send_test", w, cx)
-                            }),),
-                        format!("route-send-{}", r.id),
+                                this.run_action_id("copy_route_curl", w, cx)
+                            })),
+                        format!("route-copy-curl-{}", r.id),
                         Button,
-                        "Send test",
-                        Action("send_test")
+                        "Copy as cURL",
+                        Action("copy_route_curl")
                     )),
             )
             .child(
@@ -1766,12 +1769,20 @@ impl Shell {
             (&rec.request_body, ct(&rec.request_headers)),
             (&rec.response_body, ct(&rec.response_headers)),
         ];
+        let fresh = self.traffic_shown != Some(rec.id);
+        self.traffic_shown = Some(rec.id);
         for (ed, (body, ct)) in eds.iter().zip(items) {
             ed.update(cx, |e, cx| {
-                if e.text() != body.as_str() {
-                    e.set_text(body, cx);
+                if fresh {
+                    let lang = Language::detect(&ct, body);
+                    // Pretty-printed when the body parses; the recording keeps the raw bytes.
+                    let shown = match crate::code_editor::format::format(lang, body, "  ") {
+                        Some(Ok(pretty)) => pretty,
+                        _ => body.to_string(),
+                    };
+                    e.set_text(&shown, cx);
+                    e.set_language(lang, cx);
                 }
-                e.set_language(Language::detect(&ct, body), cx);
                 e.apply_settings(&st, cx);
             });
         }
@@ -2183,12 +2194,33 @@ impl Shell {
                     .px(px(10.))
                     .flex()
                     .items_center()
+                    .gap(px(4.))
                     .text_size(px(11.))
                     .text_color(t.text_muted)
-                    .child("INSPECTOR"),
+                    .child(div().flex_1().child("INSPECTOR"))
+                    .child(crate::dev_id!(
+                        div()
+                            .id("inspector-close")
+                            .size(px(22.))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(3.))
+                            .cursor_pointer()
+                            .hover(|s| s.bg(t.element_hover))
+                            .tooltip(crate::ui::tooltip("Hide Inspector".to_string()))
+                            .on_click(cx.listener(|this, _, w, cx| {
+                                this.run_action_id("toggle_right_dock", w, cx)
+                            }))
+                            .child(icon("x", 13., t.icon_muted)),
+                        "inspector-close",
+                        Button,
+                        "Hide Inspector",
+                        Action("toggle_right_dock")
+                    )),
             )
             .child(body)
-            .children(self.render_scope_section(t))
+            .children(self.render_scope_section(t, cx))
             .children(self.render_seed_section(t, cx))
     }
 
@@ -2198,6 +2230,7 @@ impl Shell {
         let s = &self.ws.servers[self.current_server()?];
         let (sid_d, sid_r) = (s.id.clone(), s.id.clone());
         let seed = s.fake_seed;
+        let collapsed = self.inspector_collapsed.contains("seed");
         let seg = |id: &'static str, label: &'static str, on: bool| {
             div()
                 .id(id)
@@ -2222,55 +2255,57 @@ impl Shell {
                 .gap(px(6.))
                 .border_t_1()
                 .border_color(t.border_variant)
-                .child(section_heading(t, "Seed"))
-                .child(crate::dev_id!(
-                    div()
-                        .id("seed-mode")
-                        .flex()
-                        .flex_row()
-                        .gap(px(2.))
-                        .child(crate::dev_id!(
-                            seg("seed-mode-deterministic", "Deterministic", seed.is_some())
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.set_seed_mode(&sid_d, true, cx)
-                                })),
-                            "seed-mode-deterministic",
-                            Button,
-                            "Deterministic",
-                            Press(format!("seed-mode:{}:1", s.id))
-                        ))
-                        .child(crate::dev_id!(
-                            seg("seed-mode-random", "Random", seed.is_none()).on_click(
-                                cx.listener(move |this, _, _, cx| {
-                                    this.set_seed_mode(&sid_r, false, cx)
-                                })
-                            ),
-                            "seed-mode-random",
-                            Button,
-                            "Random",
-                            Press(format!("seed-mode:{}:0", s.id))
-                        )),
-                    "seed-mode",
-                    Panel,
-                    "Seed mode",
-                    None
-                ))
-                .child(self.inline_field(
-                    t,
-                    "seed-value".into(),
-                    crate::response_pane::InlineTarget::Seed(s.id.clone()),
-                    &seed.map(|n| n.to_string()).unwrap_or_default(),
-                    "fake_seed (random)",
-                    160.,
-                    true,
-                    cx,
-                ))
-                .child(
-                    div()
-                        .text_size(px(11.))
-                        .text_color(t.text_muted)
-                        .child("Same seed, same fake data on every request."),
-                )
+                .child(self.collapsible_heading(t, "seed", "Seed", cx))
+                .when(!collapsed, |d| {
+                    d.child(crate::dev_id!(
+                        div()
+                            .id("seed-mode")
+                            .flex()
+                            .flex_row()
+                            .gap(px(2.))
+                            .child(crate::dev_id!(
+                                seg("seed-mode-deterministic", "Deterministic", seed.is_some())
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.set_seed_mode(&sid_d, true, cx)
+                                    })),
+                                "seed-mode-deterministic",
+                                Button,
+                                "Deterministic",
+                                Press(format!("seed-mode:{}:1", s.id))
+                            ))
+                            .child(crate::dev_id!(
+                                seg("seed-mode-random", "Random", seed.is_none()).on_click(
+                                    cx.listener(move |this, _, _, cx| {
+                                        this.set_seed_mode(&sid_r, false, cx)
+                                    })
+                                ),
+                                "seed-mode-random",
+                                Button,
+                                "Random",
+                                Press(format!("seed-mode:{}:0", s.id))
+                            )),
+                        "seed-mode",
+                        Panel,
+                        "Seed mode",
+                        None
+                    ))
+                    .child(self.inline_field(
+                        t,
+                        "seed-value".into(),
+                        crate::response_pane::InlineTarget::Seed(s.id.clone()),
+                        &seed.map(|n| n.to_string()).unwrap_or_default(),
+                        "fake_seed (random)",
+                        160.,
+                        true,
+                        cx,
+                    ))
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(t.text_muted)
+                            .child("Same seed, same fake data on every request."),
+                    )
+                })
                 .into_any_element(),
         )
     }
@@ -2520,9 +2555,14 @@ impl Shell {
     }
 
     /// Inspector "Variables in scope": effective value, scope and source of each variable.
-    fn render_scope_section(&self, t: &Theme) -> Option<AnyElement> {
+    fn render_scope_section(&self, t: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
         self.current_server()?;
-        let vars = self.scope_vars();
+        let collapsed = self.inspector_collapsed.contains("vars");
+        let vars = if collapsed {
+            Vec::new()
+        } else {
+            self.scope_vars()
+        };
         let reveal = self.reveal_secrets;
         Some(
             div()
@@ -2532,22 +2572,24 @@ impl Shell {
                 .flex_col()
                 .border_t_1()
                 .border_color(t.border_variant)
-                .child(section_heading(t, "Variables in scope"))
-                .child(
-                    div()
-                        .text_size(px(11.))
-                        .text_color(t.text_muted)
-                        .pb(px(4.))
-                        .child(format!(
-                            "Environment: {}",
-                            if self.active_env.is_empty() {
-                                "none"
-                            } else {
-                                &self.active_env
-                            }
-                        )),
-                )
-                .when(vars.is_empty(), |d| {
+                .child(self.collapsible_heading(t, "vars", "Variables in scope", cx))
+                .when(!collapsed, |d| {
+                    d.child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(t.text_muted)
+                            .pb(px(4.))
+                            .child(format!(
+                                "Environment: {}",
+                                if self.active_env.is_empty() {
+                                    "none"
+                                } else {
+                                    &self.active_env
+                                }
+                            )),
+                    )
+                })
+                .when(!collapsed && vars.is_empty(), |d| {
                     d.child(
                         div()
                             .text_size(px(12.))
@@ -2601,6 +2643,55 @@ impl Shell {
                 }))
                 .into_any_element(),
         )
+    }
+}
+
+impl Shell {
+    /// A section heading that folds its section on click (runtime-only state).
+    fn collapsible_heading(
+        &self,
+        t: &Theme,
+        key: &'static str,
+        name: &str,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let collapsed = self.inspector_collapsed.contains(key);
+        let hover = t.element_hover;
+        crate::dev_id!(
+            div()
+                .id(crate::ui::eid(format!("inspector-fold-{key}")))
+                .mt(px(4.))
+                .pb(px(4.))
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(4.))
+                .cursor_pointer()
+                .hover(move |s| s.bg(hover))
+                .text_size(px(11.))
+                .text_color(t.text_muted)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    if !this.inspector_collapsed.remove(key) {
+                        this.inspector_collapsed.insert(key);
+                    }
+                    cx.notify();
+                }))
+                .child(icon(
+                    if collapsed {
+                        "chevron-right"
+                    } else {
+                        "chevron-down"
+                    },
+                    12.,
+                    t.icon_muted,
+                ))
+                .child(name.to_uppercase()),
+            format!("inspector-fold-{key}"),
+            Button,
+            format!("Toggle {name}"),
+            Press(format!("inspector-fold:{key}"))
+        )
+        .into_any_element()
     }
 }
 
@@ -2910,18 +3001,7 @@ impl Shell {
                                 .flex_col()
                                 .items_center()
                                 .gap(px(10.))
-                                .child(
-                                    div()
-                                        .size(px(56.))
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .rounded(px(14.))
-                                        .border_1()
-                                        .border_color(t.border)
-                                        .bg(t.panel)
-                                        .child(icon("server", 28., t.accent)),
-                                )
+                                .child(crate::ui::app_mark(t, 64.))
                                 .child(div().text_size(px(22.)).child("Fauxfield"))
                                 .child(
                                     div()

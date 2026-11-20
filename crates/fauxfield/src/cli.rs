@@ -300,7 +300,7 @@ pub fn run() -> i32 {
         Some(Command::Version { json, check: true }) => {
             let cur = build_info().version;
             match fauxfield_store::update::check(
-                &cur,
+                cur,
                 fauxfield_store::update::cache_path().as_deref(),
                 true,
             ) {

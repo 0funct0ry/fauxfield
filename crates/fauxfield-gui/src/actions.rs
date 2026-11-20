@@ -40,7 +40,8 @@ actions!(
         NewServer,
         NewEnvironment,
         NewRoute,
-        SendTest,
+        PickerOpenPinned,
+        CopyRouteCurl,
         AddDatasetAction,
         Save,
         Duplicate,
@@ -125,6 +126,7 @@ actions!(
         SetDefaultResponse,
         RestartServer,
         ClearTraffic,
+        ClearLogs,
         CopyAsCurl,
         MockThisRoute,
         RefireCallback,
@@ -265,6 +267,7 @@ pub static ACTIONS: &[ActionInfo] = &[
     row!("restart_server", "Server: Restart Current", RestartServer),
     row!("edit_server_port", "Server: Change Port…", EditServerPort),
     row!("clear_traffic", "Traffic: Clear", ClearTraffic),
+    row!("clear_logs", "Logs: Clear", ClearLogs),
     row!("copy_as_curl", "Traffic: Copy as cURL", CopyAsCurl),
     row!("mock_this_route", "Traffic: Mock This Route", MockThisRoute),
     row!(
@@ -308,7 +311,12 @@ pub static ACTIONS: &[ActionInfo] = &[
     row!("new_server", "Server: New…", NewServer),
     row!("new_environment", "Environment: New…", NewEnvironment),
     row!("new_route", "Route: New…", NewRoute),
-    row!("send_test", "Route: Send Test Request", SendTest),
+    row!(
+        "picker_open_pinned",
+        "Quick Search: Open Pinned",
+        PickerOpenPinned
+    ),
+    row!("copy_route_curl", "Route: Copy as cURL", CopyRouteCurl),
     row!(
         "add_dataset_action",
         "Response: Add Dataset Action",

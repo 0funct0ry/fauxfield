@@ -27,6 +27,7 @@ description: One name per action, used by the Command Palette, the menus and but
 | `check_for_updates` | Help: Check for Updates… |
 | `clear_dataset_data` | Dataset: Clear Data… |
 | `clear_dataset_selection` | Dataset: Clear Row Selection |
+| `clear_logs` | Logs: Clear |
 | `clear_recent` | Workspace: Clear Recent |
 | `clear_traffic` | Traffic: Clear |
 | `close_tab` | Tab: Close |
@@ -38,6 +39,7 @@ description: One name per action, used by the Command Palette, the menus and but
 | `copy_crud_op_curl` | Route: Copy CRUD Operation as cURL |
 | `copy_dataset_cell` | Dataset: Copy Cell |
 | `copy_dataset_row` | Dataset: Copy Row as JSON |
+| `copy_route_curl` | Route: Copy as cURL |
 | `create_crud_routes` | Dataset: Create CRUD Routes… |
 | `create_workspace` | Workspace: Create… |
 | `create_workspace_by_path` | Workspace: Create by Path… |
@@ -106,6 +108,7 @@ description: One name per action, used by the Command Palette, the menus and but
 | `open_release_notes` | Help: Release Notes |
 | `open_settings` | Open Settings |
 | `paste_dataset_rows` | Dataset: Paste Rows |
+| `picker_open_pinned` | Quick Search: Open Pinned |
 | `pin_tab` | Tab: Pin |
 | `quick_search` | Quick Search: Open |
 | `quit` | Application: Quit |
@@ -132,7 +135,6 @@ description: One name per action, used by the Command Palette, the menus and but
 | `save_rows_to_seed` | Dataset: Save Rows to Seed |
 | `select_all_dataset_rows` | Dataset: Select All Rows |
 | `select_theme` | Theme Selector: Toggle |
-| `send_test` | Route: Send Test Request |
 | `send_ws_message` | WebSocket: Send Draft Message to All Clients |
 | `set_default_response` | Response: Make Default |
 | `settings_focus_search` | Settings: Search |

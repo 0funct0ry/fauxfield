@@ -405,6 +405,8 @@ pub enum MenuAct {
     DuplicateDatasetRows,
     /// crud operation row: copy its request as `curl`.
     CopyCrudCurl,
+    /// route row: copy a `curl` for the Route, prefix included.
+    CopyRouteCurl,
     AddOperationResponse,
     // Server menu (M3.1).
     Restart,
@@ -462,6 +464,7 @@ impl MenuAct {
             CopyRowJson => "copy-row-json".into(),
             DeleteDatasetRow => "delete-row".into(),
             CopyCrudCurl => "copy-curl".into(),
+            CopyRouteCurl => "copy-curl".into(),
             AddOperationResponse => "add-op-response".into(),
             DuplicateDatasetRows => "duplicate-rows".into(),
             Restart => "restart".into(),
@@ -481,14 +484,19 @@ impl MenuAct {
 }
 
 /// Items of the workspace hamburger menu: lifecycle, new server, then recents.
-pub fn workspace_menu_items(recents: &[std::path::PathBuf]) -> Vec<(String, MenuAct)> {
-    let mut v: Vec<(String, MenuAct)> = vec![
-        ("New server…".into(), MenuAct::NewServer),
-        ("Rename workspace…".into(), MenuAct::RenameWorkspace),
-        ("Open folder…".into(), MenuAct::OpenFolder),
-        ("Create workspace…".into(), MenuAct::CreateWorkspace),
-        ("Close workspace".into(), MenuAct::CloseWorkspace),
-    ];
+/// Without an open workspace (`open` false) only Open folder, Create workspace and the recents
+/// remain: New server, Rename and Close have nothing to act on.
+pub fn workspace_menu_items(recents: &[std::path::PathBuf], open: bool) -> Vec<(String, MenuAct)> {
+    let mut v: Vec<(String, MenuAct)> = Vec::new();
+    if open {
+        v.push(("New server…".into(), MenuAct::NewServer));
+        v.push(("Rename workspace…".into(), MenuAct::RenameWorkspace));
+    }
+    v.push(("Open folder…".into(), MenuAct::OpenFolder));
+    v.push(("Create workspace…".into(), MenuAct::CreateWorkspace));
+    if open {
+        v.push(("Close workspace".into(), MenuAct::CloseWorkspace));
+    }
     for (i, p) in recents.iter().take(10).enumerate() {
         let name = p
             .file_name()
@@ -605,6 +613,7 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
                 v.push(("Forward to upstream", ToggleForward));
                 v.push(("Pin mock", TogglePinned));
             }
+            v.push(("Copy as cURL", CopyRouteCurl));
             v.extend([
                 ("Rename…", Rename),
                 ("Duplicate", Duplicate),
@@ -673,6 +682,29 @@ pub fn menu_items(kind: &RowKind, server_running: bool) -> Vec<(&'static str, Me
 mod tests {
     use super::*;
     use crate::view::workspace;
+
+    #[test]
+    fn workspace_menu_without_workspace_hides_dependent_items() {
+        let recents = [std::path::PathBuf::from("/a/local-dev")];
+        let acts = |open| -> Vec<MenuAct> {
+            workspace_menu_items(&recents, open)
+                .into_iter()
+                .map(|(_, a)| a)
+                .collect()
+        };
+        let closed = acts(false);
+        for a in [
+            MenuAct::NewServer,
+            MenuAct::RenameWorkspace,
+            MenuAct::CloseWorkspace,
+        ] {
+            assert!(!closed.contains(&a));
+            assert!(acts(true).contains(&a));
+        }
+        assert!(closed.contains(&MenuAct::OpenFolder));
+        assert!(closed.contains(&MenuAct::CreateWorkspace));
+        assert!(closed.contains(&MenuAct::OpenRecent(0)));
+    }
 
     fn ids(rows: &[TreeRow]) -> Vec<&str> {
         rows.iter().map(|r| r.id.as_str()).collect()

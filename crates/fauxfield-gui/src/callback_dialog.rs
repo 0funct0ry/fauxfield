@@ -721,11 +721,11 @@ impl Shell {
                             .px(px(6.))
                             .font_family(BUFFER_FONT)
                             .text_size(px(11.))
-                            .child(label)
+                            .child(label.clone())
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(move |this, _, w, cx| {
-                                    input.update(cx, |t, cx| t.set_value(label, cx));
+                                    input.update(cx, |t, cx| t.set_value(&label, cx));
                                     // A header name moves on to its value.
                                     if is_key
                                         && let Some(d) = this.callback_dialog.as_ref()

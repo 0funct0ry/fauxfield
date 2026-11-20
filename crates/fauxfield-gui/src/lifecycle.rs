@@ -324,6 +324,7 @@ impl Shell {
         self.selected = None;
         self.traffic.clear();
         self.traffic_selected = None;
+        self.traffic_shown = None;
         self.logs.clear();
         self.problems.clear();
         self.conflicts.clear();

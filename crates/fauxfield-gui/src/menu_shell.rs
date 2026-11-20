@@ -377,9 +377,7 @@ impl Shell {
         t: &crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        use gpui::{
-            InteractiveElement, IntoElement, ParentElement, Styled, div, prelude::*, px, svg,
-        };
+        use gpui::{InteractiveElement, IntoElement, ParentElement, Styled, div, prelude::*, px};
         let b = Self::build_info();
         let version = if b.is_debug() {
             format!("Version {} · Development build", b.version)
@@ -415,13 +413,7 @@ impl Shell {
             .bg(t.elevated)
             // A click inside the card must not reach the backdrop that closes the box.
             .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .child(
-                svg()
-                    .path("brand/fauxfield.svg")
-                    .size(px(48.))
-                    .flex_none()
-                    .text_color(t.accent),
-            )
+            .child(crate::ui::app_mark(t, 56.))
             .child(div().text_size(px(20.)).child("Fauxfield"))
             .child(muted("Local-first mock API tool".into()))
             .child(div().child(version))

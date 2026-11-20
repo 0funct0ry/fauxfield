@@ -6,7 +6,7 @@ const pages = Object.fromEntries(
   docs.map((d) => [d.id.replace(/\/index$/, ""), { title: d.data.title, description: d.data.description ?? "" }]),
 );
 pages["index"] = {
-  title: "Mock the API your frontend is waiting for.",
+  title: "Design and mock APIs in minutes.",
   description: "Local-first mock API server: GPU desktop app, headless runner, MCP server.",
 };
 

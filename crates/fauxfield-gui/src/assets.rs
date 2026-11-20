@@ -65,7 +65,6 @@ const FILES: &[(&str, &[u8])] = embed![
     "icons/eye-off.svg",
     "icons/book-open.svg",
     "icons/menu.svg",
-    "brand/fauxfield.svg",
 ];
 
 const FONTS: &[&[u8]] = &[

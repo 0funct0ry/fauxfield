@@ -29,7 +29,7 @@ pub use engine::{
     parse_status_filter, ws_apply_format,
 };
 pub use recording::{Recording, Timing, to_curl};
-pub use render::{Preview, SampleRequest, preview, preview_with};
+pub use render::{Preview, SampleRequest, preview, preview_with, render_sample};
 pub use router::{Match, RouteTable};
 pub use rules::{ResponseTrace, RuleTrace, Trace};
 pub use sim::{DEFAULT_CHAOS_RATE, Fault, NetworkProfile, PROFILES};

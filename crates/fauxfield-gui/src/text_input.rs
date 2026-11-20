@@ -363,6 +363,17 @@ impl TextInput {
         self.buf.cursor
     }
 
+    /// Like `set_value`, with the caret at byte `caret` (clamped to a char boundary).
+    pub fn set_value_caret(&mut self, text: &str, caret: usize, cx: &mut Context<Self>) {
+        self.set_value(text, cx);
+        let mut c = caret.min(text.len());
+        while !text.is_char_boundary(c) {
+            c -= 1;
+        }
+        self.buf.cursor = c;
+        self.touch(cx);
+    }
+
     /// Replace the text without emitting `Change`; clears the history, the caret goes to the end.
     pub fn set_value(&mut self, text: &str, cx: &mut Context<Self>) {
         self.buf = TextBuf::new(text);

@@ -18,7 +18,7 @@ description: Every default binding and the vim list-navigation preset. Generated
 | `new_server` | `secondary-shift-n` | any |
 | `toggle_server` | `secondary-r` | any |
 | `run_all` | `secondary-shift-r` | any |
-| `send_test` | `secondary-enter` | any |
+| `picker_open_pinned` | `secondary-enter` | any |
 | `save` | `secondary-s` | any |
 | `toggle_left_dock` | `secondary-b` | any |
 | `toggle_bottom_dock` | `secondary-`` | any |

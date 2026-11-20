@@ -111,7 +111,7 @@ arguments, for example `now(format=...)`.
 
 Set `fake_seed = 42` on the Server for identical output across runs (the RNG derives from the seed,
 the Route ID and the call number); without it the output is random and the tree shows a dice icon.
-A Route header is added to every Response; a Response header of the same name wins. Syntax errors are
+A Route header is added to every Response; a Response header of the same name wins. In both header editors, names and common values complete as you type, and inside `{{ }}` the Value completes variables, functions, filters and `fake` kinds. Syntax errors are
 underlined in the editor, a preview renders against the Route's own request, and a failing template returns
 500 with the error in Traffic. See [Template functions and fake kinds](/docs/reference/template-functions/).
 

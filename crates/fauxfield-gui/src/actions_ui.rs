@@ -382,11 +382,14 @@ impl Shell {
                             .border_1()
                             .border_color(t.border_variant)
                             .text_size(px(11.))
-                            .cursor_pointer()
-                            .hover(|s| s.bg(t.element_hover))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.add_dataset_action(&add_id, cx)
-                            }))
+                            .when(names.is_empty(), |d| d.opacity(0.45))
+                            .when(!names.is_empty(), |d| {
+                                d.cursor_pointer()
+                                    .hover(|s| s.bg(t.element_hover))
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.add_dataset_action(&add_id, cx)
+                                    }))
+                            })
                             .child("+ Add action"),
                         "action-add",
                         Button,
@@ -394,7 +397,41 @@ impl Shell {
                         Press(format!("action-add:{}", resp.id))
                     )),
             );
-        if resp.actions.is_empty() {
+        if names.is_empty() && resp.actions.is_empty() {
+            col = col.child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(10.))
+                    .text_size(px(12.))
+                    .text_color(t.text_muted)
+                    .child("This Server has no Datasets. Actions change Dataset rows, so create one first.")
+                    .child(crate::dev_id!(
+                        div()
+                            .id("action-create-dataset")
+                            .h(px(22.))
+                            .px(px(8.))
+                            .flex()
+                            .items_center()
+                            .rounded(px(4.))
+                            .border_1()
+                            .border_color(t.border_variant)
+                            .text_size(px(11.))
+                            .text_color(t.text)
+                            .cursor_pointer()
+                            .hover(|s| s.bg(t.element_hover))
+                            .on_click(cx.listener(|this, _, w, cx| {
+                                this.run_action_id("new_dataset", w, cx)
+                            }))
+                            .child("Create Dataset…"),
+                        "action-create-dataset",
+                        Button,
+                        "Create Dataset",
+                        Action("new_dataset")
+                    )),
+            );
+        } else if resp.actions.is_empty() {
             col = col.child(
                 div()
                     .text_size(px(12.))

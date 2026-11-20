@@ -1,0 +1,42 @@
+---
+/**
+ * A product screenshot. Until `public/screenshots/<file>` exists it renders a dashed placeholder
+ * that says what to capture; drop the image in with that name and it shows up, no code change.
+ */
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
+interface Props {
+  file: string;        // e.g. "hero.png", looked up in site/public/screenshots/
+  alt: string;         // alt text for the real image
+  size: string;        // capture size, e.g. "1600×1000"
+  ratio?: string;      // CSS aspect-ratio of the placeholder, e.g. "16 / 10"
+  caption?: string;
+}
+const { file, alt, size, ratio = "16 / 10", caption } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const real = existsSync(join(process.cwd(), "public", "screenshots", file));
+---
+<figure class="shot">
+  {real ? (
+    <img src={`${base}/screenshots/${file}`} alt={alt} loading="lazy" decoding="async" />
+  ) : (
+    <div class="ph" style={`aspect-ratio:${ratio}`} role="img" aria-label={`Screenshot placeholder: ${alt}`}>
+      <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="9" cy="10" r="1.8" fill="currentColor"/><path d="M4 18l5-5 4 4 3-3 4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      <strong>Screenshot · <code>public/screenshots/{file}</code> · {size}</strong>
+      <span><slot /></span>
+    </div>
+  )}
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>
+
+<style>
+.shot { margin: 0; min-width: 0; }
+.shot img { display: block; width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--line); box-shadow: 0 40px 80px -40px rgba(30, 40, 90, .35), 0 12px 24px -12px rgba(30, 40, 90, .18); }
+.ph { width: 100%; border-radius: 6px; border: 1.5px dashed color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--paper-2) 82%, transparent); backdrop-filter: blur(6px); color: var(--muted); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 28px; }
+.ph svg { color: var(--accent); opacity: .8; }
+.ph strong { color: var(--ink); font-weight: 500; font-size: 14px; }
+.ph strong code { font-size: 13px; }
+.ph span { font-size: 14px; line-height: 1.6; max-width: 58ch; }
+figcaption { color: var(--muted); font-size: 14px; margin-top: 12px; }
+</style>

@@ -53,6 +53,7 @@ depends = "$auto, libvulkan1"
 assets = [
   ["target/release/fauxfield", "usr/bin/", "755"],
   ["../../packaging/linux/fauxfield.desktop", "usr/share/applications/", "644"],
+  ["../../packaging/linux/fauxfield.png", "usr/share/icons/hicolor/512x512/apps/fauxfield.png", "644"],
   ["../../README.md", "usr/share/doc/fauxfield/README.md", "644"],
 ]
 
@@ -61,6 +62,7 @@ name = "fauxfield"
 assets = [
   { source = "../../target/release/fauxfield", dest = "/usr/bin/fauxfield", mode = "755" },
   { source = "../../packaging/linux/fauxfield.desktop", dest = "/usr/share/applications/fauxfield.desktop", mode = "644" },
+  { source = "../../packaging/linux/fauxfield.png", dest = "/usr/share/icons/hicolor/512x512/apps/fauxfield.png", mode = "644" },
 ]
 [package.metadata.generate-rpm.requires]
 vulkan-loader = "*"

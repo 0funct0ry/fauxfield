@@ -12,8 +12,9 @@ Server picks up the change without dropping connections.
 - Start or stop the current Server with `Cmd/Ctrl+R`, everything with `Cmd/Ctrl+Shift+R`. Restart is in
   the Command Palette (**Server: Restart Current**).
 - The tree shows a status dot and the port; the status bar counts running Servers.
-- `Cmd/Ctrl+Enter` on an open Route (**Route: Send Test Request**) sends its request to the running
-  Server and selects the result in Traffic.
+- **Copy as cURL** on a Route (right-click it in the sidebar, the icon button at the top of the Route
+  tab, or **Route: Copy as cURL**) copies a `curl` command with the Server address, prefix and path.
+  Run it in a terminal to see the Route answer in Traffic.
 - Traffic lists every request. Select one to see its request, response and timing in the Inspector, and
   use **Copy as cURL** to reproduce it. **Traffic: Clear** empties the panel.
 - If a port is taken, a toast says so and offers **Change port**.
