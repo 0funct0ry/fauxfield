@@ -19,6 +19,7 @@ description: One name per action, used by the Command Palette, the menus and but
 | `add_dataset_action` | Response: Add Dataset Action |
 | `add_dataset_column` | Dataset: Add Column… |
 | `add_dataset_row` | Dataset: Add Row |
+| `add_example_to_workspace` | Workspace: Add Example to This Workspace… |
 | `add_operation_response` | Route: Add Operation Response |
 | `agents_setup` | Agents: Set Up MCP… |
 | `apply_dataset_json` | Dataset: Apply JSON Edits |
@@ -76,6 +77,7 @@ description: One name per action, used by the Command Palette, the menus and but
 | `import_into_dataset` | Dataset: Import Into… |
 | `keymap_open_file` | Keymap: Open keymap.toml |
 | `list_collapse` | List: Collapse Row |
+| `list_examples` | Workspace: List Examples |
 | `list_expand` | List: Expand Row |
 | `list_filter` | List: Filter |
 | `list_first` | List: First Row |
@@ -95,6 +97,7 @@ description: One name per action, used by the Command Palette, the menus and but
 | `new_dataset_from_table` | Dataset: New From Table… |
 | `new_environment` | Environment: New… |
 | `new_folder` | Folder: New… |
+| `new_from_example` | Workspace: New from Example… |
 | `new_response` | Response: New |
 | `new_route` | Route: New… |
 | `new_server` | Server: New… |

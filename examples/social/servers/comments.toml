@@ -1,0 +1,251 @@
+schema = 1
+id = "srv_social_comments"
+name = "Comments"
+enabled = true
+host = "127.0.0.1"
+port = 4003
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "comments"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 40
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "post_id"
+kind = "int"
+min = 1
+max = 40
+
+[[datasets.generator.fields]]
+name = "author"
+kind = "fake"
+fake = "internet.username"
+
+[[datasets.generator.fields]]
+name = "text"
+kind = "fake"
+fake = "lorem.sentence"
+
+[[datasets.generator.fields]]
+name = "created_at"
+kind = "datetime"
+
+[[folders]]
+id = "fld_comments_1"
+name = "Comments"
+
+[[folders]]
+id = "fld_comments_2"
+name = "Moderation"
+
+[[routes]]
+id = "rte_comments_1"
+name = "Comments"
+folder = "fld_comments_1"
+kind = "crud"
+path = "/comments"
+dataset = "comments"
+
+[[routes]]
+id = "rte_comments_2"
+name = "Comments on post"
+folder = "fld_comments_1"
+method = "GET"
+path = "/posts/:id/comments"
+
+  [[routes.responses]]
+  id = "rsp_comments_2_1"
+  name = "Comments disabled"
+  status = 403
+  content_type = "application/json"
+  body = '''
+{"error":"comments are disabled for this post"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "13"
+
+  [[routes.responses]]
+  id = "rsp_comments_2_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=4) %}{"id":{{ i + 1 }},"author":"{{ fake(kind="internet.username") }}","text":"{{ fake(kind="lorem.sentence") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_comments_3"
+name = "Add comment"
+folder = "fld_comments_1"
+method = "POST"
+path = "/posts/:id/comments"
+
+  [[routes.responses]]
+  id = "rsp_comments_3_1"
+  name = "Empty comment"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"text is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.text"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_comments_3_2"
+  name = "Spam blocked"
+  status = 429
+  content_type = "application/json"
+  body = '''
+{"error":"slow down"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.text"
+    op = "contains"
+    value = "buy now"
+
+  [[routes.responses]]
+  id = "rsp_comments_3_3"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  delay_ms = "40..140"
+  body = '''
+{"id":"cmt_{{ uuid() }}","post_id":"{{ request.params.id }}","text":"{{ request.json.text | default(value='') }}"}
+'''
+
+[[routes]]
+id = "rte_comments_4"
+name = "Replies"
+folder = "fld_comments_1"
+method = "GET"
+path = "/comments/:id/replies"
+
+  [[routes.responses]]
+  id = "rsp_comments_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=2) %}{"id":{{ i + 1 }},"text":"{{ fake(kind="lorem.sentence") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_comments_5"
+name = "Report comment"
+folder = "fld_comments_2"
+method = "POST"
+path = "/comments/:id/report"
+
+  [[routes.responses]]
+  id = "rsp_comments_5_1"
+  name = "Reason missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"reason is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.reason"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_comments_5_2"
+  name = "Created"
+  status = 202
+  content_type = "application/json"
+  default = true
+  body = '''
+{"report_id":"rep_{{ uuid() }}","comment":"{{ request.params.id }}","status":"queued"}
+'''
+
+[[routes]]
+id = "rte_comments_6"
+name = "Hide comment"
+folder = "fld_comments_2"
+method = "POST"
+path = "/comments/:id/hide"
+
+  [[routes.responses]]
+  id = "rsp_comments_6_1"
+  name = "Moderator only"
+  status = 403
+  content_type = "application/json"
+  body = '''
+{"error":"moderator role required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "header"
+    key = "x-role"
+    op = "ne"
+    value = "moderator"
+
+  [[routes.responses]]
+  id = "rsp_comments_6_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"comment":"{{ request.params.id }}","hidden":true}
+'''
+
+[[routes]]
+id = "rte_comments_7"
+name = "Moderation queue"
+folder = "fld_comments_2"
+method = "GET"
+path = "/moderation/queue"
+
+  [[routes.responses]]
+  id = "rsp_comments_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"report_id":"rep_{{ uuid() }}","reason":"spam"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_comments_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_comments_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"comments"}
+'''

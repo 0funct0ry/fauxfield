@@ -1,0 +1,238 @@
+schema = 1
+id = "srv_healthcare_providers"
+name = "Providers"
+enabled = true
+host = "127.0.0.1"
+port = 4006
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "providers"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 12
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "fake"
+fake = "name"
+
+[[datasets.generator.fields]]
+name = "specialty"
+kind = "one_of"
+values = ["cardiology", "pediatrics", "dermatology", "orthopedics", "general", "neurology"]
+
+[[datasets.generator.fields]]
+name = "accepting"
+kind = "bool"
+
+[[datasets.generator.fields]]
+name = "email"
+kind = "fake"
+fake = "internet.email"
+
+[[datasets]]
+name = "facilities"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 6
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "fake"
+fake = "company.name"
+
+[[datasets.generator.fields]]
+name = "city"
+kind = "fake"
+fake = "address.city"
+
+[[datasets.generator.fields]]
+name = "phone"
+kind = "fake"
+fake = "phone"
+
+[[folders]]
+id = "fld_providers_1"
+name = "Providers"
+
+[[folders]]
+id = "fld_providers_2"
+name = "Facilities"
+
+[[routes]]
+id = "rte_providers_1"
+name = "Providers"
+folder = "fld_providers_1"
+kind = "crud"
+path = "/providers"
+dataset = "providers"
+
+[[routes]]
+id = "rte_providers_2"
+name = "Facilities"
+folder = "fld_providers_2"
+kind = "crud"
+path = "/facilities"
+dataset = "facilities"
+
+[[routes]]
+id = "rte_providers_3"
+name = "Search providers"
+folder = "fld_providers_1"
+method = "GET"
+path = "/providers/search"
+
+  [[routes.responses]]
+  id = "rsp_providers_3_1"
+  name = "Specialty missing"
+  status = 400
+  content_type = "application/json"
+  body = '''
+{"error":"specialty is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "query"
+    key = "specialty"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_providers_3_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "50..180"
+  body = '''
+[{% for i in range(end=4) %}{"id":{{ i + 1 }},"name":"Dr. {{ fake(kind="name.last") }}","specialty":"general","distance_km":{{ random_int(min=1, max=30) }}}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_providers_4"
+name = "Schedule"
+folder = "fld_providers_1"
+method = "GET"
+path = "/providers/:id/schedule"
+
+  [[routes.responses]]
+  id = "rsp_providers_4_1"
+  name = "Provider on leave"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"provider on leave"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "7"
+
+  [[routes.responses]]
+  id = "rsp_providers_4_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"provider_id":"{{ request.params.id }}","days":["mon","tue","thu"],"hours":"09:00-17:00"}
+'''
+
+[[routes]]
+id = "rte_providers_5"
+name = "Credentials"
+folder = "fld_providers_1"
+method = "GET"
+path = "/providers/:id/credentials"
+
+  [[routes.responses]]
+  id = "rsp_providers_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"provider_id":"{{ request.params.id }}","license":"LIC-{{ random_int(min=100000, max=999999) }}","verified":true}
+'''
+
+[[routes]]
+id = "rte_providers_6"
+name = "Specialties"
+folder = "fld_providers_1"
+method = "GET"
+path = "/specialties"
+
+  [[routes.responses]]
+  id = "rsp_providers_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["cardiology","pediatrics","dermatology","orthopedics","general","neurology"]
+'''
+
+[[routes]]
+id = "rte_providers_7"
+name = "Message provider"
+folder = "fld_providers_1"
+method = "POST"
+path = "/providers/:id/message"
+
+  [[routes.responses]]
+  id = "rsp_providers_7_1"
+  name = "Message empty"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"text is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.text"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_providers_7_2"
+  name = "Created"
+  status = 202
+  content_type = "application/json"
+  default = true
+  body = '''
+{"queued":true,"id":"msg_{{ uuid() }}"}
+'''
+
+[[routes]]
+id = "rte_providers_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_providers_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"providers"}
+'''

@@ -223,6 +223,93 @@ pub fn init(path: Option<PathBuf>, agents: bool, json: bool) -> i32 {
     }
 }
 
+pub fn list_examples(json: bool) -> i32 {
+    let list = fauxfield_store::examples::list_examples();
+    if json {
+        print_json(&json!({ "examples": list }));
+    } else {
+        for e in &list {
+            println!(
+                "{:<16} {:<32} {} servers, {} routes\n{:<16} {}",
+                e.name, e.title, e.servers, e.routes, "", e.description
+            );
+        }
+    }
+    EXIT_OK
+}
+
+pub fn init_example(
+    path: Option<PathBuf>,
+    name: &str,
+    agents: bool,
+    force: bool,
+    json: bool,
+) -> i32 {
+    use fauxfield_store::examples as ex;
+    let root = path.unwrap_or_else(|| PathBuf::from("."));
+    if !ex::EXAMPLES.iter().any(|m| m.name == name) {
+        let names: Vec<&str> = ex::EXAMPLES.iter().map(|m| m.name).collect();
+        let hint = ex::suggest_example(name)
+            .map(|s| format!(" (did you mean `{s}`?)"))
+            .unwrap_or_default();
+        crate::err!(
+            "unknown example `{name}`; valid examples: {}{hint}",
+            names.join(", ")
+        );
+        return EXIT_USAGE;
+    }
+    let report = match ex::init_example(&root, name, force) {
+        Ok(r) => r,
+        Err(e) => {
+            crate::err!("{e}");
+            return EXIT_RUNTIME;
+        }
+    };
+    let agent_files = if agents {
+        match crate::agents_cmd::apply_defaults(&root) {
+            Ok(f) => f,
+            Err(e) => {
+                crate::err!("{e}");
+                return EXIT_RUNTIME;
+            }
+        }
+    } else {
+        vec![]
+    };
+    let next_steps = vec![
+        format!("fauxfield validate -w {}", root.display()),
+        format!("fauxfield run -w {}", root.display()),
+        format!("open {}/docs/README.md", root.display()),
+    ];
+    if json {
+        print_json(&json!({
+            "path": root.to_string_lossy(),
+            "example": name,
+            "created": report.created,
+            "skipped": report.skipped,
+            "servers": report.servers,
+            "agents": agent_files,
+            "next_steps": next_steps,
+        }));
+    } else {
+        println!("Created example `{name}` in {}", root.display());
+        for s in &report.servers {
+            crate::output::info(&format!(
+                "  {:<16} port {}  {} routes",
+                s.slug, s.port, s.routes
+            ));
+        }
+        for f in &report.skipped {
+            crate::output::info(&format!("  {f}  (kept, already existed)"));
+        }
+        crate::output::info("\nNext steps:");
+        for n in &next_steps {
+            crate::output::info(&format!("  {n}"));
+        }
+    }
+    EXIT_OK
+}
+
 pub fn validate(a: &WsArgs) -> i32 {
     let store = match open_store(a) {
         Ok(s) => s,

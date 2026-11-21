@@ -61,6 +61,8 @@ enum J<'a> {
     Comma,
     Colon,
     Atom(&'a str),
+    /// A Tera `{% ... %}` statement or `{# ... #}` comment, kept whole.
+    Tag(&'a str),
 }
 
 fn json_tokens(text: &str) -> Result<Vec<(usize, J<'_>)>, FormatError> {
@@ -71,6 +73,20 @@ fn json_tokens(text: &str) -> Result<Vec<(usize, J<'_>)>, FormatError> {
         let c = b[i];
         match c {
             b' ' | b'\t' | b'\n' | b'\r' => i += 1,
+            b'{' if text[i..].starts_with("{%") || text[i..].starts_with("{#") => {
+                let close = if text[i..].starts_with("{%") {
+                    "%}"
+                } else {
+                    "#}"
+                };
+                match text[i..].find(close) {
+                    Some(e) => {
+                        out.push((i, J::Tag(&text[i..i + e + 2])));
+                        i += e + 2;
+                    }
+                    None => return Err(err(text, i, "unterminated tag")),
+                }
+            }
             b'{' if !text[i..].starts_with("{{") => {
                 out.push((i, J::Open('{')));
                 i += 1;
@@ -140,18 +156,38 @@ fn json_tokens(text: &str) -> Result<Vec<(usize, J<'_>)>, FormatError> {
     Ok(out)
 }
 
+/// Removes all whitespace outside strings. Number text and `{{var}}` atoms are kept.
+pub fn minify_json(text: &str) -> Result<String, FormatError> {
+    let mut out = String::with_capacity(text.len());
+    for (_, t) in json_tokens(text)? {
+        match t {
+            J::Open(c) | J::Close(c) => out.push(c),
+            J::Comma => out.push(','),
+            J::Colon => out.push(':'),
+            J::Atom(a) | J::Tag(a) => out.push_str(a),
+        }
+    }
+    Ok(out)
+}
+
 /// Re-indents JSON. `{{var}}` atoms outside strings survive; structure errors are reported.
 pub fn format_json(text: &str, indent: &str) -> Result<String, FormatError> {
     let toks = json_tokens(text)?;
     let mut out = String::with_capacity(text.len() * 2);
     let mut depth = 0usize;
     let mut stack: Vec<char> = Vec::new();
+    // Start a fresh line at depth `d` (no blank line when one is already started).
     let nl = |out: &mut String, d: usize| {
-        out.push('\n');
+        let keep = out.trim_end_matches([' ', '\t']).len();
+        out.truncate(keep);
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
         for _ in 0..d {
             out.push_str(indent);
         }
     };
+    let mut blocks: Vec<&str> = Vec::new();
     let mut i = 0;
     while i < toks.len() {
         let (off, t) = &toks[i];
@@ -169,11 +205,54 @@ pub fn format_json(text: &str, indent: &str) -> Result<String, FormatError> {
                     nl(&mut out, depth);
                 }
             }
+            J::Tag(tag) => {
+                let kind = tag_kind(tag);
+                match kind {
+                    TagKind::Open(name) => {
+                        nl(&mut out, depth);
+                        out.push_str(tag);
+                        // `{% if x %},{% endif %}`: the comma between Items stays on one line.
+                        if let (Some((_, J::Comma)), Some((_, J::Tag(t2)))) =
+                            (toks.get(i + 1), toks.get(i + 2))
+                            && matches!(tag_kind(t2), TagKind::Close(n) if n == name)
+                        {
+                            out.push(',');
+                            out.push_str(t2);
+                            i += 2;
+                        } else {
+                            blocks.push(name);
+                            depth += 1;
+                            nl(&mut out, depth);
+                        }
+                    }
+                    TagKind::Middle => {
+                        depth = depth.saturating_sub(1);
+                        nl(&mut out, depth);
+                        out.push_str(tag);
+                        depth += 1;
+                        nl(&mut out, depth);
+                    }
+                    TagKind::Close(name) => {
+                        if blocks.pop() != Some(name) {
+                            return Err(err(text, *off, "mismatched tag"));
+                        }
+                        depth = depth.saturating_sub(1);
+                        nl(&mut out, depth);
+                        out.push_str(tag);
+                        nl(&mut out, depth);
+                    }
+                    TagKind::Single => {
+                        nl(&mut out, depth);
+                        out.push_str(tag);
+                        nl(&mut out, depth);
+                    }
+                }
+            }
             J::Close(c) => {
                 if stack.pop() != Some(*c) {
                     return Err(err(text, *off, "mismatched bracket"));
                 }
-                depth -= 1;
+                depth = depth.saturating_sub(1);
                 nl(&mut out, depth);
                 out.push(*c);
             }
@@ -189,38 +268,103 @@ pub fn format_json(text: &str, indent: &str) -> Result<String, FormatError> {
     if !stack.is_empty() {
         return Err(err(text, text.len(), "unclosed bracket"));
     }
-    Ok(out)
+    if !blocks.is_empty() {
+        return Err(err(text, text.len(), "unclosed tag"));
+    }
+    Ok(out.trim_end().to_string())
 }
 
-/// Re-indents XML/HTML markup: one tag per line, elements holding only text stay on one line.
-pub fn format_markup(text: &str, indent: &str) -> Result<String, FormatError> {
-    // Tokenise into tags and text runs.
+enum TagKind {
+    Open(&'static str),
+    Middle,
+    Close(&'static str),
+    Single,
+}
+
+/// Block structure of a Tera tag (`{% for %}`, `{% else %}`, `{% endfor %}`, comments, `set`).
+fn tag_kind(tag: &str) -> TagKind {
+    if tag.starts_with("{#") {
+        return TagKind::Single;
+    }
+    let inner = tag
+        .trim_start_matches("{%")
+        .trim_start_matches('-')
+        .trim_start();
+    let word: String = inner
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .collect();
+    const BLOCKS: [&str; 7] = ["for", "if", "macro", "block", "filter", "call", "raw"];
+    if let Some(b) = BLOCKS.iter().find(|b| **b == word) {
+        return TagKind::Open(b);
+    }
+    if let Some(b) = BLOCKS.iter().find(|b| word == format!("end{b}")) {
+        return TagKind::Close(b);
+    }
+    match word.as_str() {
+        "else" | "elif" => TagKind::Middle,
+        _ => TagKind::Single,
+    }
+}
+
+/// Tokens of XML/HTML markup: tags, comments, text runs and Tera `{% %}` / `{# #}` tags.
+fn markup_tokens(text: &str) -> Result<Vec<(usize, &str)>, FormatError> {
     let mut toks: Vec<(usize, &str)> = Vec::new();
     let mut i = 0;
     while i < text.len() {
-        if text[i..].starts_with("<!--") {
-            let e = text[i..]
+        let rest = &text[i..];
+        if rest.starts_with("<!--") {
+            let e = rest
                 .find("-->")
                 .ok_or_else(|| err(text, i, "unterminated comment"))?
                 + 3;
             toks.push((i, &text[i..i + e]));
             i += e;
-        } else if text[i..].starts_with('<') {
-            let e = text[i..]
+        } else if rest.starts_with("{%") || rest.starts_with("{#") {
+            let close = if rest.starts_with("{%") { "%}" } else { "#}" };
+            let e = rest
+                .find(close)
+                .ok_or_else(|| err(text, i, "unterminated tag"))?
+                + 2;
+            toks.push((i, &text[i..i + e]));
+            i += e;
+        } else if rest.starts_with('<') {
+            let e = rest
                 .find('>')
                 .ok_or_else(|| err(text, i, "unterminated tag"))?
                 + 1;
             toks.push((i, &text[i..i + e]));
             i += e;
         } else {
-            let e = text[i..].find('<').unwrap_or(text.len() - i);
-            let t = text[i..i + e].trim();
+            let e = [rest.find('<'), rest.find("{%"), rest.find("{#")]
+                .into_iter()
+                .flatten()
+                .min()
+                .unwrap_or(rest.len());
+            let t = rest[..e].trim();
             if !t.is_empty() {
                 toks.push((i, t));
             }
             i += e;
         }
     }
+    Ok(toks)
+}
+
+fn is_tera(t: &str) -> bool {
+    t.starts_with("{%") || t.starts_with("{#")
+}
+
+/// Removes the whitespace between tags; text runs keep their inner whitespace. Tera tags are
+/// kept as written. Meant for XML and data-like HTML (whitespace in `<pre>` is not kept).
+pub fn minify_markup(text: &str) -> Result<String, FormatError> {
+    Ok(markup_tokens(text)?.into_iter().map(|(_, t)| t).collect())
+}
+
+/// Re-indents XML/HTML markup: one tag per line, elements holding only text stay on one line.
+/// Tera `for`/`if`/... blocks indent their body like an element.
+pub fn format_markup(text: &str, indent: &str) -> Result<String, FormatError> {
+    let toks = markup_tokens(text)?;
     let name = |t: &str| {
         t.trim_start_matches("</")
             .trim_start_matches('<')
@@ -232,6 +376,7 @@ pub fn format_markup(text: &str, indent: &str) -> Result<String, FormatError> {
     let mut out = String::new();
     let mut depth = 0usize;
     let mut stack: Vec<String> = Vec::new();
+    let mut blocks: Vec<&str> = Vec::new();
     let mut k = 0;
     while k < toks.len() {
         let (off, t) = toks[k];
@@ -243,7 +388,34 @@ pub fn format_markup(text: &str, indent: &str) -> Result<String, FormatError> {
                 out.push_str(indent);
             }
         };
-        if t.starts_with("</") {
+        if is_tera(t) {
+            match tag_kind(t) {
+                TagKind::Open(n) => {
+                    pad(&mut out, depth);
+                    out.push_str(t);
+                    blocks.push(n);
+                    depth += 1;
+                }
+                TagKind::Middle => {
+                    depth = depth.saturating_sub(1);
+                    pad(&mut out, depth);
+                    out.push_str(t);
+                    depth += 1;
+                }
+                TagKind::Close(n) => {
+                    if blocks.pop() != Some(n) {
+                        return Err(err(text, off, "mismatched tag"));
+                    }
+                    depth = depth.saturating_sub(1);
+                    pad(&mut out, depth);
+                    out.push_str(t);
+                }
+                TagKind::Single => {
+                    pad(&mut out, depth);
+                    out.push_str(t);
+                }
+            }
+        } else if t.starts_with("</") {
             let n = name(t);
             if stack.pop().as_deref() != Some(n.as_str()) {
                 return Err(err(text, off, "mismatched closing tag"));
@@ -259,6 +431,7 @@ pub fn format_markup(text: &str, indent: &str) -> Result<String, FormatError> {
             // Opening tag: keep `<a>text</a>` on one line.
             if let (Some((_, txt)), Some((_, close))) = (toks.get(k + 1), toks.get(k + 2))
                 && !txt.starts_with('<')
+                && !is_tera(txt)
                 && close.starts_with("</")
                 && name(close) == name(t)
             {
@@ -281,6 +454,9 @@ pub fn format_markup(text: &str, indent: &str) -> Result<String, FormatError> {
     }
     if let Some(n) = stack.last() {
         return Err(err(text, text.len(), &format!("unclosed <{n}>")));
+    }
+    if !blocks.is_empty() {
+        return Err(err(text, text.len(), "unclosed tag"));
     }
     Ok(out)
 }
@@ -307,6 +483,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn markup_tera_blocks_are_indented() {
+        let src =
+            "<items>{% for i in range(end=2) %}<item><id>{{ i }}</id></item>{% endfor %}</items>";
+        assert_eq!(
+            format_markup(src, "  ").unwrap(),
+            "<items>\n  {% for i in range(end=2) %}\n    <item>\n      <id>{{ i }}</id>\n    </item>\n  {% endfor %}\n</items>"
+        );
+        assert!(format_markup("{% for i in x %}<a/>", "  ").is_err());
+        assert_eq!(
+            minify_markup("<a>\n  <b>x y</b>\n</a>").unwrap(),
+            "<a><b>x y</b></a>"
+        );
+    }
+
+    #[test]
+    fn minify_drops_whitespace_and_keeps_numbers() {
+        let src = "{\n  \"a\": 32.00,\n  \"b\": [1, 2],\n  \"s\": \"x y\"\n}";
+        assert_eq!(
+            minify_json(src).unwrap(),
+            r#"{"a":32.00,"b":[1,2],"s":"x y"}"#
+        );
+    }
+
+    #[test]
     fn json_preserves_order_numbers_and_vars() {
         let src = r#"{"z":1.50,"a":[1,2],"v":{{ id }},"e":{},"s":"a,{"}"#;
         let out = format_json(src, "  ").unwrap();
@@ -315,6 +515,20 @@ mod tests {
             "{\n  \"z\": 1.50,\n  \"a\": [\n    1,\n    2\n  ],\n  \"v\": {{ id }},\n  \"e\": {},\n  \"s\": \"a,{\"\n}"
         );
         assert!(out.find("\"z\"").unwrap() < out.find("\"a\"").unwrap());
+    }
+
+    #[test]
+    fn tera_blocks_are_indented() {
+        let src = r#"[{% for i in range(end=3) %}{"id":{{ i }},"n":"x"}{% if not loop.last %},{% endif %}{% endfor %}]"#;
+        let out = format_json(src, "  ").unwrap();
+        assert_eq!(
+            out,
+            "[\n  {% for i in range(end=3) %}\n    {\n      \"id\": {{ i }},\n      \"n\": \"x\"\n    }\n    {% if not loop.last %},{% endif %}\n  {% endfor %}\n]"
+        );
+        // Formatting twice changes nothing.
+        assert_eq!(format_json(&out, "  ").unwrap(), out);
+        assert!(format_json("[{% for i in x %}1]", "  ").is_err());
+        assert!(format_json("{% endif %}", "  ").is_err());
     }
 
     #[test]

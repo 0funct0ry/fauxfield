@@ -1,0 +1,246 @@
+schema = 1
+id = "srv_banking_transfers"
+name = "Transfers"
+enabled = true
+host = "127.0.0.1"
+port = 4003
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "beneficiaries"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 8
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "fake"
+fake = "name"
+
+[[datasets.generator.fields]]
+name = "iban"
+kind = "fake"
+fake = "finance.iban"
+
+[[datasets.generator.fields]]
+name = "bic"
+kind = "fake"
+fake = "finance.bic"
+
+[[folders]]
+id = "fld_transfers_1"
+name = "Transfers"
+
+[[folders]]
+id = "fld_transfers_2"
+name = "Beneficiaries"
+
+[[routes]]
+id = "rte_transfers_1"
+name = "Create transfer"
+folder = "fld_transfers_1"
+method = "POST"
+path = "/transfers"
+
+  [[routes.responses]]
+  id = "rsp_transfers_1_1"
+  name = "Insufficient funds"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":{"code":"insufficient_funds","message":"Available balance is lower than the amount."}}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.amount"
+    op = "gt"
+    value = "10000"
+
+  [[routes.responses]]
+  id = "rsp_transfers_1_2"
+  name = "Amount missing"
+  status = 400
+  content_type = "application/json"
+  body = '''
+{"error":"amount is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.amount"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_transfers_1_3"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  delay_ms = "100..300"
+  body = '''
+{"id":"trf_{{ uuid() }}","amount":{{ request.json.amount | default(value=0) }},"status":"pending","created":"{{ now() }}"}
+'''
+
+[[routes]]
+id = "rte_transfers_2"
+name = "List transfers"
+folder = "fld_transfers_1"
+method = "GET"
+path = "/transfers"
+
+  [[routes.responses]]
+  id = "rsp_transfers_2_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=4) %}{"id":"trf_{{ uuid() }}","amount":{{ random_int(min=10, max=900) }}.00,"status":"settled"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_transfers_3"
+name = "Get transfer"
+folder = "fld_transfers_1"
+method = "GET"
+path = "/transfers/:id"
+
+  [[routes.responses]]
+  id = "rsp_transfers_3_1"
+  name = "Transfer not found"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"transfer not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "unknown"
+
+  [[routes.responses]]
+  id = "rsp_transfers_3_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"settled","amount":250.00}
+'''
+
+[[routes]]
+id = "rte_transfers_4"
+name = "Cancel transfer"
+folder = "fld_transfers_1"
+method = "POST"
+path = "/transfers/:id/cancel"
+
+  [[routes.responses]]
+  id = "rsp_transfers_4_1"
+  name = "Already settled"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"transfer already settled"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "starts_with"
+    value = "settled"
+
+  [[routes.responses]]
+  id = "rsp_transfers_4_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"cancelled"}
+'''
+
+[[routes]]
+id = "rte_transfers_5"
+name = "Beneficiaries"
+folder = "fld_transfers_2"
+kind = "crud"
+path = "/beneficiaries"
+dataset = "beneficiaries"
+
+[[routes]]
+id = "rte_transfers_6"
+name = "Validate transfer"
+folder = "fld_transfers_1"
+method = "POST"
+path = "/transfers/validate"
+
+  [[routes.responses]]
+  id = "rsp_transfers_6_1"
+  name = "Bad IBAN"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"valid":false,"error":"iban is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.iban"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_transfers_6_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"valid":true,"fee":{{ random_int(min=0, max=3) }}.50}
+'''
+
+[[routes]]
+id = "rte_transfers_7"
+name = "Limits"
+folder = "fld_transfers_1"
+method = "GET"
+path = "/transfers/limits"
+
+  [[routes.responses]]
+  id = "rsp_transfers_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"daily":10000,"per_transfer":10000,"currency":"USD"}
+'''
+
+[[routes]]
+id = "rte_transfers_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_transfers_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"transfers"}
+'''

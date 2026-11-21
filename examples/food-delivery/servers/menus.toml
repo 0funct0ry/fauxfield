@@ -1,0 +1,212 @@
+schema = 1
+id = "srv_food_delivery_menus"
+name = "Menus"
+enabled = true
+host = "127.0.0.1"
+port = 4002
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "items"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 40
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "restaurant_id"
+kind = "int"
+min = 1
+max = 20
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "one_of"
+values = ["Spicy Ramen", "Margherita", "Chicken Bowl", "Veggie Wrap", "Pad Thai", "Burrito", "Garden Salad", "Fish Tacos"]
+
+[[datasets.generator.fields]]
+name = "price"
+kind = "float"
+min = 4
+max = 30
+
+[[datasets.generator.fields]]
+name = "available"
+kind = "bool"
+
+[[datasets.generator.fields]]
+name = "vegetarian"
+kind = "bool"
+
+[[folders]]
+id = "fld_menus_1"
+name = "Menus"
+
+[[folders]]
+id = "fld_menus_2"
+name = "Items"
+
+[[routes]]
+id = "rte_menus_1"
+name = "Menu items"
+folder = "fld_menus_2"
+kind = "crud"
+path = "/items"
+dataset = "items"
+
+[[routes]]
+id = "rte_menus_2"
+name = "Restaurant menu"
+folder = "fld_menus_1"
+method = "GET"
+path = "/restaurants/:id/menu"
+
+  [[routes.responses]]
+  id = "rsp_menus_2_1"
+  name = "Menu unavailable"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"menu not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "0"
+
+  [[routes.responses]]
+  id = "rsp_menus_2_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "30..100"
+  body = '''
+[{% for i in range(end=5) %}{"id":{{ i + 1 }},"name":"{{ fake(kind="lorem.word") }} bowl","price":{{ random_int(min=5, max=28) }}.50}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_menus_3"
+name = "Menu sections"
+folder = "fld_menus_1"
+method = "GET"
+path = "/restaurants/:id/categories"
+
+  [[routes.responses]]
+  id = "rsp_menus_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["starters","mains","desserts","drinks"]
+'''
+
+[[routes]]
+id = "rte_menus_4"
+name = "Item options"
+folder = "fld_menus_2"
+method = "GET"
+path = "/items/:id/options"
+
+  [[routes.responses]]
+  id = "rsp_menus_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"item_id":"{{ request.params.id }}","options":[{"name":"Extra spicy","price":0.0},{"name":"Add egg","price":1.5}]}
+'''
+
+[[routes]]
+id = "rte_menus_5"
+name = "Popular items"
+folder = "fld_menus_2"
+method = "GET"
+path = "/items/popular"
+
+  [[routes.responses]]
+  id = "rsp_menus_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=4) %}{"id":{{ i + 1 }},"name":"{{ fake(kind="lorem.word") }}","orders":{{ random_int(min=50, max=900) }}}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_menus_6"
+name = "Set availability"
+folder = "fld_menus_2"
+method = "POST"
+path = "/items/:id/availability"
+
+  [[routes.responses]]
+  id = "rsp_menus_6_1"
+  name = "Flag missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"available is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.available"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_menus_6_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"item_id":"{{ request.params.id }}","available":{{ request.json.available | default(value=true) }}}
+'''
+
+[[routes]]
+id = "rte_menus_7"
+name = "Allergens"
+folder = "fld_menus_1"
+method = "GET"
+path = "/allergens"
+
+  [[routes.responses]]
+  id = "rsp_menus_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["gluten","dairy","nuts","soy","shellfish"]
+'''
+
+[[routes]]
+id = "rte_menus_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_menus_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"menus"}
+'''

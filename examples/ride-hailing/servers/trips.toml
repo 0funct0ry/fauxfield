@@ -1,0 +1,306 @@
+schema = 1
+id = "srv_ride_hailing_trips"
+name = "Trips"
+enabled = true
+host = "127.0.0.1"
+port = 4003
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "trips"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 30
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "rider_id"
+kind = "int"
+min = 1
+max = 30
+
+[[datasets.generator.fields]]
+name = "driver_id"
+kind = "int"
+min = 1
+max = 25
+
+[[datasets.generator.fields]]
+name = "status"
+kind = "one_of"
+values = ["requested", "accepted", "arrived", "in_progress", "completed", "cancelled"]
+
+[[datasets.generator.fields]]
+name = "fare"
+kind = "float"
+min = 6
+max = 80
+
+[[datasets.generator.fields]]
+name = "requested_at"
+kind = "datetime"
+
+[[folders]]
+id = "fld_trips_1"
+name = "Trips"
+
+[[folders]]
+id = "fld_trips_2"
+name = "Lifecycle"
+
+[[routes]]
+id = "rte_trips_1"
+name = "Trips"
+folder = "fld_trips_1"
+kind = "crud"
+path = "/trips"
+dataset = "trips"
+
+[[routes]]
+id = "rte_trips_2"
+name = "Request trip"
+folder = "fld_trips_1"
+method = "POST"
+path = "/trips/request"
+
+  [[routes.responses]]
+  id = "rsp_trips_2_1"
+  name = "Pickup missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"pickup is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.pickup"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_trips_2_2"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  delay_ms = "100..300"
+  body = '''
+{"id":"trp_{{ uuid() }}","status":"requested","pickup":"{{ request.json.pickup | default(value='unknown') }}","eta_min":{{ random_int(min=2, max=9) }}}
+'''
+
+[[routes]]
+id = "rte_trips_3"
+name = "Accept"
+folder = "fld_trips_2"
+method = "POST"
+path = "/trips/:id/accept"
+
+  [[routes.responses]]
+  id = "rsp_trips_3_1"
+  name = "Already cancelled"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"trip is cancelled, cannot accept"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "13"
+
+  [[routes.responses]]
+  id = "rsp_trips_3_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"accepted"}
+'''
+
+[[routes]]
+id = "rte_trips_4"
+name = "Driver arrived"
+folder = "fld_trips_2"
+method = "POST"
+path = "/trips/:id/arrive"
+
+  [[routes.responses]]
+  id = "rsp_trips_4_1"
+  name = "Not accepted yet"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"trip must be accepted before arrival"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "1"
+
+  [[routes.responses]]
+  id = "rsp_trips_4_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"arrived"}
+'''
+
+[[routes]]
+id = "rte_trips_5"
+name = "Start"
+folder = "fld_trips_2"
+method = "POST"
+path = "/trips/:id/start"
+
+  [[routes.responses]]
+  id = "rsp_trips_5_1"
+  name = "Not arrived yet"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"driver has not arrived"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "2"
+
+  [[routes.responses]]
+  id = "rsp_trips_5_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"in_progress","started_at":"{{ now() }}"}
+'''
+
+[[routes]]
+id = "rte_trips_6"
+name = "Complete"
+folder = "fld_trips_2"
+method = "POST"
+path = "/trips/:id/complete"
+
+  [[routes.responses]]
+  id = "rsp_trips_6_1"
+  name = "Already completed"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"trip already completed"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "lte"
+    value = "5"
+
+  [[routes.responses]]
+  id = "rsp_trips_6_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"completed","fare":{{ random_int(min=8, max=70) }}.25}
+'''
+
+[[routes]]
+id = "rte_trips_7"
+name = "Cancel"
+folder = "fld_trips_2"
+method = "POST"
+path = "/trips/:id/cancel"
+
+  [[routes.responses]]
+  id = "rsp_trips_7_1"
+  name = "Cancel fee after start"
+  status = 200
+  content_type = "application/json"
+  body = '''
+{"status":"cancelled","fee":3.50}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.reason"
+    op = "eq"
+    value = "changed_mind"
+
+  [[routes.responses]]
+  id = "rsp_trips_7_2"
+  name = "Cannot cancel in progress"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"trip already in progress"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.state"
+    op = "eq"
+    value = "in_progress"
+
+  [[routes.responses]]
+  id = "rsp_trips_7_3"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"cancelled","fee":0}
+'''
+
+[[routes]]
+id = "rte_trips_8"
+name = "Route"
+folder = "fld_trips_1"
+method = "GET"
+path = "/trips/:id/route"
+
+  [[routes.responses]]
+  id = "rsp_trips_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=4) %}{"lat":40.{{ random_int(min=1000, max=9999) }},"lng":-73.{{ random_int(min=1000, max=9999) }}}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_trips_9"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_trips_9_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"trips"}
+'''

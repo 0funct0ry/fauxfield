@@ -1,0 +1,229 @@
+schema = 1
+id = "srv_saas_billing_invoices"
+name = "Invoices"
+enabled = true
+host = "127.0.0.1"
+port = 4004
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "invoices"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 30
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "tenant_id"
+kind = "int"
+min = 1
+max = 20
+
+[[datasets.generator.fields]]
+name = "number"
+kind = "regex"
+pattern = "INV-[0-9]{6}"
+
+[[datasets.generator.fields]]
+name = "amount"
+kind = "float"
+min = 29
+max = 999
+
+[[datasets.generator.fields]]
+name = "status"
+kind = "one_of"
+values = ["draft", "open", "paid", "void", "uncollectible"]
+
+[[datasets.generator.fields]]
+name = "issued"
+kind = "datetime"
+
+[[folders]]
+id = "fld_invoices_1"
+name = "Invoices"
+
+[[folders]]
+id = "fld_invoices_2"
+name = "Payments"
+
+[[routes]]
+id = "rte_invoices_1"
+name = "Invoices"
+folder = "fld_invoices_1"
+kind = "crud"
+path = "/invoices"
+dataset = "invoices"
+
+[[routes]]
+id = "rte_invoices_2"
+name = "Invoice lines"
+folder = "fld_invoices_1"
+method = "GET"
+path = "/invoices/:id/lines"
+
+  [[routes.responses]]
+  id = "rsp_invoices_2_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"description":"{{ fake(kind="lorem.sentence") }}","qty":{{ random_int(min=1, max=10) }},"amount":{{ random_int(min=5, max=200) }}.00}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_invoices_3"
+name = "Invoice document"
+folder = "fld_invoices_1"
+method = "GET"
+path = "/invoices/:id/pdf"
+
+  [[routes.responses]]
+  id = "rsp_invoices_3_1"
+  name = "Invoice missing"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"invoice not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "999"
+
+  [[routes.responses]]
+  id = "rsp_invoices_3_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"url":"http://127.0.0.1:4004/files/{{ request.params.id }}.pdf","expires_in":300}
+'''
+
+[[routes]]
+id = "rte_invoices_4"
+name = "Pay invoice"
+folder = "fld_invoices_2"
+method = "POST"
+path = "/invoices/:id/pay"
+
+  [[routes.responses]]
+  id = "rsp_invoices_4_1"
+  name = "Already paid"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"invoice already paid"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "lte"
+    value = "3"
+
+  [[routes.responses]]
+  id = "rsp_invoices_4_2"
+  name = "Card declined"
+  status = 402
+  content_type = "application/json"
+  body = '''
+{"error":"card_declined"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.card"
+    op = "eq"
+    value = "4000000000000002"
+
+  [[routes.responses]]
+  id = "rsp_invoices_4_3"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "200..500"
+  body = '''
+{"id":"{{ request.params.id }}","status":"paid","receipt":"rcp_{{ uuid() }}"}
+'''
+
+[[routes]]
+id = "rte_invoices_5"
+name = "Void invoice"
+folder = "fld_invoices_1"
+method = "POST"
+path = "/invoices/:id/void"
+
+  [[routes.responses]]
+  id = "rsp_invoices_5_1"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"void"}
+'''
+
+[[routes]]
+id = "rte_invoices_6"
+name = "Upcoming invoice"
+folder = "fld_invoices_1"
+method = "GET"
+path = "/invoices/upcoming"
+
+  [[routes.responses]]
+  id = "rsp_invoices_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"amount_due":{{ random_int(min=29, max=500) }}.00,"due":"{{ fake(kind="date.future") }}"}
+'''
+
+[[routes]]
+id = "rte_invoices_7"
+name = "Payment methods"
+folder = "fld_invoices_2"
+method = "GET"
+path = "/payment-methods"
+
+  [[routes.responses]]
+  id = "rsp_invoices_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"id":"pm_1","brand":"visa","last4":"4242"},{"id":"pm_2","brand":"mastercard","last4":"1111"}]
+'''
+
+[[routes]]
+id = "rte_invoices_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_invoices_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"invoices"}
+'''

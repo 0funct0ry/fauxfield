@@ -1,0 +1,224 @@
+schema = 1
+id = "srv_ride_hailing_riders"
+name = "Riders"
+enabled = true
+host = "127.0.0.1"
+port = 4001
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "riders"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 30
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "fake"
+fake = "name"
+
+[[datasets.generator.fields]]
+name = "email"
+kind = "fake"
+fake = "internet.email"
+
+[[datasets.generator.fields]]
+name = "phone"
+kind = "fake"
+fake = "phone"
+
+[[datasets.generator.fields]]
+name = "rating"
+kind = "float"
+min = 3.5
+max = 5
+
+[[datasets.generator.fields]]
+name = "joined"
+kind = "datetime"
+
+[[folders]]
+id = "fld_riders_1"
+name = "Riders"
+
+[[folders]]
+id = "fld_riders_2"
+name = "Places"
+
+[[routes]]
+id = "rte_riders_1"
+name = "Riders"
+folder = "fld_riders_1"
+kind = "crud"
+path = "/riders"
+dataset = "riders"
+
+[[routes]]
+id = "rte_riders_2"
+name = "Sign up"
+folder = "fld_riders_1"
+method = "POST"
+path = "/riders/signup"
+
+  [[routes.responses]]
+  id = "rsp_riders_2_1"
+  name = "Email missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"email is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.email"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_riders_2_2"
+  name = "Email taken"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"email already registered"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.email"
+    op = "eq"
+    value = "taken@example.test"
+
+  [[routes.responses]]
+  id = "rsp_riders_2_3"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"rdr_{{ uuid() }}","email":"{{ request.json.email | default(value='new@example.test') }}","status":"active"}
+'''
+
+[[routes]]
+id = "rte_riders_3"
+name = "Rider profile"
+folder = "fld_riders_1"
+method = "GET"
+path = "/riders/:id/profile"
+
+  [[routes.responses]]
+  id = "rsp_riders_3_1"
+  name = "Unknown rider"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"rider not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "999"
+
+  [[routes.responses]]
+  id = "rsp_riders_3_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","name":"{{ fake(kind="name") }}","email":"{{ fake(kind="internet.email") }}","rating":4.{{ random_int(min=1, max=9) }}}
+'''
+
+[[routes]]
+id = "rte_riders_4"
+name = "Rider trip history"
+folder = "fld_riders_1"
+method = "GET"
+path = "/riders/:id/trips"
+
+  [[routes.responses]]
+  id = "rsp_riders_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "30..90"
+  body = '''
+[{% for i in range(end=4) %}{"trip_id":{{ i + 100 }},"from":"{{ fake(kind="address.street") }}","fare":{{ random_int(min=6, max=60) }}.50}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_riders_5"
+name = "Saved places"
+folder = "fld_riders_2"
+method = "GET"
+path = "/places/saved"
+
+  [[routes.responses]]
+  id = "rsp_riders_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"label":"Home","address":"12 Maple Row"},{"label":"Work","address":"88 Foundry Street"}]
+'''
+
+[[routes]]
+id = "rte_riders_6"
+name = "Save place"
+folder = "fld_riders_2"
+method = "POST"
+path = "/places/saved"
+
+  [[routes.responses]]
+  id = "rsp_riders_6_1"
+  name = "Label missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"label is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.label"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_riders_6_2"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"plc_{{ uuid() }}","label":"{{ request.json.label | default(value='Place') }}"}
+'''
+
+[[routes]]
+id = "rte_riders_7"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_riders_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"riders"}
+'''

@@ -1,0 +1,243 @@
+schema = 1
+id = "srv_saas_billing_tenants"
+name = "Tenants"
+enabled = true
+host = "127.0.0.1"
+port = 4002
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "tenants"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 20
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "fake"
+fake = "company.name"
+
+[[datasets.generator.fields]]
+name = "plan"
+kind = "one_of"
+values = ["free", "team", "business", "enterprise"]
+
+[[datasets.generator.fields]]
+name = "region"
+kind = "one_of"
+values = ["us", "eu", "apac"]
+
+[[datasets.generator.fields]]
+name = "created"
+kind = "datetime"
+
+[[datasets]]
+name = "members"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 40
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "tenant_id"
+kind = "int"
+min = 1
+max = 20
+
+[[datasets.generator.fields]]
+name = "email"
+kind = "fake"
+fake = "internet.email"
+
+[[datasets.generator.fields]]
+name = "role"
+kind = "one_of"
+values = ["owner", "admin", "member"]
+
+[[folders]]
+id = "fld_tenants_1"
+name = "Tenants"
+
+[[folders]]
+id = "fld_tenants_2"
+name = "Members"
+
+[[folders]]
+id = "fld_tenants_3"
+name = "Hooks"
+
+[[routes]]
+id = "rte_tenants_1"
+name = "Tenants"
+folder = "fld_tenants_1"
+kind = "crud"
+path = "/tenants"
+dataset = "tenants"
+
+[[routes]]
+id = "rte_tenants_2"
+name = "Members"
+folder = "fld_tenants_2"
+kind = "crud"
+path = "/members"
+dataset = "members"
+
+[[routes]]
+id = "rte_tenants_3"
+name = "Tenant settings"
+folder = "fld_tenants_1"
+method = "GET"
+path = "/tenants/:id/settings"
+
+  [[routes.responses]]
+  id = "rsp_tenants_3_1"
+  name = "Tenant suspended"
+  status = 403
+  content_type = "application/json"
+  body = '''
+{"error":"tenant suspended"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "666"
+
+  [[routes.responses]]
+  id = "rsp_tenants_3_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"tenant_id":"{{ request.params.id }}","sso":false,"data_region":"us","seats":{{ random_int(min=5, max=200) }}}
+'''
+
+[[routes]]
+id = "rte_tenants_4"
+name = "Plan limits"
+folder = "fld_tenants_1"
+method = "GET"
+path = "/tenants/:id/limits"
+
+  [[routes.responses]]
+  id = "rsp_tenants_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"tenant_id":"{{ request.params.id }}","seats":50,"api_calls":100000,"storage_gb":100}
+'''
+
+[[routes]]
+id = "rte_tenants_5"
+name = "Suspend"
+folder = "fld_tenants_1"
+method = "POST"
+path = "/tenants/:id/suspend"
+
+  [[routes.responses]]
+  id = "rsp_tenants_5_1"
+  name = "Not an admin"
+  status = 403
+  content_type = "application/json"
+  body = '''
+{"error":"forbidden"}
+'''
+
+    [[routes.responses.rules]]
+    target = "header"
+    key = "x-role"
+    op = "eq"
+    value = "member"
+
+  [[routes.responses]]
+  id = "rsp_tenants_5_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"tenant_id":"{{ request.params.id }}","status":"suspended"}
+'''
+
+[[routes]]
+id = "rte_tenants_6"
+name = "Invite member"
+folder = "fld_tenants_2"
+method = "POST"
+path = "/tenants/:id/invites"
+
+  [[routes.responses]]
+  id = "rsp_tenants_6_1"
+  name = "Email missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"email is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.email"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_tenants_6_2"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"invite":"inv_{{ uuid() }}","email":"{{ request.json.email | default(value='guest@example.test') }}"}
+'''
+
+[[routes]]
+id = "rte_tenants_7"
+name = "Inbound webhook receiver"
+folder = "fld_tenants_3"
+method = "POST"
+path = "/hooks/inbound"
+
+  [[routes.responses]]
+  id = "rsp_tenants_7_1"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"received":true,"event":"{{ request.json.type | default(value='unknown') }}"}
+'''
+
+[[routes]]
+id = "rte_tenants_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_tenants_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"tenants"}
+'''

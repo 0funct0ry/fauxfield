@@ -1,0 +1,224 @@
+schema = 1
+id = "srv_ride_hailing_ratings"
+name = "Ratings"
+enabled = true
+host = "127.0.0.1"
+port = 4006
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "ratings"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 40
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "trip_id"
+kind = "int"
+min = 1
+max = 30
+
+[[datasets.generator.fields]]
+name = "stars"
+kind = "int"
+min = 1
+max = 5
+
+[[datasets.generator.fields]]
+name = "comment"
+kind = "fake"
+fake = "lorem.sentence"
+
+[[datasets.generator.fields]]
+name = "created"
+kind = "datetime"
+
+[[folders]]
+id = "fld_ratings_1"
+name = "Ratings"
+
+[[folders]]
+id = "fld_ratings_2"
+name = "Feedback"
+
+[[routes]]
+id = "rte_ratings_1"
+name = "Ratings"
+folder = "fld_ratings_1"
+kind = "crud"
+path = "/ratings"
+dataset = "ratings"
+
+[[routes]]
+id = "rte_ratings_2"
+name = "Rate trip"
+folder = "fld_ratings_1"
+method = "POST"
+path = "/trips/:id/rating"
+
+  [[routes.responses]]
+  id = "rsp_ratings_2_1"
+  name = "Stars out of range"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"stars must be 1 to 5"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.stars"
+    op = "gt"
+    value = "5"
+
+  [[routes.responses]]
+  id = "rsp_ratings_2_2"
+  name = "Stars too low"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"stars must be 1 to 5"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.stars"
+    op = "lt"
+    value = "1"
+
+  [[routes.responses]]
+  id = "rsp_ratings_2_3"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"trip":"{{ request.params.id }}","stars":{{ request.json.stars | default(value=5) }},"recorded":true}
+'''
+
+[[routes]]
+id = "rte_ratings_3"
+name = "Driver rating"
+folder = "fld_ratings_1"
+method = "GET"
+path = "/drivers/:id/rating"
+
+  [[routes.responses]]
+  id = "rsp_ratings_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"driver_id":"{{ request.params.id }}","average":4.{{ random_int(min=2, max=9) }},"count":{{ random_int(min=20, max=400) }}}
+'''
+
+[[routes]]
+id = "rte_ratings_4"
+name = "Rider rating"
+folder = "fld_ratings_1"
+method = "GET"
+path = "/riders/:id/rating"
+
+  [[routes.responses]]
+  id = "rsp_ratings_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"rider_id":"{{ request.params.id }}","average":4.{{ random_int(min=2, max=9) }},"count":{{ random_int(min=5, max=200) }}}
+'''
+
+[[routes]]
+id = "rte_ratings_5"
+name = "Feedback tags"
+folder = "fld_ratings_2"
+method = "GET"
+path = "/feedback/tags"
+
+  [[routes.responses]]
+  id = "rsp_ratings_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["clean car","friendly","safe driving","great route","late arrival"]
+'''
+
+[[routes]]
+id = "rte_ratings_6"
+name = "Submit feedback"
+folder = "fld_ratings_2"
+method = "POST"
+path = "/feedback"
+
+  [[routes.responses]]
+  id = "rsp_ratings_6_1"
+  name = "Comment too long"
+  status = 413
+  content_type = "application/json"
+  body = '''
+{"error":"comment too long"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.long"
+    op = "eq"
+    value = "true"
+
+  [[routes.responses]]
+  id = "rsp_ratings_6_2"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"fb_{{ uuid() }}","comment":"{{ request.json.comment | default(value='') }}"}
+'''
+
+[[routes]]
+id = "rte_ratings_7"
+name = "Recent feedback"
+folder = "fld_ratings_2"
+method = "GET"
+path = "/feedback/recent"
+
+  [[routes.responses]]
+  id = "rsp_ratings_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "20..80"
+  body = '''
+[{% for i in range(end=3) %}{"stars":{{ random_int(min=3, max=5) }},"comment":"{{ fake(kind="lorem.sentence") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_ratings_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_ratings_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"ratings"}
+'''

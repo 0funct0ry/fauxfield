@@ -29,6 +29,7 @@ description: Every tool, resource and prompt of the Fauxfield MCP server, with i
 | `get_route` | read | yes | no | yes | A Route with its Responses. |
 | `get_server` | read | yes | no | yes | Full Server including folders and routes. Secret-looking variables are redacted. |
 | `get_traffic` | read | yes | no | yes | Recent recorded requests (newest last) with the route that matched, status and timing. Secret headers are masked. |
+| `list_examples` | read | yes | no | yes | The embedded example Workspaces (`init_workspace {example}`): name, title, server and Route counts, description. |
 | `list_routes` | read | yes | no | yes | List Routes, optionally of one Server. |
 | `list_servers` | read | yes | no | yes | List Servers. |
 | `list_static_files` | read | yes | no | yes | Files a `static` Route serves (path under its dir, size, MIME type, whether it is a Tera template). |
@@ -46,6 +47,7 @@ description: Every tool, resource and prompt of the Fauxfield MCP server, with i
 | `delete_route` | write | no | yes | yes | Delete a Route. |
 | `delete_server` | write | no | yes | yes | Delete a Server and its file. |
 | `import_dataset` | write | no | no | yes | Import a JSON, CSV or Parquet file into a Dataset's static seed (data/<name>.json). One-time conversion; the file is not referenced afterwards. Returns row count, inferred columns, key and warnings (ragged rows, duplicate keys, unparseable cells). Rows above the hard limit are refused. |
+| `init_workspace` | write | no | no | no | Create a Workspace in `path`, optionally from an example (`list_examples`). Existing files are never overwritten; a folder that already holds the example's files is refused. |
 | `set_variable` | write | no | no | yes | Set or remove a variable at a scope (global, environment, server, route). Values for secret-looking names (*token*, *secret*, *password*, *key*) are never echoed back. |
 | `update_server` | write | no | no | yes | Update Server fields (name, port, host, enabled, prefix, unmatched_hint, fake_seed), the `proxy` settings and the `docs_site` settings (published API documentation). |
 | `update_workspace` | write | no | no | yes | Rename the workspace (the `name` in fauxfield.toml; comments and key order are kept). |
@@ -178,6 +180,10 @@ No arguments.
 | `since_seconds` | no | Only requests from the last N seconds. |
 | `status` | no | Status such as `404` or a class like `5xx`. |
 
+### `list_examples`
+
+No arguments.
+
 ### `list_routes`
 
 | Argument | Required | Description |
@@ -301,6 +307,13 @@ No arguments.
 | `key` | no | Key column (default `id` when present). |
 | `name` | yes | Dataset name (created when missing). |
 | `server` | yes | Server ID, name or file slug. |
+
+### `init_workspace`
+
+| Argument | Required | Description |
+|---|---|---|
+| `example` | no | Example name from `list_examples`; omitted creates the one-Server layout. |
+| `path` | yes | Folder to create the Workspace in (absolute, no `..`). Existing files are never changed. |
 
 ### `set_variable`
 

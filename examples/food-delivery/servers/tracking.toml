@@ -1,0 +1,196 @@
+schema = 1
+id = "srv_food_delivery_tracking"
+name = "Tracking"
+enabled = true
+host = "127.0.0.1"
+port = 4005
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[folders]]
+id = "fld_tracking_1"
+name = "Tracking"
+
+[[folders]]
+id = "fld_tracking_2"
+name = "Streams"
+
+[[routes]]
+id = "rte_tracking_1"
+name = "Position stream"
+folder = "fld_tracking_2"
+kind = "websocket"
+path = "/stream"
+mode = "script"
+
+  [[routes.messages]]
+  trigger = "connect"
+  body = '''
+{"type":"hello","message":"tracking connected"}
+'''
+
+  [[routes.messages]]
+  trigger = "interval"
+  every = "2s"
+  body = '''
+{"type":"position","courier":"{{ fake(kind="name.first") }}","lat":40.{{ random_int(min=700000, max=799999) }},"lng":-73.{{ random_int(min=950000, max=999999) }},"eta_min":{{ random_int(min=1, max=30) }}}
+'''
+
+  [[routes.messages]]
+  trigger = "message"
+  when = { target = "body", key = "$.type", op = "eq", value = "ping" }
+  body = '''
+{"type":"pong","at":"{{ now() }}"}
+'''
+
+[[routes]]
+id = "rte_tracking_2"
+name = "Tracking snapshot"
+folder = "fld_tracking_1"
+method = "GET"
+path = "/orders/:id/tracking"
+
+  [[routes.responses]]
+  id = "rsp_tracking_2_1"
+  name = "Unknown order"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"order not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "0"
+
+  [[routes.responses]]
+  id = "rsp_tracking_2_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "20..80"
+  body = '''
+{"order":"{{ request.params.id }}","stage":"on_the_way","eta_min":{{ random_int(min=3, max=30) }},"courier":"{{ fake(kind="name") }}"}
+'''
+
+[[routes]]
+id = "rte_tracking_3"
+name = "Delivery timeline"
+folder = "fld_tracking_1"
+method = "GET"
+path = "/orders/:id/timeline"
+
+  [[routes.responses]]
+  id = "rsp_tracking_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=4) %}{"stage":"step {{ i + 1 }}","at":"{{ fake(kind="date.past") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_tracking_4"
+name = "ETA"
+folder = "fld_tracking_1"
+method = "GET"
+path = "/orders/:id/eta"
+
+  [[routes.responses]]
+  id = "rsp_tracking_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"order":"{{ request.params.id }}","eta":"{{ fake(kind="date.future") }}"}
+'''
+
+[[routes]]
+id = "rte_tracking_5"
+name = "Route"
+folder = "fld_tracking_1"
+method = "GET"
+path = "/orders/:id/route"
+
+  [[routes.responses]]
+  id = "rsp_tracking_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"points":[{"lat":40.71,"lng":-73.99},{"lat":40.72,"lng":-73.98},{"lat":40.73,"lng":-73.97}]}
+'''
+
+[[routes]]
+id = "rte_tracking_6"
+name = "Share tracking link"
+folder = "fld_tracking_1"
+method = "POST"
+path = "/orders/:id/share"
+
+  [[routes.responses]]
+  id = "rsp_tracking_6_1"
+  name = "Not yet dispatched"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"order has not been dispatched"}
+'''
+
+    [[routes.responses.rules]]
+    target = "header"
+    key = "x-stage"
+    op = "eq"
+    value = "preparing"
+
+  [[routes.responses]]
+  id = "rsp_tracking_6_2"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"url":"http://127.0.0.1:4005/track/{{ uuid() }}","expires_in":3600}
+'''
+
+[[routes]]
+id = "rte_tracking_7"
+name = "Confirm delivery"
+folder = "fld_tracking_1"
+method = "POST"
+path = "/orders/:id/delivered"
+
+  [[routes.responses]]
+  id = "rsp_tracking_7_1"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"order":"{{ request.params.id }}","delivered":true,"at":"{{ now() }}"}
+'''
+
+[[routes]]
+id = "rte_tracking_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_tracking_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"tracking"}
+'''

@@ -1,0 +1,268 @@
+schema = 1
+id = "srv_iot_fleet_devices"
+name = "Devices"
+enabled = true
+host = "127.0.0.1"
+port = 4001
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[variables]
+region = "eu-west"
+
+[[datasets]]
+name = "devices"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 30
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "one_of"
+values = ["Tracker", "Gateway", "Sensor Hub", "Pump Monitor", "Door Node", "Cold Chain Probe"]
+
+[[datasets.generator.fields]]
+name = "serial"
+kind = "regex"
+pattern = "SN-[0-9]{6}"
+
+[[datasets.generator.fields]]
+name = "model"
+kind = "one_of"
+values = ["FX-100", "FX-200", "FX-300"]
+
+[[datasets.generator.fields]]
+name = "status"
+kind = "one_of"
+values = ["online", "offline", "maintenance"]
+
+[[datasets.generator.fields]]
+name = "battery"
+kind = "int"
+min = 0
+max = 100
+
+[[datasets.generator.fields]]
+name = "last_seen"
+kind = "datetime"
+
+[[folders]]
+id = "fld_devices_1"
+name = "Devices"
+
+[[folders]]
+id = "fld_devices_2"
+name = "Groups"
+
+[[routes]]
+id = "rte_devices_1"
+name = "Devices"
+folder = "fld_devices_1"
+kind = "crud"
+path = "/devices"
+dataset = "devices"
+
+[[routes]]
+id = "rte_devices_2"
+name = "Device status"
+folder = "fld_devices_1"
+method = "GET"
+path = "/devices/:id/status"
+
+  [[routes.responses]]
+  id = "rsp_devices_2_1"
+  name = "Unknown device"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"device not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "999"
+
+  [[routes.responses]]
+  id = "rsp_devices_2_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"online","battery":{{ random_int(min=5, max=100) }},"signal_dbm":-{{ random_int(min=40, max=95) }},"ip":"{{ fake(kind="internet.ipv4") }}"}
+'''
+
+[[routes]]
+id = "rte_devices_3"
+name = "Send command"
+folder = "fld_devices_1"
+method = "POST"
+path = "/devices/:id/command"
+
+  [[routes.responses]]
+  id = "rsp_devices_3_1"
+  name = "Command missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"command is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.command"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_devices_3_2"
+  name = "Device offline"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"device is offline"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "13"
+
+  [[routes.responses]]
+  id = "rsp_devices_3_3"
+  name = "Created"
+  status = 202
+  content_type = "application/json"
+  default = true
+  delay_ms = "60..200"
+  body = '''
+{"command_id":"cmd_{{ uuid() }}","device":"{{ request.params.id }}","command":"{{ request.json.command | default(value='') }}","state":"queued"}
+'''
+
+[[routes]]
+id = "rte_devices_4"
+name = "Device config"
+folder = "fld_devices_1"
+method = "GET"
+path = "/devices/:id/config"
+
+  [[routes.responses]]
+  id = "rsp_devices_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","report_interval_s":60,"region":"{{ vars.region }}","tags":["{{ fake(kind="lorem.word") }}","{{ fake(kind="lorem.word") }}"]}
+'''
+
+[[routes]]
+id = "rte_devices_5"
+name = "Update config"
+folder = "fld_devices_1"
+method = "PUT"
+path = "/devices/:id/config"
+
+  [[routes.responses]]
+  id = "rsp_devices_5_1"
+  name = "Interval too small"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"report_interval_s must be at least 5"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.report_interval_s"
+    op = "lt"
+    value = "5"
+
+  [[routes.responses]]
+  id = "rsp_devices_5_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","report_interval_s":{{ request.json.report_interval_s | default(value=60) }},"applied":true}
+'''
+
+[[routes]]
+id = "rte_devices_6"
+name = "Groups"
+folder = "fld_devices_2"
+method = "GET"
+path = "/groups"
+
+  [[routes.responses]]
+  id = "rsp_devices_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"id":1,"name":"Warehouse"},{"id":2,"name":"Trucks"},{"id":3,"name":"Cold storage"}]
+'''
+
+[[routes]]
+id = "rte_devices_7"
+name = "Group devices"
+folder = "fld_devices_2"
+method = "GET"
+path = "/groups/:id/devices"
+
+  [[routes.responses]]
+  id = "rsp_devices_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "30..90"
+  body = '''
+[{% for i in range(end=4) %}{"id":{{ i + 1 }},"serial":"SN-{{ random_int(min=100000, max=999999) }}","name":"{{ fake(kind="lorem.word") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_devices_8"
+name = "Device models"
+folder = "fld_devices_2"
+method = "GET"
+path = "/models"
+
+  [[routes.responses]]
+  id = "rsp_devices_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["FX-100","FX-200","FX-300"]
+'''
+
+[[routes]]
+id = "rte_devices_9"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_devices_9_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"devices"}
+'''

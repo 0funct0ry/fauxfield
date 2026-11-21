@@ -104,6 +104,14 @@ struct ProxySpec {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct InitWorkspaceArgs {
+    /// Folder to create the Workspace in (absolute, no `..`). Existing files are never changed.
+    path: String,
+    /// Example name from `list_examples`; omitted creates the one-Server layout.
+    example: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct UpdateWorkspace {
     /// New workspace name (1 to 80 characters). The folder on disk is not renamed.
     name: String,
@@ -554,6 +562,51 @@ pub fn fixed_store(store: Store) -> StoreProvider {
 }
 
 pub fn register_workspace_tools(r: &mut Registry, provider: StoreProvider) {
+    r.register(ToolDef::new::<NoInput>(
+        "list_examples",
+        "The embedded example Workspaces (`init_workspace {example}`): name, title, server and Route counts, description.",
+        ToolClass::Read,
+        move |_| {
+            let v = json!({ "examples": fauxfield_store::examples::list_examples() });
+            Box::pin(async move { Ok(v) })
+        },
+    ));
+    r.register(ToolDef::new::<InitWorkspaceArgs>(
+        "init_workspace",
+        "Create a Workspace in `path`, optionally from an example (`list_examples`). Existing files are never overwritten; a folder that already holds the example's files is refused.",
+        ToolClass::Write,
+        move |m| {
+            let out = parse::<InitWorkspaceArgs>(m).and_then(|a| {
+                let root = std::path::PathBuf::from(&a.path);
+                if !root.is_absolute()
+                    || root.components().any(|c| matches!(c, std::path::Component::ParentDir))
+                {
+                    return Err("path must be absolute and must not contain `..`".to_string());
+                }
+                match a.example {
+                    Some(name) => {
+                        if !fauxfield_store::examples::EXAMPLES.iter().any(|m| m.name == name) {
+                            let names: Vec<&str> =
+                                fauxfield_store::examples::EXAMPLES.iter().map(|m| m.name).collect();
+                            return Err(format!("unknown example `{name}`; valid: {}", names.join(", ")));
+                        }
+                        let rep = fauxfield_store::examples::init_example(&root, &name, false).map_err(e)?;
+                        Ok(json!({ "path": a.path, "example": name, "created": rep.created, "servers": rep.servers }))
+                    }
+                    None => {
+                        let files = fauxfield_store::init_workspace(&root).map_err(e)?;
+                        let created: Vec<String> = files
+                            .iter()
+                            .filter_map(|f| f.strip_prefix(&root).ok())
+                            .map(|f| f.to_string_lossy().replace('\\', "/"))
+                            .collect();
+                        Ok(json!({ "path": a.path, "example": null, "created": created }))
+                    }
+                }
+            });
+            Box::pin(async move { out })
+        },
+    ));
     let p = provider.clone();
     r.register(ToolDef::new::<NoInput>(
         "workspace_info",

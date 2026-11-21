@@ -1,0 +1,254 @@
+schema = 1
+id = "srv_iot_fleet_firmware"
+name = "Firmware"
+enabled = true
+host = "127.0.0.1"
+port = 4003
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "versions"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 8
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "version"
+kind = "regex"
+pattern = "[1-3]\\.[0-9]\\.[0-9]"
+
+[[datasets.generator.fields]]
+name = "channel"
+kind = "one_of"
+values = ["stable", "beta"]
+
+[[datasets.generator.fields]]
+name = "released"
+kind = "date"
+
+[[datasets.generator.fields]]
+name = "size_kb"
+kind = "int"
+min = 512
+max = 4096
+
+[[folders]]
+id = "fld_firmware_1"
+name = "Versions"
+
+[[folders]]
+id = "fld_firmware_2"
+name = "Updates"
+
+[[routes]]
+id = "rte_firmware_1"
+name = "Versions"
+folder = "fld_firmware_1"
+kind = "crud"
+path = "/versions"
+dataset = "versions"
+
+[[routes]]
+id = "rte_firmware_2"
+name = "Latest version"
+folder = "fld_firmware_1"
+method = "GET"
+path = "/versions/latest"
+
+  [[routes.responses]]
+  id = "rsp_firmware_2_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"version":"3.2.1","channel":"stable","size_kb":2048,"notes":"{{ fake(kind="lorem.sentence") }}"}
+'''
+
+[[routes]]
+id = "rte_firmware_3"
+name = "Channels"
+folder = "fld_firmware_1"
+method = "GET"
+path = "/channels"
+
+  [[routes.responses]]
+  id = "rsp_firmware_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["stable","beta"]
+'''
+
+[[routes]]
+id = "rte_firmware_4"
+name = "Start update job"
+folder = "fld_firmware_2"
+method = "POST"
+path = "/updates"
+
+  [[routes.responses]]
+  id = "rsp_firmware_4_1"
+  name = "Unknown version"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"firmware version not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.version"
+    op = "eq"
+    value = "0.0.0"
+
+  [[routes.responses]]
+  id = "rsp_firmware_4_2"
+  name = "Device missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"device_id is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.device_id"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_firmware_4_3"
+  name = "Created"
+  status = 202
+  content_type = "application/json"
+  default = true
+  delay_ms = "100..300"
+  body = '''
+{"job":"job_{{ uuid() }}","device":{{ request.json.device_id | default(value=0) }},"version":"{{ request.json.version | default(value='3.2.1') }}","state":"scheduled"}
+'''
+
+[[routes]]
+id = "rte_firmware_5"
+name = "Update job"
+folder = "fld_firmware_2"
+method = "GET"
+path = "/updates/:job"
+
+  [[routes.responses]]
+  id = "rsp_firmware_5_1"
+  name = "Job failed"
+  status = 200
+  content_type = "application/json"
+  body = '''
+{"job":"failed","state":"failed","error":"checksum mismatch"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "job"
+    op = "eq"
+    value = "failed"
+
+  [[routes.responses]]
+  id = "rsp_firmware_5_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"job":"{{ request.params.job }}","state":"downloading","progress":{{ random_int(min=1, max=99) }}}
+'''
+
+[[routes]]
+id = "rte_firmware_6"
+name = "Update log"
+folder = "fld_firmware_2"
+method = "GET"
+path = "/updates/:job/log"
+
+  [[routes.responses]]
+  id = "rsp_firmware_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"step":{{ i + 1 }},"message":"{{ fake(kind="lorem.sentence") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_firmware_7"
+name = "Cancel update"
+folder = "fld_firmware_2"
+method = "DELETE"
+path = "/updates/:job"
+
+  [[routes.responses]]
+  id = "rsp_firmware_7_1"
+  name = "Already complete"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"update already completed"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "job"
+    op = "eq"
+    value = "done"
+
+  [[routes.responses]]
+  id = "rsp_firmware_7_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"job":"{{ request.params.job }}","state":"cancelled"}
+'''
+
+[[routes]]
+id = "rte_firmware_8"
+name = "Recent jobs"
+folder = "fld_firmware_2"
+method = "GET"
+path = "/updates"
+
+  [[routes.responses]]
+  id = "rsp_firmware_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=4) %}{"job":"job_{{ uuid() }}","state":"completed","device":{{ i + 1 }}}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_firmware_9"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_firmware_9_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"firmware"}
+'''

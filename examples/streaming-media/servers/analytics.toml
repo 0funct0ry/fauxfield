@@ -1,0 +1,246 @@
+schema = 1
+id = "srv_streaming_media_analytics"
+name = "Analytics"
+enabled = true
+host = "127.0.0.1"
+port = 4006
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "plays"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 40
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "title_id"
+kind = "int"
+min = 1
+max = 40
+
+[[datasets.generator.fields]]
+name = "user_id"
+kind = "int"
+min = 1
+max = 30
+
+[[datasets.generator.fields]]
+name = "seconds"
+kind = "int"
+min = 10
+max = 7200
+
+[[datasets.generator.fields]]
+name = "device"
+kind = "one_of"
+values = ["tv", "phone", "web", "tablet"]
+
+[[datasets.generator.fields]]
+name = "at"
+kind = "datetime"
+
+[[folders]]
+id = "fld_analytics_1"
+name = "Events"
+
+[[folders]]
+id = "fld_analytics_2"
+name = "Reports"
+
+[[routes]]
+id = "rte_analytics_1"
+name = "Plays"
+folder = "fld_analytics_1"
+kind = "crud"
+path = "/plays"
+dataset = "plays"
+
+[[routes]]
+id = "rte_analytics_2"
+name = "Track event"
+folder = "fld_analytics_1"
+method = "POST"
+path = "/events"
+
+  [[routes.responses]]
+  id = "rsp_analytics_2_1"
+  name = "Type missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"type is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.type"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_analytics_2_2"
+  name = "Payload too large"
+  status = 413
+  content_type = "application/json"
+  body = '''
+{"error":"event too large"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.size"
+    op = "gt"
+    value = "65536"
+
+  [[routes.responses]]
+  id = "rsp_analytics_2_3"
+  name = "Created"
+  status = 202
+  content_type = "application/json"
+  default = true
+  body = '''
+{"accepted":true,"event":"{{ request.json.type | default(value='') }}","id":"evt_{{ uuid() }}"}
+'''
+
+[[routes]]
+id = "rte_analytics_3"
+name = "Daily report"
+folder = "fld_analytics_2"
+method = "GET"
+path = "/reports/daily"
+
+  [[routes.responses]]
+  id = "rsp_analytics_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "100..400"
+  body = '''
+{"date":"{{ fake(kind="date.past") }}","plays":{{ random_int(min=1000, max=90000) }},"unique_users":{{ random_int(min=300, max=9000) }}}
+'''
+
+[[routes]]
+id = "rte_analytics_4"
+name = "Top titles"
+folder = "fld_analytics_2"
+method = "GET"
+path = "/reports/top-titles"
+
+  [[routes.responses]]
+  id = "rsp_analytics_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=5) %}{"rank":{{ i + 1 }},"title_id":{{ random_int(min=1, max=40) }},"plays":{{ random_int(min=100, max=9000) }}}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_analytics_5"
+name = "Device split"
+folder = "fld_analytics_2"
+method = "GET"
+path = "/reports/devices"
+
+  [[routes.responses]]
+  id = "rsp_analytics_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"tv":48,"phone":27,"web":18,"tablet":7}
+'''
+
+[[routes]]
+id = "rte_analytics_6"
+name = "Retention"
+folder = "fld_analytics_2"
+method = "GET"
+path = "/reports/retention"
+
+  [[routes.responses]]
+  id = "rsp_analytics_6_1"
+  name = "Bad cohort"
+  status = 400
+  content_type = "application/json"
+  body = '''
+{"error":"unknown cohort"}
+'''
+
+    [[routes.responses.rules]]
+    target = "query"
+    key = "cohort"
+    op = "eq"
+    value = "invalid"
+
+  [[routes.responses]]
+  id = "rsp_analytics_6_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"day":1,"rate":0.82},{"day":7,"rate":0.54},{"day":30,"rate":0.31}]
+'''
+
+[[routes]]
+id = "rte_analytics_7"
+name = "Named report"
+folder = "fld_analytics_2"
+method = "GET"
+path = "/reports/:name"
+
+  [[routes.responses]]
+  id = "rsp_analytics_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"report":"{{ request.params.name }}","rows":{{ random_int(min=5, max=100) }}}
+'''
+
+[[routes]]
+id = "rte_analytics_8"
+name = "Realtime viewers"
+folder = "fld_analytics_1"
+method = "GET"
+path = "/realtime"
+
+  [[routes.responses]]
+  id = "rsp_analytics_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"viewers":{{ random_int(min=100, max=5000) }},"at":"{{ now() }}"}
+'''
+
+[[routes]]
+id = "rte_analytics_9"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_analytics_9_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"analytics"}
+'''

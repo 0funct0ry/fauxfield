@@ -1,0 +1,10 @@
+name = "staging"
+
+[variables]
+base_url_restaurants = "https://restaurants.staging.example.test"
+base_url_menus = "https://menus.staging.example.test"
+base_url_orders = "https://orders.staging.example.test"
+base_url_couriers = "https://couriers.staging.example.test"
+base_url_tracking = "https://tracking.staging.example.test"
+base_url_promotions = "https://promotions.staging.example.test"
+api_key = "staging-demo-key"

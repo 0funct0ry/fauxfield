@@ -1,0 +1,228 @@
+schema = 1
+id = "srv_social_profiles"
+name = "Profiles"
+enabled = true
+host = "127.0.0.1"
+port = 4001
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "profiles"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 30
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "handle"
+kind = "fake"
+fake = "internet.username"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "fake"
+fake = "name"
+
+[[datasets.generator.fields]]
+name = "bio"
+kind = "fake"
+fake = "lorem.sentence"
+
+[[datasets.generator.fields]]
+name = "followers"
+kind = "int"
+min = 0
+max = 5000
+
+[[datasets.generator.fields]]
+name = "verified"
+kind = "bool"
+
+[[folders]]
+id = "fld_profiles_1"
+name = "Profiles"
+
+[[folders]]
+id = "fld_profiles_2"
+name = "Follows"
+
+[[routes]]
+id = "rte_profiles_1"
+name = "Profiles"
+folder = "fld_profiles_1"
+kind = "crud"
+path = "/profiles"
+dataset = "profiles"
+
+[[routes]]
+id = "rte_profiles_2"
+name = "Profile by handle"
+folder = "fld_profiles_1"
+method = "GET"
+path = "/profiles/by-handle/:handle"
+
+  [[routes.responses]]
+  id = "rsp_profiles_2_1"
+  name = "Unknown handle"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"profile not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "handle"
+    op = "eq"
+    value = "ghost"
+
+  [[routes.responses]]
+  id = "rsp_profiles_2_2"
+  name = "Suspended"
+  status = 403
+  content_type = "application/json"
+  body = '''
+{"error":"profile suspended"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "handle"
+    op = "starts_with"
+    value = "banned"
+
+  [[routes.responses]]
+  id = "rsp_profiles_2_3"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"handle":"{{ request.params.handle }}","name":"{{ fake(kind="name") }}","bio":"{{ fake(kind="lorem.sentence") }}","followers":{{ random_int(min=0, max=5000) }}}
+'''
+
+[[routes]]
+id = "rte_profiles_3"
+name = "Followers"
+folder = "fld_profiles_2"
+method = "GET"
+path = "/profiles/:handle/followers"
+
+  [[routes.responses]]
+  id = "rsp_profiles_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "30..90"
+  body = '''
+[{% for i in range(end=4) %}{"handle":"{{ fake(kind="internet.username") }}","name":"{{ fake(kind="name") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_profiles_4"
+name = "Following"
+folder = "fld_profiles_2"
+method = "GET"
+path = "/profiles/:handle/following"
+
+  [[routes.responses]]
+  id = "rsp_profiles_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"handle":"{{ fake(kind="internet.username") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_profiles_5"
+name = "Follow"
+folder = "fld_profiles_2"
+method = "POST"
+path = "/profiles/:handle/follow"
+
+  [[routes.responses]]
+  id = "rsp_profiles_5_1"
+  name = "Cannot follow self"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"cannot follow yourself"}
+'''
+
+    [[routes.responses.rules]]
+    target = "header"
+    key = "x-handle"
+    op = "eq"
+    value = "self"
+
+  [[routes.responses]]
+  id = "rsp_profiles_5_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"following":"{{ request.params.handle }}","ok":true}
+'''
+
+[[routes]]
+id = "rte_profiles_6"
+name = "Unfollow"
+folder = "fld_profiles_2"
+method = "DELETE"
+path = "/profiles/:handle/follow"
+
+  [[routes.responses]]
+  id = "rsp_profiles_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"unfollowed":"{{ request.params.handle }}"}
+'''
+
+[[routes]]
+id = "rte_profiles_7"
+name = "Suggested profiles"
+folder = "fld_profiles_1"
+method = "GET"
+path = "/profiles/suggested"
+
+  [[routes.responses]]
+  id = "rsp_profiles_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"handle":"{{ fake(kind="internet.username") }}","reason":"followed by {{ fake(kind="name.first") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_profiles_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_profiles_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"profiles"}
+'''

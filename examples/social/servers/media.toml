@@ -1,0 +1,253 @@
+schema = 1
+id = "srv_social_media"
+name = "Media"
+enabled = true
+host = "127.0.0.1"
+port = 4006
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "media"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 15
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "filename"
+kind = "regex"
+pattern = "img_[0-9]{4}\\.jpg"
+
+[[datasets.generator.fields]]
+name = "kind"
+kind = "one_of"
+values = ["image", "video", "audio"]
+
+[[datasets.generator.fields]]
+name = "bytes"
+kind = "int"
+min = 10000
+max = 900000
+
+[[datasets.generator.fields]]
+name = "owner"
+kind = "fake"
+fake = "internet.username"
+
+[[folders]]
+id = "fld_media_1"
+name = "Uploads"
+
+[[folders]]
+id = "fld_media_2"
+name = "Library"
+
+[[routes]]
+id = "rte_media_1"
+name = "Media library"
+folder = "fld_media_2"
+kind = "crud"
+path = "/media"
+dataset = "media"
+
+[[routes]]
+id = "rte_media_2"
+name = "Upload stub"
+folder = "fld_media_1"
+method = "POST"
+path = "/uploads"
+
+  [[routes.responses]]
+  id = "rsp_media_2_1"
+  name = "File too large"
+  status = 413
+  content_type = "application/json"
+  body = '''
+{"error":"file exceeds 10 MB limit"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.bytes"
+    op = "gt"
+    value = "10000000"
+
+  [[routes.responses]]
+  id = "rsp_media_2_2"
+  name = "Unsupported type"
+  status = 415
+  content_type = "application/json"
+  body = '''
+{"error":"unsupported media type"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.filename"
+    op = "ends_with"
+    value = ".exe"
+
+  [[routes.responses]]
+  id = "rsp_media_2_3"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  delay_ms = "150..400"
+  body = '''
+{"media_id":"med_{{ uuid() }}","filename":"{{ request.json.filename | default(value='upload.jpg') }}","status":"processing"}
+'''
+
+[[routes]]
+id = "rte_media_3"
+name = "Presign upload"
+folder = "fld_media_1"
+method = "POST"
+path = "/uploads/presign"
+
+  [[routes.responses]]
+  id = "rsp_media_3_1"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"url":"http://127.0.0.1:4006/uploads","expires_in":300,"token":"up_{{ uuid() }}"}
+'''
+
+[[routes]]
+id = "rte_media_4"
+name = "Upload status"
+folder = "fld_media_1"
+method = "GET"
+path = "/uploads/:id/status"
+
+  [[routes.responses]]
+  id = "rsp_media_4_1"
+  name = "Still processing"
+  status = 202
+  content_type = "application/json"
+  body = '''
+{"id":"new","status":"processing"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "starts_with"
+    value = "new"
+
+  [[routes.responses]]
+  id = "rsp_media_4_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"ready","variants":["thumb","medium","full"]}
+'''
+
+[[routes]]
+id = "rte_media_5"
+name = "Thumbnail"
+folder = "fld_media_2"
+method = "GET"
+path = "/media/:id/thumbnail"
+
+  [[routes.responses]]
+  id = "rsp_media_5_1"
+  name = "Thumb missing"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"thumbnail not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "0"
+
+  [[routes.responses]]
+  id = "rsp_media_5_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","url":"http://127.0.0.1:4006/thumbs/{{ request.params.id }}.jpg","width":320,"height":240}
+'''
+
+[[routes]]
+id = "rte_media_6"
+name = "Albums"
+folder = "fld_media_2"
+method = "GET"
+path = "/albums"
+
+  [[routes.responses]]
+  id = "rsp_media_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"id":{{ i + 1 }},"title":"Album {{ i + 1 }}","items":{{ random_int(min=3, max=40) }}}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_media_7"
+name = "Purge media"
+folder = "fld_media_2"
+method = "DELETE"
+path = "/media/:id/purge"
+
+  [[routes.responses]]
+  id = "rsp_media_7_1"
+  name = "Forbidden"
+  status = 403
+  content_type = "application/json"
+  body = '''
+{"error":"role header required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "header"
+    key = "x-role"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_media_7_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"purged":"{{ request.params.id }}"}
+'''
+
+[[routes]]
+id = "rte_media_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_media_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"media"}
+'''

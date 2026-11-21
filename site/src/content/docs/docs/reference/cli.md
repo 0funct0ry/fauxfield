@@ -40,6 +40,9 @@ Create a workspace (SPEC §4.1) with one example server
 |---|---|
 | `<PATH>` | Folder to create the workspace in (default: the current directory) |
 | `--agents` | Also write MCP client config and an AGENTS.md section (same as `agents init`) |
+| `--example` | Create a ready-to-run example Workspace instead of the one-Server layout |
+| `--list-examples` | Print the embedded examples and exit |
+| `--force-example` | Write an example into a folder that already has some of its files (existing files are kept) |
 | `--json` | Machine-readable output with a stable schema |
 
 ## `fauxfield validate`

@@ -1,0 +1,10 @@
+name = "local"
+
+[variables]
+base_url_catalog = "http://127.0.0.1:4001"
+base_url_cart = "http://127.0.0.1:4002"
+base_url_orders = "http://127.0.0.1:4003"
+base_url_payments = "http://127.0.0.1:4004"
+base_url_shipping = "http://127.0.0.1:4005"
+base_url_users = "http://127.0.0.1:4006"
+api_key = "local-demo-key"

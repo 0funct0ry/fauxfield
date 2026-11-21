@@ -1,0 +1,217 @@
+schema = 1
+id = "srv_social_notifications"
+name = "Notifications"
+enabled = true
+host = "127.0.0.1"
+port = 4005
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "notifications"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 20
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "kind"
+kind = "one_of"
+values = ["like", "comment", "follow", "mention"]
+
+[[datasets.generator.fields]]
+name = "actor"
+kind = "fake"
+fake = "internet.username"
+
+[[datasets.generator.fields]]
+name = "read"
+kind = "bool"
+
+[[datasets.generator.fields]]
+name = "created_at"
+kind = "datetime"
+
+[[folders]]
+id = "fld_notifications_1"
+name = "Notifications"
+
+[[folders]]
+id = "fld_notifications_2"
+name = "Streams"
+
+[[routes]]
+id = "rte_notifications_1"
+name = "Notifications"
+folder = "fld_notifications_1"
+kind = "crud"
+path = "/notifications"
+dataset = "notifications"
+
+[[routes]]
+id = "rte_notifications_2"
+name = "Notification stream"
+folder = "fld_notifications_2"
+kind = "websocket"
+path = "/stream"
+mode = "script"
+
+  [[routes.messages]]
+  trigger = "connect"
+  body = '''
+{"type":"hello","message":"connected to notifications"}
+'''
+
+  [[routes.messages]]
+  trigger = "interval"
+  every = "3s"
+  body = '''
+{"type":"notification","id":"{{ uuid() }}","kind":"like","actor":"{{ fake(kind="internet.username") }}"}
+'''
+
+  [[routes.messages]]
+  trigger = "message"
+  when = { target = "body", key = "$.type", op = "eq", value = "ping" }
+  body = '''
+{"type":"pong","at":"{{ now() }}"}
+'''
+
+[[routes]]
+id = "rte_notifications_3"
+name = "Unread"
+folder = "fld_notifications_1"
+method = "GET"
+path = "/notifications/unread"
+
+  [[routes.responses]]
+  id = "rsp_notifications_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "20..60"
+  body = '''
+[{% for i in range(end=3) %}{"id":{{ i + 1 }},"kind":"comment","actor":"{{ fake(kind="internet.username") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_notifications_4"
+name = "Mark all read"
+folder = "fld_notifications_1"
+method = "POST"
+path = "/notifications/read"
+
+  [[routes.responses]]
+  id = "rsp_notifications_4_1"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"marked":{{ random_int(min=1, max=20) }}}
+'''
+
+[[routes]]
+id = "rte_notifications_5"
+name = "Mark one read"
+folder = "fld_notifications_1"
+method = "POST"
+path = "/notifications/:id/read"
+
+  [[routes.responses]]
+  id = "rsp_notifications_5_1"
+  name = "Not found"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"notification not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "0"
+
+  [[routes.responses]]
+  id = "rsp_notifications_5_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","read":true}
+'''
+
+[[routes]]
+id = "rte_notifications_6"
+name = "Preferences"
+folder = "fld_notifications_1"
+method = "GET"
+path = "/preferences"
+
+  [[routes.responses]]
+  id = "rsp_notifications_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"likes":true,"comments":true,"follows":false,"email_digest":"weekly"}
+'''
+
+[[routes]]
+id = "rte_notifications_7"
+name = "Update preferences"
+folder = "fld_notifications_1"
+method = "PUT"
+path = "/preferences"
+
+  [[routes.responses]]
+  id = "rsp_notifications_7_1"
+  name = "Invalid digest"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"digest must be daily or weekly"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.email_digest"
+    op = "eq"
+    value = "hourly"
+
+  [[routes.responses]]
+  id = "rsp_notifications_7_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"updated":true}
+'''
+
+[[routes]]
+id = "rte_notifications_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_notifications_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"notifications"}
+'''

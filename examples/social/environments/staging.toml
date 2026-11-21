@@ -1,0 +1,10 @@
+name = "staging"
+
+[variables]
+base_url_profiles = "https://profiles.staging.example.test"
+base_url_posts = "https://posts.staging.example.test"
+base_url_comments = "https://comments.staging.example.test"
+base_url_feed = "https://feed.staging.example.test"
+base_url_notifications = "https://notifications.staging.example.test"
+base_url_media = "https://media.staging.example.test"
+api_key = "staging-demo-key"

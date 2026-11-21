@@ -1,0 +1,5 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: err
+---
+error: unknown example `ecomerce`; valid examples: ecommerce, banking, social, food-delivery, ride-hailing, saas-billing, healthcare, iot-fleet, streaming-media, travel-booking (did you mean `ecommerce`?)

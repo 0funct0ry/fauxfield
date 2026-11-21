@@ -709,7 +709,6 @@ mod tests {
             description: String::new(),
             source: source.into(),
             generator_fields: vec![],
-            generator_preview: vec![],
             used_by: (0..used)
                 .map(|i| (format!("r{i}"), "GET /p".into()))
                 .collect(),

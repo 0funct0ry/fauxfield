@@ -1,0 +1,295 @@
+schema = 1
+id = "srv_saas_billing_auth"
+name = "Auth"
+enabled = true
+host = "127.0.0.1"
+port = 4001
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "api_keys"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 8
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "label"
+kind = "fake"
+fake = "lorem.word"
+
+[[datasets.generator.fields]]
+name = "prefix"
+kind = "regex"
+pattern = "sk_[a-z0-9]{8}"
+
+[[datasets.generator.fields]]
+name = "active"
+kind = "bool"
+
+[[folders]]
+id = "fld_auth_1"
+name = "OAuth"
+
+[[folders]]
+id = "fld_auth_2"
+name = "Sessions"
+
+[[folders]]
+id = "fld_auth_3"
+name = "Keys"
+
+[[routes]]
+id = "rte_auth_1"
+name = "Token endpoint"
+folder = "fld_auth_1"
+method = "POST"
+path = "/oauth/token"
+
+  [[routes.responses]]
+  id = "rsp_auth_1_1"
+  name = "Missing grant_type"
+  status = 400
+  content_type = "application/json"
+  body = '''
+{"error":"invalid_request","error_description":"grant_type is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.grant_type"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_auth_1_2"
+  name = "Bad client secret"
+  status = 401
+  content_type = "application/json"
+  body = '''
+{"error":"invalid_client"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.client_secret"
+    op = "eq"
+    value = "wrong"
+
+  [[routes.responses]]
+  id = "rsp_auth_1_3"
+  name = "Refresh grant"
+  status = 200
+  content_type = "application/json"
+  body = '''
+{"access_token":"at_{{ uuid() }}","token_type":"Bearer","expires_in":3600}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.grant_type"
+    op = "eq"
+    value = "refresh_token"
+
+  [[routes.responses]]
+  id = "rsp_auth_1_4"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "60..200"
+  body = '''
+{"access_token":"at_{{ uuid() }}","refresh_token":"rt_{{ uuid() }}","token_type":"Bearer","expires_in":3600}
+'''
+
+[[routes]]
+id = "rte_auth_2"
+name = "Revoke token"
+folder = "fld_auth_1"
+method = "POST"
+path = "/oauth/revoke"
+
+  [[routes.responses]]
+  id = "rsp_auth_2_1"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"revoked":true}
+'''
+
+[[routes]]
+id = "rte_auth_3"
+name = "JWKS"
+folder = "fld_auth_1"
+method = "GET"
+path = "/oauth/jwks"
+
+  [[routes.responses]]
+  id = "rsp_auth_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"keys":[{"kty":"RSA","kid":"demo-key-1","use":"sig","alg":"RS256"}]}
+'''
+
+[[routes]]
+id = "rte_auth_4"
+name = "OIDC discovery"
+folder = "fld_auth_1"
+method = "GET"
+path = "/.well-known/openid-configuration"
+
+  [[routes.responses]]
+  id = "rsp_auth_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"issuer":"http://127.0.0.1:4001","token_endpoint":"http://127.0.0.1:4001/oauth/token","jwks_uri":"http://127.0.0.1:4001/oauth/jwks"}
+'''
+
+[[routes]]
+id = "rte_auth_5"
+name = "Current user"
+folder = "fld_auth_2"
+method = "GET"
+path = "/me"
+
+  [[routes.responses]]
+  id = "rsp_auth_5_1"
+  name = "Not authenticated"
+  status = 401
+  content_type = "application/json"
+  body = '''
+{"error":"unauthorized"}
+'''
+
+    [[routes.responses.rules]]
+    target = "header"
+    key = "authorization"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_auth_5_2"
+  name = "Token expired"
+  status = 401
+  content_type = "application/json"
+  body = '''
+{"error":"token_expired"}
+'''
+
+    [[routes.responses.rules]]
+    target = "header"
+    key = "authorization"
+    op = "eq"
+    value = "Bearer expired"
+
+  [[routes.responses]]
+  id = "rsp_auth_5_3"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"usr_{{ uuid() }}","name":"{{ fake(kind="name") }}","email":"{{ fake(kind="internet.email") }}","role":"member"}
+'''
+
+[[routes]]
+id = "rte_auth_6"
+name = "Admin user list"
+folder = "fld_auth_2"
+method = "GET"
+path = "/admin/users"
+
+  [[routes.responses]]
+  id = "rsp_auth_6_1"
+  name = "Not authenticated"
+  status = 401
+  content_type = "application/json"
+  body = '''
+{"error":"unauthorized"}
+'''
+
+    [[routes.responses.rules]]
+    target = "header"
+    key = "authorization"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_auth_6_2"
+  name = "Not an admin"
+  status = 403
+  content_type = "application/json"
+  body = '''
+{"error":"forbidden","message":"admin role required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "header"
+    key = "x-role"
+    op = "ne"
+    value = "admin"
+
+  [[routes.responses]]
+  id = "rsp_auth_6_3"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=4) %}{"id":{{ i + 1 }},"email":"{{ fake(kind="internet.email") }}","role":"member"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_auth_7"
+name = "API keys"
+folder = "fld_auth_3"
+kind = "crud"
+path = "/api-keys"
+dataset = "api_keys"
+
+[[routes]]
+id = "rte_auth_8"
+name = "Logout"
+folder = "fld_auth_2"
+method = "POST"
+path = "/logout"
+
+  [[routes.responses]]
+  id = "rsp_auth_8_1"
+  name = "Created"
+  status = 204
+  content_type = "application/json"
+  default = true
+  body = '''
+
+'''
+
+[[routes]]
+id = "rte_auth_9"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_auth_9_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"auth"}
+'''

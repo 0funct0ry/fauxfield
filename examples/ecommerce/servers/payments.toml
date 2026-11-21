@@ -1,0 +1,181 @@
+schema = 1
+id = "srv_ecommerce_payments"
+name = "Payments"
+enabled = true
+host = "127.0.0.1"
+port = 4004
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[folders]]
+id = "fld_payments_1"
+name = "Charges"
+
+[[folders]]
+id = "fld_payments_2"
+name = "Refunds"
+
+[[routes]]
+id = "rte_payments_1"
+name = "Create charge"
+folder = "fld_payments_1"
+method = "POST"
+path = "/charges"
+
+  [[routes.responses]]
+  id = "rsp_payments_1_1"
+  name = "Card declined"
+  status = 402
+  content_type = "application/json"
+  body = '''
+{"error":{"code":"card_declined","message":"Your card was declined."}}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.card"
+    op = "eq"
+    value = "4000000000000002"
+
+  [[routes.responses]]
+  id = "rsp_payments_1_2"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  delay_ms = "150..400"
+  body = '''
+{"id":"ch_{{ uuid() }}","status":"succeeded","amount":{{ request.json.amount | default(value=0) }},"currency":"usd"}
+'''
+
+    [[routes.responses.callbacks]]
+    id = "cb_payments_1_1"
+    name = "Notify orders"
+    method = "POST"
+    url = "{{ vars.base_url_orders }}/webhooks/payments"
+    delay_ms = 500
+    retries = 2
+    body = '''
+{"event":"payment.succeeded","amount":{{ request.json.amount | default(value=0) }}}
+'''
+
+      [routes.responses.callbacks.headers]
+      content-type = "application/json"
+
+[[routes]]
+id = "rte_payments_2"
+name = "Get charge"
+folder = "fld_payments_1"
+method = "GET"
+path = "/charges/:id"
+
+  [[routes.responses]]
+  id = "rsp_payments_2_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"succeeded","amount":4999}
+'''
+
+[[routes]]
+id = "rte_payments_3"
+name = "List charges"
+folder = "fld_payments_1"
+method = "GET"
+path = "/charges"
+
+  [[routes.responses]]
+  id = "rsp_payments_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=4) %}{"id":"ch_{{ uuid() }}","amount":{{ random_int(min=500, max=9999) }},"status":"succeeded"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_payments_4"
+name = "Create refund"
+folder = "fld_payments_2"
+method = "POST"
+path = "/refunds"
+
+  [[routes.responses]]
+  id = "rsp_payments_4_1"
+  name = "Charge not found"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"charge is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.charge"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_payments_4_2"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"re_{{ uuid() }}","charge":"{{ request.json.charge | default(value='') }}","status":"succeeded"}
+'''
+
+[[routes]]
+id = "rte_payments_5"
+name = "Get refund"
+folder = "fld_payments_2"
+method = "GET"
+path = "/refunds/:id"
+
+  [[routes.responses]]
+  id = "rsp_payments_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"succeeded"}
+'''
+
+[[routes]]
+id = "rte_payments_6"
+name = "Payment methods"
+folder = "fld_payments_1"
+method = "GET"
+path = "/methods"
+
+  [[routes.responses]]
+  id = "rsp_payments_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["card","bank_transfer","wallet"]
+'''
+
+[[routes]]
+id = "rte_payments_7"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_payments_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"payments"}
+'''

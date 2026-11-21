@@ -1,0 +1,222 @@
+schema = 1
+id = "srv_ride_hailing_pricing"
+name = "Pricing"
+enabled = true
+host = "127.0.0.1"
+port = 4004
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[variables]
+surge = "1.4"
+currency = "USD"
+
+[[folders]]
+id = "fld_pricing_1"
+name = "Estimates"
+
+[[folders]]
+id = "fld_pricing_2"
+name = "Surge"
+
+[[folders]]
+id = "fld_pricing_3"
+name = "Promos"
+
+[[routes]]
+id = "rte_pricing_1"
+name = "Fare estimate"
+folder = "fld_pricing_1"
+method = "POST"
+path = "/estimate"
+
+  [[routes.responses]]
+  id = "rsp_pricing_1_1"
+  name = "Pickup missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"pickup is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.pickup"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_pricing_1_2"
+  name = "Out of service area"
+  status = 400
+  content_type = "application/json"
+  body = '''
+{"error":"pickup is outside the service area"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.pickup"
+    op = "eq"
+    value = "OUTSIDE"
+
+  [[routes.responses]]
+  id = "rsp_pricing_1_3"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "60..180"
+  body = '''
+{"currency":"{{ vars.currency }}","surge":{{ vars.surge }},"base":4.00,"distance_km":{{ random_int(min=2, max=25) }},"estimate":{{ random_int(min=8, max=60) }}.00}
+'''
+
+[[routes]]
+id = "rte_pricing_2"
+name = "Current surge"
+folder = "fld_pricing_2"
+method = "GET"
+path = "/surge"
+
+  [[routes.responses]]
+  id = "rsp_pricing_2_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"multiplier":{{ vars.surge }},"reason":"high demand","updated":"{{ now() }}"}
+'''
+
+[[routes]]
+id = "rte_pricing_3"
+name = "Surge by zone"
+folder = "fld_pricing_2"
+method = "GET"
+path = "/surge/zones"
+
+  [[routes.responses]]
+  id = "rsp_pricing_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"zone":"Downtown","multiplier":{{ vars.surge }}},{"zone":"Airport","multiplier":1.8},{"zone":"Suburbs","multiplier":1.0}]
+'''
+
+[[routes]]
+id = "rte_pricing_4"
+name = "Zone surge"
+folder = "fld_pricing_2"
+method = "GET"
+path = "/surge/zones/:zone"
+
+  [[routes.responses]]
+  id = "rsp_pricing_4_1"
+  name = "Unknown zone"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"zone not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "zone"
+    op = "eq"
+    value = "nowhere"
+
+  [[routes.responses]]
+  id = "rsp_pricing_4_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"zone":"{{ request.params.zone }}","multiplier":{{ vars.surge }}}
+'''
+
+[[routes]]
+id = "rte_pricing_5"
+name = "Rate card"
+folder = "fld_pricing_1"
+method = "GET"
+path = "/rates"
+
+  [[routes.responses]]
+  id = "rsp_pricing_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"economy":{"per_km":1.2,"per_min":0.3},"comfort":{"per_km":1.8,"per_min":0.45},"xl":{"per_km":2.4,"per_min":0.6}}
+'''
+
+[[routes]]
+id = "rte_pricing_6"
+name = "Promo code"
+folder = "fld_pricing_3"
+method = "GET"
+path = "/promos/:code"
+
+  [[routes.responses]]
+  id = "rsp_pricing_6_1"
+  name = "Expired promo"
+  status = 410
+  content_type = "application/json"
+  body = '''
+{"error":"promo expired"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "code"
+    op = "eq"
+    value = "OLDPROMO"
+
+  [[routes.responses]]
+  id = "rsp_pricing_6_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"code":"{{ request.params.code }}","discount_percent":20}
+'''
+
+[[routes]]
+id = "rte_pricing_7"
+name = "Active promos"
+folder = "fld_pricing_3"
+method = "GET"
+path = "/promos"
+
+  [[routes.responses]]
+  id = "rsp_pricing_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"code":"WELCOME20","discount_percent":20},{"code":"RIDE5","discount_percent":5}]
+'''
+
+[[routes]]
+id = "rte_pricing_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_pricing_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"pricing"}
+'''

@@ -137,6 +137,60 @@ fn init_json_is_stable() {
 }
 
 #[test]
+fn init_example_and_list_examples_are_stable() {
+    let (code, out, _) = run(&["init", "--list-examples", "--json"]);
+    assert_eq!(code, 0);
+    snap_json(
+        Some("list_examples_json"),
+        &serde_json::from_str(&out).unwrap(),
+    );
+    let (code, out, _) = run(&["init", "--list-examples"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("ecommerce") && out.contains("travel-booking"));
+
+    let dir = tempfile::tempdir().unwrap();
+    let ws = dir.path().join("shop");
+    let p = ws.to_str().unwrap();
+    let (code, out, _) = run(&["init", p, "--example", "ecommerce", "--json"]);
+    assert_eq!(code, 0);
+    let mut v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    v["path"] = "<path>".into();
+    v["next_steps"] = "<next_steps>".into();
+    snap_json(Some("init_example_json"), &v);
+    assert_eq!(run(&["validate", "-w", p]).0, 0);
+    // A second run hits conflicting files: exit 1, nothing changed.
+    assert_eq!(run(&["init", p, "--example", "ecommerce"]).0, 1);
+    // --force-example keeps every existing file and succeeds.
+    let (code, out, _) = run(&[
+        "init",
+        p,
+        "--example",
+        "ecommerce",
+        "--force-example",
+        "--json",
+    ]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert!(v["created"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn init_unknown_example_exits_2_with_hint() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().to_str().unwrap();
+    let (code, _, err) = run(&["init", p, "--example", "ecomerce"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("did you mean `ecommerce`"), "{err}");
+    insta::assert_snapshot!("init_unknown_example", err);
+    let (code, out, err) = run(&["init", p, "--example", "ecomerce", "--json"]);
+    assert_eq!(code, 2);
+    assert!(
+        format!("{out}{err}").contains("valid examples"),
+        "{out}{err}"
+    );
+}
+
+#[test]
 fn validate_json_is_stable_and_exit_code_3_on_errors() {
     let dir = workspace();
     let p = dir.path().to_str().unwrap();

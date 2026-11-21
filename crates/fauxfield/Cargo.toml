@@ -42,6 +42,7 @@ base64 = "0.22"
 assert_cmd = "2"
 tempfile.workspace = true
 tokio = { workspace = true, features = ["process"] }
+toml.workspace = true
 insta = { version = "1", features = ["json"] }
 
 # Linux packages (M19), built by .github/workflows/release-extra.yml.

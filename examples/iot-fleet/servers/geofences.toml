@@ -1,0 +1,231 @@
+schema = 1
+id = "srv_iot_fleet_geofences"
+name = "Geofences"
+enabled = true
+host = "127.0.0.1"
+port = 4005
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "geofences"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 8
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "one_of"
+values = ["Depot", "Harbor", "Airport", "City Centre", "Warehouse Yard", "Service Bay"]
+
+[[datasets.generator.fields]]
+name = "radius_m"
+kind = "int"
+min = 100
+max = 5000
+
+[[datasets.generator.fields]]
+name = "lat"
+kind = "float"
+min = 47
+max = 55
+
+[[datasets.generator.fields]]
+name = "lon"
+kind = "float"
+min = 2
+max = 14
+
+[[datasets.generator.fields]]
+name = "active"
+kind = "bool"
+
+[[folders]]
+id = "fld_geofences_1"
+name = "Fences"
+
+[[folders]]
+id = "fld_geofences_2"
+name = "Events"
+
+[[routes]]
+id = "rte_geofences_1"
+name = "Geofences"
+folder = "fld_geofences_1"
+kind = "crud"
+path = "/geofences"
+dataset = "geofences"
+
+[[routes]]
+id = "rte_geofences_2"
+name = "Point in fence"
+folder = "fld_geofences_1"
+method = "POST"
+path = "/geofences/check"
+
+  [[routes.responses]]
+  id = "rsp_geofences_2_1"
+  name = "Coordinates missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"lat and lon are required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.lat"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_geofences_2_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "20..80"
+  body = '''
+{"lat":{{ request.json.lat | default(value=0) }},"lon":{{ request.json.lon | default(value=0) }},"inside":true,"fence":"Depot"}
+'''
+
+[[routes]]
+id = "rte_geofences_3"
+name = "Devices inside"
+folder = "fld_geofences_1"
+method = "GET"
+path = "/geofences/:id/devices"
+
+  [[routes.responses]]
+  id = "rsp_geofences_3_1"
+  name = "Unknown fence"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"geofence not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "999"
+
+  [[routes.responses]]
+  id = "rsp_geofences_3_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"device":{{ random_int(min=1, max=30) }},"since":"{{ fake(kind="date.past") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_geofences_4"
+name = "Activate fence"
+folder = "fld_geofences_1"
+method = "POST"
+path = "/geofences/:id/activate"
+
+  [[routes.responses]]
+  id = "rsp_geofences_4_1"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","active":true}
+'''
+
+[[routes]]
+id = "rte_geofences_5"
+name = "Deactivate fence"
+folder = "fld_geofences_1"
+method = "POST"
+path = "/geofences/:id/deactivate"
+
+  [[routes.responses]]
+  id = "rsp_geofences_5_1"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","active":false}
+'''
+
+[[routes]]
+id = "rte_geofences_6"
+name = "Fence events"
+folder = "fld_geofences_2"
+method = "GET"
+path = "/events"
+
+  [[routes.responses]]
+  id = "rsp_geofences_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=5) %}{"id":"ev_{{ uuid() }}","type":"enter","device":{{ random_int(min=1, max=30) }},"at":"{{ fake(kind="date.past") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_geofences_7"
+name = "Fence event"
+folder = "fld_geofences_2"
+method = "GET"
+path = "/events/:id"
+
+  [[routes.responses]]
+  id = "rsp_geofences_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","type":"exit","device":{{ random_int(min=1, max=30) }}}
+'''
+
+[[routes]]
+id = "rte_geofences_8"
+name = "Zone types"
+folder = "fld_geofences_1"
+method = "GET"
+path = "/zones/types"
+
+  [[routes.responses]]
+  id = "rsp_geofences_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["circle","polygon"]
+'''
+
+[[routes]]
+id = "rte_geofences_9"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_geofences_9_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"geofences"}
+'''

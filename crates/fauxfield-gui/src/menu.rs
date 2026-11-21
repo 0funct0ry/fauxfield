@@ -258,6 +258,9 @@ pub const NOT_IN_MENU: &[(&str, &str)] = &[
     ("confirm_dialog", "button of dialogs"),
     ("cancel_dialog", "button of dialogs"),
     ("toast_action", "button of a toast"),
+    ("new_from_example", "Command Palette only (M19.1)"),
+    ("add_example_to_workspace", "Command Palette only (M19.1)"),
+    ("list_examples", "Command Palette only (M19.1)"),
     ("open_folder_by_path", "prompt follow-up of Open Folder"),
     (
         "create_workspace_by_path",

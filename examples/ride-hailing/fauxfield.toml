@@ -1,0 +1,10 @@
+schema = 1
+name = "__WORKSPACE_NAME__"
+default_environment = "local"
+
+[variables]
+example = "ride-hailing"
+
+[defaults]
+host = "127.0.0.1"
+fake_seed = 42

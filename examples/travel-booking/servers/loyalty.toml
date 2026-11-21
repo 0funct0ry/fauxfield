@@ -1,0 +1,237 @@
+schema = 1
+id = "srv_travel_booking_loyalty"
+name = "Loyalty"
+enabled = true
+host = "127.0.0.1"
+port = 4006
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "members"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 20
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "fake"
+fake = "name"
+
+[[datasets.generator.fields]]
+name = "tier"
+kind = "one_of"
+values = ["bronze", "silver", "gold", "platinum"]
+
+[[datasets.generator.fields]]
+name = "points"
+kind = "int"
+min = 0
+max = 90000
+
+[[datasets.generator.fields]]
+name = "joined"
+kind = "date"
+
+[[datasets]]
+name = "rewards"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 6
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "one_of"
+values = ["Lounge Pass", "Free Night", "Seat Upgrade", "Car Day", "Extra Bag", "Priority Boarding"]
+
+[[datasets.generator.fields]]
+name = "cost"
+kind = "int"
+min = 2000
+max = 40000
+
+[[folders]]
+id = "fld_loyalty_1"
+name = "Members"
+
+[[folders]]
+id = "fld_loyalty_2"
+name = "Rewards"
+
+[[routes]]
+id = "rte_loyalty_1"
+name = "Members"
+folder = "fld_loyalty_1"
+kind = "crud"
+path = "/members"
+dataset = "members"
+
+[[routes]]
+id = "rte_loyalty_2"
+name = "Rewards"
+folder = "fld_loyalty_2"
+kind = "crud"
+path = "/rewards"
+dataset = "rewards"
+
+[[routes]]
+id = "rte_loyalty_3"
+name = "Balance"
+folder = "fld_loyalty_1"
+method = "GET"
+path = "/members/:id/balance"
+
+  [[routes.responses]]
+  id = "rsp_loyalty_3_1"
+  name = "Member not found"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"member not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "999"
+
+  [[routes.responses]]
+  id = "rsp_loyalty_3_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"member":"{{ request.params.id }}","points":{{ random_int(min=0, max=90000) }},"tier":"silver"}
+'''
+
+[[routes]]
+id = "rte_loyalty_4"
+name = "Earn points"
+folder = "fld_loyalty_1"
+method = "POST"
+path = "/members/:id/earn"
+
+  [[routes.responses]]
+  id = "rsp_loyalty_4_1"
+  name = "Points invalid"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"points must be positive"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.points"
+    op = "lte"
+    value = "0"
+
+  [[routes.responses]]
+  id = "rsp_loyalty_4_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"member":"{{ request.params.id }}","earned":{{ request.json.points | default(value=0) }}}
+'''
+
+[[routes]]
+id = "rte_loyalty_5"
+name = "Redeem reward"
+folder = "fld_loyalty_2"
+method = "POST"
+path = "/members/:id/redeem"
+
+  [[routes.responses]]
+  id = "rsp_loyalty_5_1"
+  name = "Not enough points"
+  status = 402
+  content_type = "application/json"
+  body = '''
+{"error":"not enough points"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.reward_id"
+    op = "eq"
+    value = "6"
+
+  [[routes.responses]]
+  id = "rsp_loyalty_5_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "60..200"
+  body = '''
+{"member":"{{ request.params.id }}","reward":{{ request.json.reward_id | default(value=1) }},"voucher":"{{ uuid() }}"}
+'''
+
+[[routes]]
+id = "rte_loyalty_6"
+name = "History"
+folder = "fld_loyalty_1"
+method = "GET"
+path = "/members/:id/history"
+
+  [[routes.responses]]
+  id = "rsp_loyalty_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=4) %}{"at":"{{ fake(kind="date.past") }}","delta":{{ random_int(min=100, max=2500) }},"note":"{{ fake(kind="lorem.word") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_loyalty_7"
+name = "Tiers"
+folder = "fld_loyalty_1"
+method = "GET"
+path = "/tiers"
+
+  [[routes.responses]]
+  id = "rsp_loyalty_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"tier":"bronze","from":0},{"tier":"silver","from":10000},{"tier":"gold","from":30000},{"tier":"platinum","from":60000}]
+'''
+
+[[routes]]
+id = "rte_loyalty_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_loyalty_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"loyalty"}
+'''

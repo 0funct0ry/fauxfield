@@ -1,0 +1,238 @@
+schema = 1
+id = "srv_streaming_media_playlists"
+name = "Playlists"
+enabled = true
+host = "127.0.0.1"
+port = 4003
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "playlists"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 12
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "one_of"
+values = ["Weekend Mix", "Focus", "Late Night", "Road Trip", "Family Movie Night", "Workout"]
+
+[[datasets.generator.fields]]
+name = "owner"
+kind = "fake"
+fake = "internet.username"
+
+[[datasets.generator.fields]]
+name = "items"
+kind = "int"
+min = 0
+max = 50
+
+[[datasets.generator.fields]]
+name = "public"
+kind = "bool"
+
+[[folders]]
+id = "fld_playlists_1"
+name = "Playlists"
+
+[[folders]]
+id = "fld_playlists_2"
+name = "Items"
+
+[[routes]]
+id = "rte_playlists_1"
+name = "Playlists"
+folder = "fld_playlists_1"
+kind = "crud"
+path = "/playlists"
+dataset = "playlists"
+
+[[routes]]
+id = "rte_playlists_2"
+name = "Playlist items"
+folder = "fld_playlists_2"
+method = "GET"
+path = "/playlists/:id/items"
+
+  [[routes.responses]]
+  id = "rsp_playlists_2_1"
+  name = "Unknown playlist"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"playlist not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "999"
+
+  [[routes.responses]]
+  id = "rsp_playlists_2_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=4) %}{"position":{{ i + 1 }},"title_id":{{ random_int(min=1, max=40) }}}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_playlists_3"
+name = "Add item"
+folder = "fld_playlists_2"
+method = "POST"
+path = "/playlists/:id/items"
+
+  [[routes.responses]]
+  id = "rsp_playlists_3_1"
+  name = "Title missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"title_id is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.title_id"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_playlists_3_2"
+  name = "Playlist full"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"playlist is full"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "1"
+
+  [[routes.responses]]
+  id = "rsp_playlists_3_3"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"playlist":"{{ request.params.id }}","title_id":{{ request.json.title_id | default(value=0) }},"position":{{ random_int(min=1, max=20) }}}
+'''
+
+[[routes]]
+id = "rte_playlists_4"
+name = "Remove item"
+folder = "fld_playlists_2"
+method = "DELETE"
+path = "/playlists/:id/items/:title_id"
+
+  [[routes.responses]]
+  id = "rsp_playlists_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"removed":"{{ request.params.title_id }}"}
+'''
+
+[[routes]]
+id = "rte_playlists_5"
+name = "Share playlist"
+folder = "fld_playlists_1"
+method = "POST"
+path = "/playlists/:id/share"
+
+  [[routes.responses]]
+  id = "rsp_playlists_5_1"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"url":"http://127.0.0.1:4003/shared/{{ uuid() }}","expires_in":86400}
+'''
+
+[[routes]]
+id = "rte_playlists_6"
+name = "Shared playlist"
+folder = "fld_playlists_1"
+method = "GET"
+path = "/shared/:token"
+
+  [[routes.responses]]
+  id = "rsp_playlists_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"token":"{{ request.params.token }}","name":"{{ fake(kind="lorem.word") }} mix","items":{{ random_int(min=3, max=30) }}}
+'''
+
+[[routes]]
+id = "rte_playlists_7"
+name = "Shuffle"
+folder = "fld_playlists_1"
+method = "POST"
+path = "/playlists/:id/shuffle"
+
+  [[routes.responses]]
+  id = "rsp_playlists_7_1"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"playlist":"{{ request.params.id }}","order":[3,1,4,2]}
+'''
+
+[[routes]]
+id = "rte_playlists_8"
+name = "Featured playlists"
+folder = "fld_playlists_1"
+method = "GET"
+path = "/featured"
+
+  [[routes.responses]]
+  id = "rsp_playlists_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"id":{{ i + 1 }},"name":"{{ fake(kind="lorem.word") }} picks"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_playlists_9"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_playlists_9_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"playlists"}
+'''

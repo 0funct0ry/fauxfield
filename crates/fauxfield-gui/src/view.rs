@@ -259,8 +259,6 @@ pub struct Dataset {
     pub source: String,
     /// Generator seed summary lines `name: kind` (M10.02), empty when the seed is not a generator.
     pub generator_fields: Vec<String>,
-    /// First sample rows of the generator as JSON lines, or the generation error.
-    pub generator_preview: Vec<String>,
     /// crud Routes serving this Dataset: `(route id, "GET /users" label)` (M10.01).
     pub used_by: Vec<(String, String)>,
 }
@@ -383,42 +381,6 @@ fn seed_rows(root: &std::path::Path, d: &fauxfield_model::Dataset) -> usize {
         .ok()
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
         .map_or(0, |v| v.as_array().map_or(1, Vec::len))
-}
-
-/// First rows of a generator seed (empty for other seed sources). `ref` fields read the
-/// preview rows of the Datasets they point at, generated in load order.
-fn generator_preview(
-    root: &std::path::Path,
-    s: &fauxfield_model::Server,
-    d: &fauxfield_model::Dataset,
-) -> Vec<String> {
-    use fauxfield_engine::generate::{Refs, generate};
-    if d.generator.is_none() {
-        return vec![];
-    }
-    let seed = Some(s.fake_seed.unwrap_or(0));
-    let mut refs = Refs::new();
-    let Ok(order) = fauxfield_model::generator::load_order(&s.datasets) else {
-        return vec!["error: generator `ref` cycle".into()];
-    };
-    for i in order {
-        let x = &s.datasets[i];
-        let Some(xg) = &x.generator else { continue };
-        match generate(&x.name, xg, seed, Some(xg.rows.min(20)), &refs, root) {
-            Ok(v) => {
-                if x.name == d.name {
-                    return v
-                        .as_array()
-                        .map(|a| a.iter().take(3).map(|r| r.to_string()).collect())
-                        .unwrap_or_default();
-                }
-                refs.insert(x.name.clone(), v.as_array().cloned().unwrap_or_default());
-            }
-            Err(e) if x.name == d.name => return vec![format!("error: {e}")],
-            Err(_) => {}
-        }
-    }
-    vec![]
 }
 
 fn response_view(x: &fauxfield_model::Response) -> Response {
@@ -594,7 +556,6 @@ impl Workspace {
                                 .map(|f| format!("{}: {}", f.name, f.spec.kind))
                                 .collect()
                         }),
-                        generator_preview: generator_preview(&snap.root, s, d),
                         used_by: dataset_consumers(s, &d.name),
                     });
                 }

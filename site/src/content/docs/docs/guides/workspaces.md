@@ -115,3 +115,7 @@ fauxfield env list
 fauxfield var set base_url https://x.dev --scope environment --env staging
 fauxfield var get base_url --server users-api
 ```
+
+## Start from an example
+
+`fauxfield init <path> --example <name>` creates one of ten embedded multi-Server Workspaces instead of the one-Server layout (`--list-examples` shows them). Existing files are never changed: a folder that already holds any of the example's files is refused, and `--force-example` writes the rest and skips those. See [Example Workspaces](/docs/guides/examples/).

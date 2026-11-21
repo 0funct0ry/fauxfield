@@ -1,0 +1,276 @@
+schema = 1
+id = "srv_ecommerce_catalog"
+name = "Catalog"
+enabled = true
+host = "127.0.0.1"
+port = 4001
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[variables]
+currency = "USD"
+
+[[datasets]]
+name = "products"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 40
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "one_of"
+values = ["Trail Backpack", "Steel Bottle", "Desk Lamp", "Canvas Tote", "Wool Beanie", "Camp Stove", "Yoga Mat", "Rain Jacket"]
+
+[[datasets.generator.fields]]
+name = "sku"
+kind = "regex"
+pattern = "SKU-[0-9]{5}"
+
+[[datasets.generator.fields]]
+name = "price"
+kind = "float"
+min = 5
+max = 500
+
+[[datasets.generator.fields]]
+name = "category"
+kind = "one_of"
+values = ["outdoor", "home", "apparel", "fitness"]
+
+[[datasets.generator.fields]]
+name = "stock"
+kind = "int"
+min = 0
+max = 200
+
+[[datasets.generator.fields]]
+name = "active"
+kind = "bool"
+
+[[datasets]]
+name = "categories"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 6
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "one_of"
+values = ["Outdoor", "Home", "Apparel", "Fitness", "Kitchen", "Office"]
+
+[[datasets.generator.fields]]
+name = "slug"
+kind = "regex"
+pattern = "[a-z]{6}"
+
+[[folders]]
+id = "fld_catalog_1"
+name = "Products"
+
+[[folders]]
+id = "fld_catalog_2"
+name = "Categories"
+
+[[folders]]
+id = "fld_catalog_3"
+name = "Inventory"
+
+[[routes]]
+id = "rte_catalog_1"
+name = "Products"
+folder = "fld_catalog_1"
+kind = "crud"
+path = "/products"
+dataset = "products"
+
+[[routes]]
+id = "rte_catalog_2"
+name = "Search products"
+folder = "fld_catalog_1"
+method = "GET"
+path = "/search"
+
+  [[routes.responses]]
+  id = "rsp_catalog_2_1"
+  name = "Missing query"
+  status = 400
+  content_type = "application/json"
+  body = '''
+{"error":"query parameter q is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "query"
+    key = "q"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_catalog_2_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "40..120"
+  body = '''
+[{% for i in range(end=5) %}{"id":{{ i + 1 }},"name":"{{ fake(kind="lorem.word") }} {{ fake(kind="lorem.word") }}","price":{{ random_int(min=5, max=500) }}.99}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_catalog_3"
+name = "Brands"
+folder = "fld_catalog_1"
+method = "GET"
+path = "/brands"
+
+  [[routes.responses]]
+  id = "rsp_catalog_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["Northwind Gear","Contoso Home","Fabrikam Outdoors","Tailspin Wear"]
+'''
+
+[[routes]]
+id = "rte_catalog_4"
+name = "Categories"
+folder = "fld_catalog_2"
+method = "GET"
+path = "/categories"
+
+  [[routes.responses]]
+  id = "rsp_catalog_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"id":1,"name":"Outdoor"},{"id":2,"name":"Home"},{"id":3,"name":"Apparel"},{"id":4,"name":"Fitness"}]
+'''
+
+[[routes]]
+id = "rte_catalog_5"
+name = "Get category"
+folder = "fld_catalog_2"
+method = "GET"
+path = "/categories/:id"
+
+  [[routes.responses]]
+  id = "rsp_catalog_5_1"
+  name = "Unknown category"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"category not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "999"
+
+  [[routes.responses]]
+  id = "rsp_catalog_5_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","name":"Category {{ request.params.id }}","product_count":{{ random_int(min=3, max=40) }}}
+'''
+
+[[routes]]
+id = "rte_catalog_6"
+name = "Stock level"
+folder = "fld_catalog_3"
+method = "GET"
+path = "/inventory/:sku"
+
+  [[routes.responses]]
+  id = "rsp_catalog_6_1"
+  name = "Out of stock"
+  status = 200
+  content_type = "application/json"
+  body = '''
+{"sku":"SKU-00000","available":0,"warehouse":"WH-1"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "sku"
+    op = "eq"
+    value = "SKU-00000"
+
+  [[routes.responses]]
+  id = "rsp_catalog_6_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"sku":"{{ request.params.sku }}","available":{{ random_int(min=0, max=120) }},"warehouse":"WH-{{ random_int(min=1, max=4) }}"}
+'''
+
+[[routes]]
+id = "rte_catalog_7"
+name = "Adjust stock"
+folder = "fld_catalog_3"
+method = "POST"
+path = "/inventory/:sku/adjust"
+
+  [[routes.responses]]
+  id = "rsp_catalog_7_1"
+  name = "Invalid delta"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"delta is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.delta"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_catalog_7_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"sku":"{{ request.params.sku }}","delta":{{ request.json.delta | default(value=0) }},"ok":true}
+'''
+
+[[routes]]
+id = "rte_catalog_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_catalog_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"catalog"}
+'''

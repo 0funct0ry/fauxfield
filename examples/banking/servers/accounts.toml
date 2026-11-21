@@ -1,0 +1,282 @@
+schema = 1
+id = "srv_banking_accounts"
+name = "Accounts"
+enabled = true
+host = "127.0.0.1"
+port = 4001
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[variables]
+bank = "Fauxfield Demo Bank"
+
+[[datasets]]
+name = "accounts"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 20
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "holder"
+kind = "fake"
+fake = "name"
+
+[[datasets.generator.fields]]
+name = "iban"
+kind = "fake"
+fake = "finance.iban"
+
+[[datasets.generator.fields]]
+name = "type"
+kind = "one_of"
+values = ["checking", "savings", "business"]
+
+[[datasets.generator.fields]]
+name = "balance"
+kind = "float"
+min = 0
+max = 25000
+
+[[datasets.generator.fields]]
+name = "currency"
+kind = "one_of"
+values = ["USD", "EUR", "GBP"]
+
+[[datasets.generator.fields]]
+name = "status"
+kind = "one_of"
+values = ["active", "dormant", "closed"]
+
+[[datasets]]
+name = "holders"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 12
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "fake"
+fake = "name"
+
+[[datasets.generator.fields]]
+name = "email"
+kind = "fake"
+fake = "internet.email"
+
+[[datasets.generator.fields]]
+name = "phone"
+kind = "fake"
+fake = "phone"
+
+[[datasets.generator.fields]]
+name = "city"
+kind = "fake"
+fake = "address.city"
+
+[[folders]]
+id = "fld_accounts_1"
+name = "Accounts"
+
+[[folders]]
+id = "fld_accounts_2"
+name = "Holders"
+
+[[folders]]
+id = "fld_accounts_3"
+name = "Statements"
+
+[[routes]]
+id = "rte_accounts_1"
+name = "Accounts"
+folder = "fld_accounts_1"
+kind = "crud"
+path = "/accounts"
+dataset = "accounts"
+
+[[routes]]
+id = "rte_accounts_2"
+name = "Account holders"
+folder = "fld_accounts_2"
+kind = "crud"
+path = "/holders"
+dataset = "holders"
+
+[[routes]]
+id = "rte_accounts_3"
+name = "Balance"
+folder = "fld_accounts_1"
+method = "GET"
+path = "/accounts/:id/balance"
+
+  [[routes.responses]]
+  id = "rsp_accounts_3_1"
+  name = "Unknown account"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"account not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "0"
+
+  [[routes.responses]]
+  id = "rsp_accounts_3_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "20..80"
+  body = '''
+{"account_id":"{{ request.params.id }}","available":{{ random_int(min=100, max=20000) }}.25,"currency":"USD","as_of":"{{ now() }}"}
+'''
+
+[[routes]]
+id = "rte_accounts_4"
+name = "Account summary"
+folder = "fld_accounts_1"
+method = "GET"
+path = "/accounts/:id/summary"
+
+  [[routes.responses]]
+  id = "rsp_accounts_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"account_id":"{{ request.params.id }}","iban":"{{ fake(kind="finance.iban") }}","owner":"{{ fake(kind="name") }}","opened":"{{ fake(kind="date.past") }}"}
+'''
+
+[[routes]]
+id = "rte_accounts_5"
+name = "Statements"
+folder = "fld_accounts_3"
+method = "GET"
+path = "/accounts/:id/statements"
+
+  [[routes.responses]]
+  id = "rsp_accounts_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "60..150"
+  body = '''
+[{% for i in range(end=3) %}{"month":"2025-{{ i + 1 }}","opening":{{ random_int(min=500, max=9000) }}.00,"closing":{{ random_int(min=500, max=9000) }}.00}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_accounts_6"
+name = "Get statement"
+folder = "fld_accounts_3"
+method = "GET"
+path = "/statements/:id"
+
+  [[routes.responses]]
+  id = "rsp_accounts_6_1"
+  name = "Statement not found"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"statement not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "missing"
+
+  [[routes.responses]]
+  id = "rsp_accounts_6_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","pages":{{ random_int(min=1, max=6) }},"download":"http://127.0.0.1:4001/statements/{{ request.params.id }}/pdf"}
+'''
+
+[[routes]]
+id = "rte_accounts_7"
+name = "Close account"
+folder = "fld_accounts_1"
+method = "POST"
+path = "/accounts/:id/close"
+
+  [[routes.responses]]
+  id = "rsp_accounts_7_1"
+  name = "Balance not zero"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"balance must be zero to close"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.balance"
+    op = "gt"
+    value = "0"
+
+  [[routes.responses]]
+  id = "rsp_accounts_7_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"account_id":"{{ request.params.id }}","status":"closed"}
+'''
+
+[[routes]]
+id = "rte_accounts_8"
+name = "Holder accounts"
+folder = "fld_accounts_2"
+method = "GET"
+path = "/holders/:id/accounts"
+
+  [[routes.responses]]
+  id = "rsp_accounts_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=2) %}{"id":{{ i + 1 }},"iban":"{{ fake(kind="finance.iban") }}","type":"checking"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_accounts_9"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_accounts_9_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"accounts"}
+'''

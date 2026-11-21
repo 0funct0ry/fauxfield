@@ -1,0 +1,206 @@
+schema = 1
+id = "srv_ecommerce_orders"
+name = "Orders"
+enabled = true
+host = "127.0.0.1"
+port = 4003
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "orders"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 25
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "customer"
+kind = "fake"
+fake = "name"
+
+[[datasets.generator.fields]]
+name = "status"
+kind = "one_of"
+values = ["pending", "paid", "shipped", "delivered", "cancelled"]
+
+[[datasets.generator.fields]]
+name = "total"
+kind = "float"
+min = 10
+max = 900
+
+[[datasets.generator.fields]]
+name = "placed_at"
+kind = "datetime"
+
+[[folders]]
+id = "fld_orders_1"
+name = "Orders"
+
+[[folders]]
+id = "fld_orders_2"
+name = "Webhooks"
+
+[[routes]]
+id = "rte_orders_1"
+name = "Orders"
+folder = "fld_orders_1"
+kind = "crud"
+path = "/orders"
+dataset = "orders"
+
+[[routes]]
+id = "rte_orders_2"
+name = "Cancel order"
+folder = "fld_orders_1"
+method = "POST"
+path = "/orders/:id/cancel"
+
+  [[routes.responses]]
+  id = "rsp_orders_2_1"
+  name = "Already shipped"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"order already shipped"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "lte"
+    value = "10"
+
+  [[routes.responses]]
+  id = "rsp_orders_2_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"cancelled"}
+'''
+
+[[routes]]
+id = "rte_orders_3"
+name = "Transition status"
+folder = "fld_orders_1"
+method = "POST"
+path = "/orders/:id/status"
+
+  [[routes.responses]]
+  id = "rsp_orders_3_1"
+  name = "Missing status"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"status is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.status"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_orders_3_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"{{ request.json.status | default(value='') }}"}
+'''
+
+[[routes]]
+id = "rte_orders_4"
+name = "Invoice"
+folder = "fld_orders_1"
+method = "GET"
+path = "/orders/:id/invoice"
+
+  [[routes.responses]]
+  id = "rsp_orders_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"invoice":"INV-{{ request.params.id }}","lines":[{"sku":"SKU-10001","qty":2,"amount":39.98}],"total":39.98,"currency":"USD"}
+'''
+
+[[routes]]
+id = "rte_orders_5"
+name = "Timeline"
+folder = "fld_orders_1"
+method = "GET"
+path = "/orders/:id/timeline"
+
+  [[routes.responses]]
+  id = "rsp_orders_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"status":"pending","at":"2025-01-05T10:00:00Z"},{"status":"paid","at":"2025-01-05T10:02:00Z"}]
+'''
+
+[[routes]]
+id = "rte_orders_6"
+name = "Payment webhook receiver"
+folder = "fld_orders_2"
+method = "POST"
+path = "/webhooks/payments"
+
+  [[routes.responses]]
+  id = "rsp_orders_6_1"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"received":true,"event":"{{ request.json.event | default(value='unknown') }}"}
+'''
+
+[[routes]]
+id = "rte_orders_7"
+name = "Order stats"
+folder = "fld_orders_1"
+method = "GET"
+path = "/orders/stats"
+
+  [[routes.responses]]
+  id = "rsp_orders_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"pending":4,"paid":9,"shipped":7,"delivered":5}
+'''
+
+[[routes]]
+id = "rte_orders_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_orders_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"orders"}
+'''

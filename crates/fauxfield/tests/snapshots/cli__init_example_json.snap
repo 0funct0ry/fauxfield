@@ -1,0 +1,58 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "agents": [],
+  "created": [
+    "docs/README.md",
+    "environments/local.toml",
+    "environments/staging.toml",
+    "fauxfield.toml",
+    "servers/cart.toml",
+    "servers/catalog.toml",
+    "servers/orders.toml",
+    "servers/payments.toml",
+    "servers/shipping.toml",
+    "servers/users.toml",
+    ".gitignore"
+  ],
+  "example": "ecommerce",
+  "next_steps": "<next_steps>",
+  "ok": true,
+  "path": "<path>",
+  "schema": "fauxfield.init/v1",
+  "servers": [
+    {
+      "port": 4002,
+      "routes": 7,
+      "slug": "cart"
+    },
+    {
+      "port": 4001,
+      "routes": 8,
+      "slug": "catalog"
+    },
+    {
+      "port": 4003,
+      "routes": 8,
+      "slug": "orders"
+    },
+    {
+      "port": 4004,
+      "routes": 7,
+      "slug": "payments"
+    },
+    {
+      "port": 4005,
+      "routes": 7,
+      "slug": "shipping"
+    },
+    {
+      "port": 4006,
+      "routes": 7,
+      "slug": "users"
+    }
+  ],
+  "skipped": []
+}

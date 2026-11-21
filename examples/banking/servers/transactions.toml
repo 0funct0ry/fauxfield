@@ -1,0 +1,247 @@
+schema = 1
+id = "srv_banking_transactions"
+name = "Transactions"
+enabled = true
+host = "127.0.0.1"
+port = 4002
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "transactions"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 60
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "account_id"
+kind = "int"
+min = 1
+max = 20
+
+[[datasets.generator.fields]]
+name = "amount"
+kind = "float"
+min = 1
+max = 2000
+
+[[datasets.generator.fields]]
+name = "direction"
+kind = "one_of"
+values = ["debit", "credit"]
+
+[[datasets.generator.fields]]
+name = "merchant"
+kind = "fake"
+fake = "company.name"
+
+[[datasets.generator.fields]]
+name = "booked_at"
+kind = "datetime"
+
+[[datasets.generator.fields]]
+name = "category"
+kind = "one_of"
+values = ["groceries", "rent", "salary", "travel", "utilities"]
+
+[[folders]]
+id = "fld_transactions_1"
+name = "Transactions"
+
+[[folders]]
+id = "fld_transactions_2"
+name = "Reports"
+
+[[routes]]
+id = "rte_transactions_1"
+name = "Transactions"
+folder = "fld_transactions_1"
+kind = "crud"
+path = "/transactions"
+dataset = "transactions"
+
+[[routes]]
+id = "rte_transactions_2"
+name = "Account transactions (paginated)"
+folder = "fld_transactions_1"
+method = "GET"
+path = "/accounts/:id/transactions"
+
+  [[routes.responses]]
+  id = "rsp_transactions_2_1"
+  name = "Page out of range"
+  status = 400
+  content_type = "application/json"
+  body = '''
+{"error":"page out of range"}
+'''
+
+    [[routes.responses.rules]]
+    target = "query"
+    key = "page"
+    op = "gt"
+    value = "19"
+
+  [[routes.responses]]
+  id = "rsp_transactions_2_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "30..90"
+  body = '''
+{"page":{{ request.query.page | default(value=1) }},"page_size":3,"total":57,"items":[{"id":"{{ uuid() }}","amount":{{ random_int(min=1, max=900) }}.40,"merchant":"{{ fake(kind="company.name") }}","booked_at":"{{ fake(kind="date.past") }}"},{"id":"{{ uuid() }}","amount":{{ random_int(min=1, max=900) }}.15,"merchant":"{{ fake(kind="company.name") }}","booked_at":"{{ fake(kind="date.past") }}"},{"id":"{{ uuid() }}","amount":{{ random_int(min=1, max=900) }}.80,"merchant":"{{ fake(kind="company.name") }}","booked_at":"{{ fake(kind="date.past") }}"}]}
+'''
+
+[[routes]]
+id = "rte_transactions_3"
+name = "Filter by date"
+folder = "fld_transactions_2"
+method = "GET"
+path = "/transactions/search"
+
+  [[routes.responses]]
+  id = "rsp_transactions_3_1"
+  name = "Invalid range"
+  status = 400
+  content_type = "application/json"
+  body = '''
+{"error":"query parameter from is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "query"
+    key = "from"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_transactions_3_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"id":"{{ uuid() }}","booked_at":"{{ request.query.from | default(value='2025-01-01') }}","amount":{{ random_int(min=1, max=500) }}.00}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_transactions_4"
+name = "Monthly summary"
+folder = "fld_transactions_2"
+method = "GET"
+path = "/transactions/summary"
+
+  [[routes.responses]]
+  id = "rsp_transactions_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"credits":{{ random_int(min=2000, max=9000) }}.00,"debits":{{ random_int(min=1000, max=8000) }}.00,"count":{{ random_int(min=20, max=120) }}}
+'''
+
+[[routes]]
+id = "rte_transactions_5"
+name = "Receipt"
+folder = "fld_transactions_1"
+method = "GET"
+path = "/transactions/:id/receipt"
+
+  [[routes.responses]]
+  id = "rsp_transactions_5_1"
+  name = "No receipt"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"receipt not available"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "none"
+
+  [[routes.responses]]
+  id = "rsp_transactions_5_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","merchant":"{{ fake(kind="company.name") }}","issued":"{{ fake(kind="date.past") }}"}
+'''
+
+[[routes]]
+id = "rte_transactions_6"
+name = "Dispute transaction"
+folder = "fld_transactions_1"
+method = "POST"
+path = "/transactions/:id/dispute"
+
+  [[routes.responses]]
+  id = "rsp_transactions_6_1"
+  name = "Reason missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"reason is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.reason"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_transactions_6_2"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"dispute_id":"dsp_{{ uuid() }}","transaction":"{{ request.params.id }}","status":"open"}
+'''
+
+[[routes]]
+id = "rte_transactions_7"
+name = "Spending categories"
+folder = "fld_transactions_2"
+method = "GET"
+path = "/categories"
+
+  [[routes.responses]]
+  id = "rsp_transactions_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["groceries","rent","salary","travel","utilities"]
+'''
+
+[[routes]]
+id = "rte_transactions_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_transactions_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"transactions"}
+'''

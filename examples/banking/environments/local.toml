@@ -1,0 +1,10 @@
+name = "local"
+
+[variables]
+base_url_accounts = "http://127.0.0.1:4001"
+base_url_transactions = "http://127.0.0.1:4002"
+base_url_transfers = "http://127.0.0.1:4003"
+base_url_cards = "http://127.0.0.1:4004"
+base_url_kyc = "http://127.0.0.1:4005"
+base_url_fx = "http://127.0.0.1:4006"
+api_key = "local-demo-key"

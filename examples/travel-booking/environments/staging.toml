@@ -1,0 +1,10 @@
+name = "staging"
+
+[variables]
+base_url_flights = "https://flights.staging.example.test"
+base_url_hotels = "https://hotels.staging.example.test"
+base_url_cars = "https://cars.staging.example.test"
+base_url_bookings = "https://bookings.staging.example.test"
+base_url_payments = "https://payments.staging.example.test"
+base_url_loyalty = "https://loyalty.staging.example.test"
+api_key = "staging-demo-key"

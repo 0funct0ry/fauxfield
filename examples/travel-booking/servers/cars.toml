@@ -1,0 +1,236 @@
+schema = 1
+id = "srv_travel_booking_cars"
+name = "Cars"
+enabled = true
+host = "127.0.0.1"
+port = 4003
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "cars"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 18
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "model"
+kind = "one_of"
+values = ["Compact", "Estate", "SUV", "Convertible", "Electric", "Minivan"]
+
+[[datasets.generator.fields]]
+name = "plate"
+kind = "regex"
+pattern = "[A-Z]{2}-[0-9]{4}"
+
+[[datasets.generator.fields]]
+name = "daily_rate"
+kind = "float"
+min = 25
+max = 180
+
+[[datasets.generator.fields]]
+name = "available"
+kind = "bool"
+
+[[folders]]
+id = "fld_cars_1"
+name = "Fleet"
+
+[[folders]]
+id = "fld_cars_2"
+name = "Rentals"
+
+[[routes]]
+id = "rte_cars_1"
+name = "Cars"
+folder = "fld_cars_1"
+kind = "crud"
+path = "/cars"
+dataset = "cars"
+
+[[routes]]
+id = "rte_cars_2"
+name = "Search cars"
+folder = "fld_cars_1"
+method = "GET"
+path = "/cars/search"
+
+  [[routes.responses]]
+  id = "rsp_cars_2_1"
+  name = "Pickup missing"
+  status = 400
+  content_type = "application/json"
+  body = '''
+{"error":"query parameter pickup is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "query"
+    key = "pickup"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_cars_2_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "80..250"
+  body = '''
+[{% for i in range(end=4) %}{"id":{{ i + 1 }},"model":"Compact","daily_rate":{{ random_int(min=25, max=180) }}.00,"pickup":"{{ request.query.pickup | default(value='BER') }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_cars_3"
+name = "Extras"
+folder = "fld_cars_1"
+method = "GET"
+path = "/cars/:id/extras"
+
+  [[routes.responses]]
+  id = "rsp_cars_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["child_seat","gps","extra_driver","full_insurance"]
+'''
+
+[[routes]]
+id = "rte_cars_4"
+name = "Create rental"
+folder = "fld_cars_2"
+method = "POST"
+path = "/rentals"
+
+  [[routes.responses]]
+  id = "rsp_cars_4_1"
+  name = "Car missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"car_id is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.car_id"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_cars_4_2"
+  name = "Car unavailable"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"car is not available"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.car_id"
+    op = "eq"
+    value = "3"
+
+  [[routes.responses]]
+  id = "rsp_cars_4_3"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"rn_{{ uuid() }}","car":{{ request.json.car_id | default(value=0) }},"status":"reserved"}
+'''
+
+[[routes]]
+id = "rte_cars_5"
+name = "Get rental"
+folder = "fld_cars_2"
+method = "GET"
+path = "/rentals/:id"
+
+  [[routes.responses]]
+  id = "rsp_cars_5_1"
+  name = "Rental not found"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"rental not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "missing"
+
+  [[routes.responses]]
+  id = "rsp_cars_5_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"reserved","driver":"{{ fake(kind="name") }}"}
+'''
+
+[[routes]]
+id = "rte_cars_6"
+name = "Cancel rental"
+folder = "fld_cars_2"
+method = "DELETE"
+path = "/rentals/:id"
+
+  [[routes.responses]]
+  id = "rsp_cars_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"cancelled"}
+'''
+
+[[routes]]
+id = "rte_cars_7"
+name = "Pickup locations"
+folder = "fld_cars_1"
+method = "GET"
+path = "/locations"
+
+  [[routes.responses]]
+  id = "rsp_cars_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"code":"BER","name":"Berlin Airport"},{"code":"LIS","name":"Lisbon Central"},{"code":"VIE","name":"Vienna Station"}]
+'''
+
+[[routes]]
+id = "rte_cars_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_cars_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"cars"}
+'''

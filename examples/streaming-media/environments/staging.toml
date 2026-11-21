@@ -1,0 +1,10 @@
+name = "staging"
+
+[variables]
+base_url_catalog = "https://catalog.staging.example.test"
+base_url_playback = "https://playback.staging.example.test"
+base_url_playlists = "https://playlists.staging.example.test"
+base_url_recommendations = "https://recommendations.staging.example.test"
+base_url_subscriptions = "https://subscriptions.staging.example.test"
+base_url_analytics = "https://analytics.staging.example.test"
+api_key = "staging-demo-key"

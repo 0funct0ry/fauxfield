@@ -1,0 +1,221 @@
+schema = 1
+id = "srv_saas_billing_usage"
+name = "Usage"
+enabled = true
+host = "127.0.0.1"
+port = 4005
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[variables]
+overage_rate = "0.002"
+
+[[datasets]]
+name = "meters"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 6
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "one_of"
+values = ["api_calls", "storage_gb", "seats", "emails", "builds", "bandwidth_gb"]
+
+[[datasets.generator.fields]]
+name = "unit"
+kind = "one_of"
+values = ["call", "gb", "seat", "email", "build", "gb"]
+
+[[datasets.generator.fields]]
+name = "included"
+kind = "int"
+min = 100
+max = 100000
+
+[[folders]]
+id = "fld_usage_1"
+name = "Events"
+
+[[folders]]
+id = "fld_usage_2"
+name = "Reports"
+
+[[routes]]
+id = "rte_usage_1"
+name = "Meters"
+folder = "fld_usage_2"
+kind = "crud"
+path = "/meters"
+dataset = "meters"
+
+[[routes]]
+id = "rte_usage_2"
+name = "Record usage"
+folder = "fld_usage_1"
+method = "POST"
+path = "/usage/events"
+
+  [[routes.responses]]
+  id = "rsp_usage_2_1"
+  name = "Quantity missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"quantity is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.quantity"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_usage_2_2"
+  name = "Quota exceeded"
+  status = 429
+  content_type = "application/json"
+  body = '''
+{"error":"rate_limited","retry_after":30}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.quantity"
+    op = "gt"
+    value = "100000"
+
+  [[routes.responses]]
+  id = "rsp_usage_2_3"
+  name = "Created"
+  status = 202
+  content_type = "application/json"
+  default = true
+  body = '''
+{"accepted":true,"event":"evt_{{ uuid() }}","quantity":{{ request.json.quantity | default(value=1) }}}
+'''
+
+[[routes]]
+id = "rte_usage_3"
+name = "Usage summary"
+folder = "fld_usage_2"
+method = "GET"
+path = "/usage/summary"
+
+  [[routes.responses]]
+  id = "rsp_usage_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "50..150"
+  body = '''
+{"period":"current","api_calls":{{ random_int(min=1000, max=90000) }},"storage_gb":{{ random_int(min=1, max=90) }},"overage_rate":{{ vars.overage_rate }}}
+'''
+
+[[routes]]
+id = "rte_usage_4"
+name = "Daily usage"
+folder = "fld_usage_2"
+method = "GET"
+path = "/usage/daily"
+
+  [[routes.responses]]
+  id = "rsp_usage_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=7) %}{"day":{{ i + 1 }},"api_calls":{{ random_int(min=100, max=9000) }}}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_usage_5"
+name = "Tenant usage"
+folder = "fld_usage_2"
+method = "GET"
+path = "/usage/tenants/:id"
+
+  [[routes.responses]]
+  id = "rsp_usage_5_1"
+  name = "Tenant unknown"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"tenant not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "999"
+
+  [[routes.responses]]
+  id = "rsp_usage_5_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"tenant_id":"{{ request.params.id }}","api_calls":{{ random_int(min=100, max=90000) }},"overage_cost":{{ random_int(min=0, max=40) }}.00}
+'''
+
+[[routes]]
+id = "rte_usage_6"
+name = "Meter limit"
+folder = "fld_usage_2"
+method = "GET"
+path = "/usage/limits/:meter"
+
+  [[routes.responses]]
+  id = "rsp_usage_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"meter":"{{ request.params.meter }}","included":100000,"hard_limit":false}
+'''
+
+[[routes]]
+id = "rte_usage_7"
+name = "Batch usage"
+folder = "fld_usage_1"
+method = "POST"
+path = "/usage/batch"
+
+  [[routes.responses]]
+  id = "rsp_usage_7_1"
+  name = "Created"
+  status = 202
+  content_type = "application/json"
+  default = true
+  body = '''
+{"accepted":{{ request.json.count | default(value=0) }}}
+'''
+
+[[routes]]
+id = "rte_usage_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_usage_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"usage"}
+'''

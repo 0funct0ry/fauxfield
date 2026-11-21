@@ -1,0 +1,10 @@
+name = "local"
+
+[variables]
+base_url_auth = "http://127.0.0.1:4001"
+base_url_tenants = "http://127.0.0.1:4002"
+base_url_subscriptions = "http://127.0.0.1:4003"
+base_url_invoices = "http://127.0.0.1:4004"
+base_url_usage = "http://127.0.0.1:4005"
+base_url_webhooks = "http://127.0.0.1:4006"
+api_key = "local-demo-key"

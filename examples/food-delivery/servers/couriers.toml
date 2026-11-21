@@ -1,0 +1,228 @@
+schema = 1
+id = "srv_food_delivery_couriers"
+name = "Couriers"
+enabled = true
+host = "127.0.0.1"
+port = 4004
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "couriers"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 15
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "fake"
+fake = "name"
+
+[[datasets.generator.fields]]
+name = "phone"
+kind = "fake"
+fake = "phone"
+
+[[datasets.generator.fields]]
+name = "vehicle"
+kind = "one_of"
+values = ["bike", "scooter", "car", "walker"]
+
+[[datasets.generator.fields]]
+name = "status"
+kind = "one_of"
+values = ["available", "busy", "offline"]
+
+[[datasets.generator.fields]]
+name = "rating"
+kind = "float"
+min = 3.5
+max = 5
+
+[[folders]]
+id = "fld_couriers_1"
+name = "Couriers"
+
+[[folders]]
+id = "fld_couriers_2"
+name = "Location"
+
+[[routes]]
+id = "rte_couriers_1"
+name = "Couriers"
+folder = "fld_couriers_1"
+kind = "crud"
+path = "/couriers"
+dataset = "couriers"
+
+[[routes]]
+id = "rte_couriers_2"
+name = "Courier location (poll me)"
+folder = "fld_couriers_2"
+method = "GET"
+path = "/couriers/:id/location"
+
+  [[routes.responses]]
+  id = "rsp_couriers_2_1"
+  name = "Courier offline"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"courier is offline"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "0"
+
+  [[routes.responses]]
+  id = "rsp_couriers_2_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "20..60"
+  body = '''
+{"courier_id":"{{ request.params.id }}","lat":40.{{ random_int(min=700000, max=799999) }},"lng":-73.{{ random_int(min=950000, max=999999) }},"heading":{{ random_int(min=0, max=359) }},"at":"{{ now() }}"}
+'''
+
+[[routes]]
+id = "rte_couriers_3"
+name = "Report location"
+folder = "fld_couriers_2"
+method = "POST"
+path = "/couriers/:id/location"
+
+  [[routes.responses]]
+  id = "rsp_couriers_3_1"
+  name = "Coordinates missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"lat and lng are required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.lat"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_couriers_3_2"
+  name = "Created"
+  status = 202
+  content_type = "application/json"
+  default = true
+  body = '''
+{"courier_id":"{{ request.params.id }}","accepted":true}
+'''
+
+[[routes]]
+id = "rte_couriers_4"
+name = "Accept delivery"
+folder = "fld_couriers_1"
+method = "POST"
+path = "/couriers/:id/accept"
+
+  [[routes.responses]]
+  id = "rsp_couriers_4_1"
+  name = "Courier busy"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"courier is already on a delivery"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "gte"
+    value = "90"
+
+  [[routes.responses]]
+  id = "rsp_couriers_4_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"courier_id":"{{ request.params.id }}","order":"{{ request.json.order | default(value='ord_demo') }}","status":"busy"}
+'''
+
+[[routes]]
+id = "rte_couriers_5"
+name = "Available couriers"
+folder = "fld_couriers_1"
+method = "GET"
+path = "/couriers/available"
+
+  [[routes.responses]]
+  id = "rsp_couriers_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"id":{{ i + 1 }},"name":"{{ fake(kind="name") }}","vehicle":"bike","distance_km":{{ random_int(min=1, max=5) }}.1}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_couriers_6"
+name = "Start or end shift"
+folder = "fld_couriers_1"
+method = "POST"
+path = "/couriers/:id/shift"
+
+  [[routes.responses]]
+  id = "rsp_couriers_6_1"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"courier_id":"{{ request.params.id }}","on_shift":true}
+'''
+
+[[routes]]
+id = "rte_couriers_7"
+name = "Earnings"
+folder = "fld_couriers_1"
+method = "GET"
+path = "/couriers/:id/earnings"
+
+  [[routes.responses]]
+  id = "rsp_couriers_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"courier_id":"{{ request.params.id }}","today":{{ random_int(min=20, max=180) }}.00,"deliveries":{{ random_int(min=2, max=16) }}}
+'''
+
+[[routes]]
+id = "rte_couriers_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_couriers_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"couriers"}
+'''

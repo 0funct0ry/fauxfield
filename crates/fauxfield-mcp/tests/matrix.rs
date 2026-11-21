@@ -53,6 +53,12 @@ fn script() -> Vec<(&'static str, Value)> {
         ),
         ("delete_server", json!({ "server": "matrix" })),
         ("update_workspace", json!({ "name": "matrix" })),
+        ("list_examples", json!({})),
+        // A relative path is refused as a tool error, so the matrix writes nothing.
+        (
+            "init_workspace",
+            json!({ "path": "relative", "example": "ecommerce" }),
+        ),
         (
             "upsert_route",
             json!({ "server": "example-api", "method": "GET", "path": "/m", "responses": [{ "status": 200, "body": "m" }], "operations": { "create": [{ "status": 409 }] } }),

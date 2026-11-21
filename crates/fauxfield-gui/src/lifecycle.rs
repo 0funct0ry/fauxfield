@@ -82,6 +82,8 @@ pub struct Lifecycle {
     pub data_confirm: Option<DataConfirm>,
     /// Folder (and its item count) awaiting a "create in a non-empty folder" confirmation.
     pub create_confirm: Option<(PathBuf, usize)>,
+    /// Example the next Create workspace uses (M19.1); `None` is the one-Server layout.
+    pub example: Option<String>,
     /// Inline message shown in the open prompt instead of a toast.
     pub prompt_error: Option<String>,
     /// File the next Undo/Redo applies to when it is not a server file (workspace rename).

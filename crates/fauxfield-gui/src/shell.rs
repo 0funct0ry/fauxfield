@@ -60,6 +60,8 @@ pub enum PickerKind {
     Environment,
     /// Workspace network profile (status bar, SPEC §5.6).
     Network,
+    /// Example Workspace chooser (M19.1).
+    Example,
     /// A one-line text prompt (rename, new item, field edit).
     Prompt,
 }
@@ -632,6 +634,8 @@ pub struct Shell {
     pub(crate) preview_epoch: u64,
     pub(crate) preview: Option<(String, fauxfield_engine::Preview)>,
     pub(crate) preview_closed: bool,
+    /// How the Preview pane shows JSON output (runtime-only).
+    pub(crate) preview_view: crate::preview::PreviewView,
     /// Hash of everything the preview depends on, as of the last scheduled render.
     pub(crate) preview_key: u64,
     /// Saved sample request per Route (read from ui.json once).
@@ -963,6 +967,7 @@ impl Shell {
             preview_epoch: 0,
             preview: None,
             preview_closed: false,
+            preview_view: crate::preview::PreviewView::Pretty,
             preview_key: 0,
             body_diag: HashMap::new(),
             resp_sub: HashMap::new(),
@@ -1192,8 +1197,61 @@ impl Shell {
         path: &std::path::Path,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
-        fauxfield_store::init_workspace(path).map_err(|e| e.to_string())?;
+        match self.lc.example.take() {
+            Some(name) => fauxfield_store::examples::init_example(path, &name, false)
+                .map(|_| ())
+                .map_err(|e| e.to_string())?,
+            None => {
+                fauxfield_store::init_workspace(path).map_err(|e| e.to_string())?;
+            }
+        }
         self.open_workspace(path, cx)
+    }
+
+    /// An example was chosen in the Example picker: with a Workspace open it is added to it
+    /// (no folder prompt); otherwise the folder picker creates a new Workspace from it.
+    pub fn example_chosen(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if self.store.is_some() {
+            self.add_example(name, cx);
+        } else {
+            self.lc.example = Some(name.to_string());
+            self.pick_folder(true, window, cx);
+        }
+    }
+
+    /// "Workspace: Add Example to This Workspace…": write the example's files into the open
+    /// Workspace. Existing files are kept; the watcher loads the new Servers.
+    pub fn add_example(&mut self, name: &str, cx: &mut Context<Self>) {
+        use fauxfield_store::examples as ex;
+        if !ex::EXAMPLES.iter().any(|m| m.name == name) {
+            let names: Vec<&str> = ex::EXAMPLES.iter().map(|m| m.name).collect();
+            return self.notify(
+                format!("Unknown example `{name}`. Valid: {}.", names.join(", ")),
+                cx,
+            );
+        }
+        let root = self.ws.root.clone();
+        match ex::init_example(&root, name, true) {
+            Ok(r) => self.notify(
+                format!(
+                    "Added example `{name}`: {} files written, {} kept.",
+                    r.created.len(),
+                    r.skipped.len()
+                ),
+                cx,
+            ),
+            Err(e) => self.notify(e.to_string(), cx),
+        }
+    }
+
+    /// "Workspace: List Examples": one status-bar notice with every example.
+    pub fn list_examples_notice(&mut self, cx: &mut Context<Self>) {
+        let line = fauxfield_store::examples::list_examples()
+            .iter()
+            .map(|e| format!("{} ({} servers)", e.name, e.servers))
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.notify(format!("Examples: {line}"), cx);
     }
 
     // ---- persistence -------------------------------------------------------------------
@@ -2058,6 +2116,22 @@ impl Shell {
                     })
                     .collect()
             }
+            PickerKind::Example => {
+                let all = fauxfield_store::examples::list_examples();
+                let labels: Vec<String> = all.iter().map(|e| e.name.clone()).collect();
+                search::filter_labels(query, &labels)
+                    .into_iter()
+                    .map(|i| {
+                        let e = &all[i];
+                        simple_hit(
+                            Kind::Example,
+                            &e.name,
+                            &format!("{} · {} servers", e.title, e.servers),
+                            Target::Example(e.name.clone()),
+                        )
+                    })
+                    .collect()
+            }
             PickerKind::Environment => {
                 let names: Vec<String> = self
                     .ws
@@ -2374,6 +2448,10 @@ impl Shell {
             Target::SwitchEnvironment(name) => {
                 self.close_picker(true, window, cx);
                 self.set_environment(name, cx);
+            }
+            Target::Example(name) => {
+                self.close_picker(true, window, cx);
+                self.example_chosen(name, window, cx);
             }
             Target::NetworkProfile(slug) => {
                 self.close_picker(true, window, cx);
@@ -3920,6 +3998,9 @@ impl Render for Shell {
             Redo => |this, _w, cx| this.undo_redo(false, cx),
             OpenFolder => |this, w, cx| this.pick_folder(false, w, cx),
             CreateWorkspace => |this, w, cx| this.pick_folder(true, w, cx),
+            NewFromExample => |this, w, cx| this.open_picker(PickerKind::Example, w, cx),
+            AddExampleToWorkspace => |this, w, cx| this.open_picker(PickerKind::Example, w, cx),
+            ListExamples => |this, _w, cx| this.list_examples_notice(cx),
             OpenFolderByPath => |this, w, cx| this.begin_prompt(PromptAction::OpenFolder, "", w, cx),
             CreateWorkspaceByPath => |this, w, cx| this.begin_prompt(PromptAction::CreateWorkspace, "", w, cx),
             ClearRecent => |this, _w, cx| this.clear_recent(cx),

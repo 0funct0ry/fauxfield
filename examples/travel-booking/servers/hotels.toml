@@ -1,0 +1,274 @@
+schema = 1
+id = "srv_travel_booking_hotels"
+name = "Hotels"
+enabled = true
+host = "127.0.0.1"
+port = 4002
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "hotels"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 20
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "one_of"
+values = ["Harbor Inn", "Maple Court", "Grand Linden", "Seaside Rest", "Old Town Lodge", "Skyline Suites"]
+
+[[datasets.generator.fields]]
+name = "city"
+kind = "fake"
+fake = "address.city"
+
+[[datasets.generator.fields]]
+name = "stars"
+kind = "int"
+min = 2
+max = 5
+
+[[datasets.generator.fields]]
+name = "price_night"
+kind = "float"
+min = 60
+max = 420
+
+[[folders]]
+id = "fld_hotels_1"
+name = "Properties"
+
+[[folders]]
+id = "fld_hotels_2"
+name = "Availability"
+
+[[folders]]
+id = "fld_hotels_3"
+name = "Reviews"
+
+[[routes]]
+id = "rte_hotels_1"
+name = "Hotels"
+folder = "fld_hotels_1"
+kind = "crud"
+path = "/hotels"
+dataset = "hotels"
+
+[[routes]]
+id = "rte_hotels_2"
+name = "Search hotels"
+folder = "fld_hotels_1"
+method = "GET"
+path = "/hotels/search"
+
+  [[routes.responses]]
+  id = "rsp_hotels_2_1"
+  name = "City missing"
+  status = 400
+  content_type = "application/json"
+  body = '''
+{"error":"query parameter city is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "query"
+    key = "city"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_hotels_2_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "100..350"
+  body = '''
+[{% for i in range(end=4) %}{"id":{{ i + 1 }},"name":"{{ fake(kind="company.name") }} Hotel","city":"{{ request.query.city | default(value='Lisbon') }}","price_night":{{ random_int(min=60, max=420) }}.00}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_hotels_3"
+name = "Rooms"
+folder = "fld_hotels_1"
+method = "GET"
+path = "/hotels/:id/rooms"
+
+  [[routes.responses]]
+  id = "rsp_hotels_3_1"
+  name = "Hotel not found"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"hotel not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "999"
+
+  [[routes.responses]]
+  id = "rsp_hotels_3_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"type":"double","price":120.0},{"type":"suite","price":260.0}]
+'''
+
+[[routes]]
+id = "rte_hotels_4"
+name = "Availability"
+folder = "fld_hotels_2"
+method = "GET"
+path = "/hotels/:id/availability"
+
+  [[routes.responses]]
+  id = "rsp_hotels_4_1"
+  name = "Sold out"
+  status = 200
+  content_type = "application/json"
+  body = '''
+{"hotel":13,"available":false,"rooms_left":0}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "13"
+
+  [[routes.responses]]
+  id = "rsp_hotels_4_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"hotel":"{{ request.params.id }}","available":true,"rooms_left":{{ random_int(min=0, max=9) }}}
+'''
+
+[[routes]]
+id = "rte_hotels_5"
+name = "Quote stay"
+folder = "fld_hotels_2"
+method = "POST"
+path = "/hotels/:id/quote"
+
+  [[routes.responses]]
+  id = "rsp_hotels_5_1"
+  name = "Too many nights"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"stays are limited to 30 nights"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.nights"
+    op = "gt"
+    value = "30"
+
+  [[routes.responses]]
+  id = "rsp_hotels_5_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"hotel":"{{ request.params.id }}","nights":{{ request.json.nights | default(value=1) }},"total":{{ random_int(min=100, max=2000) }}.00}
+'''
+
+[[routes]]
+id = "rte_hotels_6"
+name = "Reviews"
+folder = "fld_hotels_3"
+method = "GET"
+path = "/hotels/:id/reviews"
+
+  [[routes.responses]]
+  id = "rsp_hotels_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"author":"{{ fake(kind="internet.username") }}","stars":{{ random_int(min=3, max=5) }},"text":"{{ fake(kind="lorem.sentence") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_hotels_7"
+name = "Add review"
+folder = "fld_hotels_3"
+method = "POST"
+path = "/hotels/:id/reviews"
+
+  [[routes.responses]]
+  id = "rsp_hotels_7_1"
+  name = "Stars missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"stars is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.stars"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_hotels_7_2"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"rv_{{ uuid() }}","stars":{{ request.json.stars | default(value=0) }}}
+'''
+
+[[routes]]
+id = "rte_hotels_8"
+name = "Destinations"
+folder = "fld_hotels_1"
+method = "GET"
+path = "/destinations"
+
+  [[routes.responses]]
+  id = "rsp_hotels_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["Lisbon","Prague","Vienna","Athens"]
+'''
+
+[[routes]]
+id = "rte_hotels_9"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_hotels_9_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"hotels"}
+'''

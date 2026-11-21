@@ -1,0 +1,241 @@
+schema = 1
+id = "srv_ecommerce_users"
+name = "Users"
+enabled = true
+host = "127.0.0.1"
+port = 4006
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "users"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 30
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "fake"
+fake = "name"
+
+[[datasets.generator.fields]]
+name = "email"
+kind = "fake"
+fake = "internet.email"
+
+[[datasets.generator.fields]]
+name = "phone"
+kind = "fake"
+fake = "phone"
+
+[[datasets.generator.fields]]
+name = "joined"
+kind = "datetime"
+
+[[datasets]]
+name = "addresses"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 40
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "user_id"
+kind = "int"
+min = 1
+max = 30
+
+[[datasets.generator.fields]]
+name = "street"
+kind = "fake"
+fake = "address.street"
+
+[[datasets.generator.fields]]
+name = "city"
+kind = "fake"
+fake = "address.city"
+
+[[datasets.generator.fields]]
+name = "postcode"
+kind = "fake"
+fake = "address.postcode"
+
+[[folders]]
+id = "fld_users_1"
+name = "Accounts"
+
+[[folders]]
+id = "fld_users_2"
+name = "Addresses"
+
+[[routes]]
+id = "rte_users_1"
+name = "Register"
+folder = "fld_users_1"
+method = "POST"
+path = "/register"
+
+  [[routes.responses]]
+  id = "rsp_users_1_1"
+  name = "Email missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"email is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.email"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_users_1_2"
+  name = "Email taken"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"email already registered"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.email"
+    op = "eq"
+    value = "taken@example.test"
+
+  [[routes.responses]]
+  id = "rsp_users_1_3"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":{{ random_int(min=100, max=999) }},"email":"{{ request.json.email | default(value='') }}"}
+'''
+
+[[routes]]
+id = "rte_users_2"
+name = "Login"
+folder = "fld_users_1"
+method = "POST"
+path = "/login"
+
+  [[routes.responses]]
+  id = "rsp_users_2_1"
+  name = "Bad credentials"
+  status = 401
+  content_type = "application/json"
+  body = '''
+{"error":"invalid credentials"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.password"
+    op = "ne"
+    value = "demo"
+
+  [[routes.responses]]
+  id = "rsp_users_2_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"token":"tok_{{ uuid() }}","expires_in":3600}
+'''
+
+[[routes]]
+id = "rte_users_3"
+name = "Profile"
+folder = "fld_users_1"
+method = "GET"
+path = "/profile"
+
+  [[routes.responses]]
+  id = "rsp_users_3_1"
+  name = "Unauthorized"
+  status = 401
+  content_type = "application/json"
+  body = '''
+{"error":"missing token"}
+'''
+
+    [[routes.responses.rules]]
+    target = "header"
+    key = "authorization"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_users_3_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":1,"name":"{{ fake(kind="name") }}","email":"{{ fake(kind="internet.email") }}"}
+'''
+
+[[routes]]
+id = "rte_users_4"
+name = "Users"
+folder = "fld_users_1"
+kind = "crud"
+path = "/users"
+dataset = "users"
+
+[[routes]]
+id = "rte_users_5"
+name = "Addresses"
+folder = "fld_users_2"
+kind = "crud"
+path = "/addresses"
+dataset = "addresses"
+
+[[routes]]
+id = "rte_users_6"
+name = "User addresses"
+folder = "fld_users_2"
+method = "GET"
+path = "/users/:id/addresses"
+
+  [[routes.responses]]
+  id = "rsp_users_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=2) %}{"street":"{{ fake(kind="address.street") }}","city":"{{ fake(kind="address.city") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_users_7"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_users_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"users"}
+'''

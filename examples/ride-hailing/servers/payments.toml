@@ -1,0 +1,235 @@
+schema = 1
+id = "srv_ride_hailing_payments"
+name = "Payments"
+enabled = true
+host = "127.0.0.1"
+port = 4005
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "methods"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 8
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "brand"
+kind = "one_of"
+values = ["visa", "mastercard", "wallet", "bank"]
+
+[[datasets.generator.fields]]
+name = "last4"
+kind = "regex"
+pattern = "[0-9]{4}"
+
+[[datasets.generator.fields]]
+name = "default"
+kind = "bool"
+
+[[folders]]
+id = "fld_payments_1"
+name = "Charges"
+
+[[folders]]
+id = "fld_payments_2"
+name = "Methods"
+
+[[folders]]
+id = "fld_payments_3"
+name = "Payouts"
+
+[[routes]]
+id = "rte_payments_1"
+name = "Payment methods"
+folder = "fld_payments_2"
+kind = "crud"
+path = "/methods"
+dataset = "methods"
+
+[[routes]]
+id = "rte_payments_2"
+name = "Charge fare"
+folder = "fld_payments_1"
+method = "POST"
+path = "/charges"
+
+  [[routes.responses]]
+  id = "rsp_payments_2_1"
+  name = "Card declined"
+  status = 402
+  content_type = "application/json"
+  body = '''
+{"error":"card_declined"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.card"
+    op = "eq"
+    value = "4000000000000002"
+
+  [[routes.responses]]
+  id = "rsp_payments_2_2"
+  name = "Amount missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"amount is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.amount"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_payments_2_3"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  delay_ms = "150..400"
+  body = '''
+{"id":"chg_{{ uuid() }}","trip":"{{ request.json.trip | default(value='unknown') }}","status":"succeeded","amount":{{ request.json.amount | default(value=0) }}}
+'''
+
+[[routes]]
+id = "rte_payments_3"
+name = "Get charge"
+folder = "fld_payments_1"
+method = "GET"
+path = "/charges/:id"
+
+  [[routes.responses]]
+  id = "rsp_payments_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"succeeded","amount":{{ random_int(min=8, max=70) }}.00}
+'''
+
+[[routes]]
+id = "rte_payments_4"
+name = "Refund"
+folder = "fld_payments_1"
+method = "POST"
+path = "/charges/:id/refund"
+
+  [[routes.responses]]
+  id = "rsp_payments_4_1"
+  name = "Already refunded"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"charge already refunded"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "chg_refunded"
+
+  [[routes.responses]]
+  id = "rsp_payments_4_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"charge":"{{ request.params.id }}","status":"refunded"}
+'''
+
+[[routes]]
+id = "rte_payments_5"
+name = "Tip driver"
+folder = "fld_payments_1"
+method = "POST"
+path = "/tips"
+
+  [[routes.responses]]
+  id = "rsp_payments_5_1"
+  name = "Tip too large"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"tip must be at most 100"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.amount"
+    op = "gt"
+    value = "100"
+
+  [[routes.responses]]
+  id = "rsp_payments_5_2"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"tip_{{ uuid() }}","amount":{{ request.json.amount | default(value=2) }}}
+'''
+
+[[routes]]
+id = "rte_payments_6"
+name = "Driver payouts"
+folder = "fld_payments_3"
+method = "GET"
+path = "/payouts"
+
+  [[routes.responses]]
+  id = "rsp_payments_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"id":"po_{{ uuid() }}","amount":{{ random_int(min=200, max=1200) }}.00,"paid_at":"{{ fake(kind="date.past") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_payments_7"
+name = "Payout detail"
+folder = "fld_payments_3"
+method = "GET"
+path = "/payouts/:id"
+
+  [[routes.responses]]
+  id = "rsp_payments_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"paid"}
+'''
+
+[[routes]]
+id = "rte_payments_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_payments_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"payments"}
+'''

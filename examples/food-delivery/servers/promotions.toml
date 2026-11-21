@@ -1,0 +1,236 @@
+schema = 1
+id = "srv_food_delivery_promotions"
+name = "Promotions"
+enabled = true
+host = "127.0.0.1"
+port = 4006
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[variables]
+min_order = "15"
+
+[[datasets]]
+name = "promotions"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 8
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "title"
+kind = "one_of"
+values = ["Free delivery", "Two for one", "Lunch deal", "Weekend treat", "First order", "Late night"]
+
+[[datasets.generator.fields]]
+name = "discount_percent"
+kind = "int"
+min = 5
+max = 40
+
+[[datasets.generator.fields]]
+name = "active"
+kind = "bool"
+
+[[folders]]
+id = "fld_promotions_1"
+name = "Promotions"
+
+[[folders]]
+id = "fld_promotions_2"
+name = "Codes"
+
+[[routes]]
+id = "rte_promotions_1"
+name = "Promotions"
+folder = "fld_promotions_1"
+kind = "crud"
+path = "/promotions"
+dataset = "promotions"
+
+[[routes]]
+id = "rte_promotions_2"
+name = "Redeem code"
+folder = "fld_promotions_2"
+method = "POST"
+path = "/codes/redeem"
+
+  [[routes.responses]]
+  id = "rsp_promotions_2_1"
+  name = "Expired code"
+  status = 410
+  content_type = "application/json"
+  body = '''
+{"error":"code expired"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.code"
+    op = "eq"
+    value = "OLD10"
+
+  [[routes.responses]]
+  id = "rsp_promotions_2_2"
+  name = "Unknown code"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"code not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.code"
+    op = "ne"
+    value = "WELCOME20"
+
+  [[routes.responses]]
+  id = "rsp_promotions_2_3"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "40..120"
+  body = '''
+{"code":"{{ request.json.code | default(value='') }}","discount_percent":20,"min_order":{{ vars.min_order }}}
+'''
+
+[[routes]]
+id = "rte_promotions_3"
+name = "Code details"
+folder = "fld_promotions_2"
+method = "GET"
+path = "/codes/:code"
+
+  [[routes.responses]]
+  id = "rsp_promotions_3_1"
+  name = "No such code"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"code not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "code"
+    op = "eq"
+    value = "NOPE"
+
+  [[routes.responses]]
+  id = "rsp_promotions_3_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"code":"{{ request.params.code }}","percent":20,"valid_until":"{{ fake(kind="date.future") }}"}
+'''
+
+[[routes]]
+id = "rte_promotions_4"
+name = "Active promotions"
+folder = "fld_promotions_1"
+method = "GET"
+path = "/promotions/active"
+
+  [[routes.responses]]
+  id = "rsp_promotions_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"id":{{ i + 1 }},"title":"{{ fake(kind="lorem.word") }} special","discount_percent":{{ random_int(min=5, max=40) }}}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_promotions_5"
+name = "Promotions for restaurant"
+folder = "fld_promotions_1"
+method = "GET"
+path = "/promotions/for/:restaurant"
+
+  [[routes.responses]]
+  id = "rsp_promotions_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=2) %}{"restaurant":"{{ request.params.restaurant }}","title":"House special","discount_percent":10}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_promotions_6"
+name = "Validate order for code"
+folder = "fld_promotions_2"
+method = "POST"
+path = "/codes/validate"
+
+  [[routes.responses]]
+  id = "rsp_promotions_6_1"
+  name = "Below minimum"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"valid":false,"error":"order below minimum"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.total"
+    op = "lt"
+    value = "15"
+
+  [[routes.responses]]
+  id = "rsp_promotions_6_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"valid":true,"saves":{{ random_int(min=1, max=12) }}.00}
+'''
+
+[[routes]]
+id = "rte_promotions_7"
+name = "Loyalty points"
+folder = "fld_promotions_1"
+method = "GET"
+path = "/loyalty"
+
+  [[routes.responses]]
+  id = "rsp_promotions_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"points":{{ random_int(min=0, max=900) }},"tier":"silver"}
+'''
+
+[[routes]]
+id = "rte_promotions_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_promotions_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"promotions"}
+'''

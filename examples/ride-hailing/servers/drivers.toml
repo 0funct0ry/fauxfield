@@ -1,0 +1,248 @@
+schema = 1
+id = "srv_ride_hailing_drivers"
+name = "Drivers"
+enabled = true
+host = "127.0.0.1"
+port = 4002
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "drivers"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 25
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "fake"
+fake = "name"
+
+[[datasets.generator.fields]]
+name = "phone"
+kind = "fake"
+fake = "phone"
+
+[[datasets.generator.fields]]
+name = "status"
+kind = "one_of"
+values = ["online", "offline", "on_trip"]
+
+[[datasets.generator.fields]]
+name = "rating"
+kind = "float"
+min = 3.8
+max = 5
+
+[[datasets.generator.fields]]
+name = "vehicle"
+kind = "one_of"
+values = ["Sedan", "Hatchback", "SUV", "Van"]
+
+[[folders]]
+id = "fld_drivers_1"
+name = "Drivers"
+
+[[folders]]
+id = "fld_drivers_2"
+name = "Availability"
+
+[[folders]]
+id = "fld_drivers_3"
+name = "Vehicles"
+
+[[routes]]
+id = "rte_drivers_1"
+name = "Drivers"
+folder = "fld_drivers_1"
+kind = "crud"
+path = "/drivers"
+dataset = "drivers"
+
+[[routes]]
+id = "rte_drivers_2"
+name = "Driver profile"
+folder = "fld_drivers_1"
+method = "GET"
+path = "/drivers/:id/profile"
+
+  [[routes.responses]]
+  id = "rsp_drivers_2_1"
+  name = "Driver suspended"
+  status = 403
+  content_type = "application/json"
+  body = '''
+{"error":"driver account suspended"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "666"
+
+  [[routes.responses]]
+  id = "rsp_drivers_2_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","name":"{{ fake(kind="name") }}","vehicle":{"plate":"RH-{{ random_int(min=1000, max=9999) }}","model":"Sedan"}}
+'''
+
+[[routes]]
+id = "rte_drivers_3"
+name = "Nearby drivers"
+folder = "fld_drivers_2"
+method = "GET"
+path = "/drivers/nearby"
+
+  [[routes.responses]]
+  id = "rsp_drivers_3_1"
+  name = "Missing location"
+  status = 400
+  content_type = "application/json"
+  body = '''
+{"error":"lat and lng are required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "query"
+    key = "lat"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_drivers_3_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "40..160"
+  body = '''
+[{% for i in range(end=5) %}{"id":{{ i + 1 }},"distance_m":{{ random_int(min=100, max=2500) }},"eta_min":{{ random_int(min=1, max=9) }}}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_drivers_4"
+name = "Go online"
+folder = "fld_drivers_2"
+method = "POST"
+path = "/drivers/:id/online"
+
+  [[routes.responses]]
+  id = "rsp_drivers_4_1"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"online"}
+'''
+
+[[routes]]
+id = "rte_drivers_5"
+name = "Go offline"
+folder = "fld_drivers_2"
+method = "POST"
+path = "/drivers/:id/offline"
+
+  [[routes.responses]]
+  id = "rsp_drivers_5_1"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"offline"}
+'''
+
+[[routes]]
+id = "rte_drivers_6"
+name = "Report location"
+folder = "fld_drivers_2"
+method = "POST"
+path = "/drivers/:id/location"
+
+  [[routes.responses]]
+  id = "rsp_drivers_6_1"
+  name = "Bad coordinates"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"lat is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.lat"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_drivers_6_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","accepted":true,"at":"{{ now() }}"}
+'''
+
+[[routes]]
+id = "rte_drivers_7"
+name = "Vehicle types"
+folder = "fld_drivers_3"
+method = "GET"
+path = "/vehicles/types"
+
+  [[routes.responses]]
+  id = "rsp_drivers_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["economy","comfort","xl","electric"]
+'''
+
+[[routes]]
+id = "rte_drivers_8"
+name = "Earnings"
+folder = "fld_drivers_1"
+method = "GET"
+path = "/drivers/:id/earnings"
+
+  [[routes.responses]]
+  id = "rsp_drivers_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"driver_id":"{{ request.params.id }}","week_total":{{ random_int(min=300, max=1500) }}.00,"trips":{{ random_int(min=20, max=90) }}}
+'''
+
+[[routes]]
+id = "rte_drivers_9"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_drivers_9_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"drivers"}
+'''

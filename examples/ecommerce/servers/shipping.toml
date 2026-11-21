@@ -1,0 +1,185 @@
+schema = 1
+id = "srv_ecommerce_shipping"
+name = "Shipping"
+enabled = true
+host = "127.0.0.1"
+port = 4005
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "carriers"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 5
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "one_of"
+values = ["Swiftline", "Roadrunner Freight", "Harbor Post", "SkyParcel", "GreenMile"]
+
+[[datasets.generator.fields]]
+name = "days"
+kind = "int"
+min = 1
+max = 7
+
+[[folders]]
+id = "fld_shipping_1"
+name = "Rates"
+
+[[folders]]
+id = "fld_shipping_2"
+name = "Tracking"
+
+[[folders]]
+id = "fld_shipping_3"
+name = "Carriers"
+
+[[routes]]
+id = "rte_shipping_1"
+name = "Carriers"
+folder = "fld_shipping_3"
+kind = "crud"
+path = "/carriers"
+dataset = "carriers"
+
+[[routes]]
+id = "rte_shipping_2"
+name = "Quote rates"
+folder = "fld_shipping_1"
+method = "POST"
+path = "/rates"
+
+  [[routes.responses]]
+  id = "rsp_shipping_2_1"
+  name = "Missing postcode"
+  status = 400
+  content_type = "application/json"
+  body = '''
+{"error":"postcode is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.postcode"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_shipping_2_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "80..250"
+  body = '''
+[{"carrier":"Swiftline","days":2,"price":12.5},{"carrier":"Harbor Post","days":5,"price":6.9}]
+'''
+
+[[routes]]
+id = "rte_shipping_3"
+name = "Zones"
+folder = "fld_shipping_1"
+method = "GET"
+path = "/rates/zones"
+
+  [[routes.responses]]
+  id = "rsp_shipping_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["domestic","regional","international"]
+'''
+
+[[routes]]
+id = "rte_shipping_4"
+name = "Track parcel"
+folder = "fld_shipping_2"
+method = "GET"
+path = "/tracking/:code"
+
+  [[routes.responses]]
+  id = "rsp_shipping_4_1"
+  name = "Unknown parcel"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"parcel not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "code"
+    op = "eq"
+    value = "UNKNOWN"
+
+  [[routes.responses]]
+  id = "rsp_shipping_4_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"code":"{{ request.params.code }}","status":"in_transit","events":[{"at":"2025-01-06T08:00:00Z","note":"Departed hub"}]}
+'''
+
+[[routes]]
+id = "rte_shipping_5"
+name = "Parcel events"
+folder = "fld_shipping_2"
+method = "GET"
+path = "/tracking/:code/events"
+
+  [[routes.responses]]
+  id = "rsp_shipping_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"at":"{{ fake(kind="date.past") }}","note":"Scan {{ i + 1 }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_shipping_6"
+name = "Create label"
+folder = "fld_shipping_2"
+method = "POST"
+path = "/labels"
+
+  [[routes.responses]]
+  id = "rsp_shipping_6_1"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"label_id":"lbl_{{ uuid() }}","url":"http://127.0.0.1:4005/labels/pdf"}
+'''
+
+[[routes]]
+id = "rte_shipping_7"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_shipping_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"shipping"}
+'''

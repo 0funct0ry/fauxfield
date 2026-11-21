@@ -1,0 +1,10 @@
+name = "local"
+
+[variables]
+base_url_profiles = "http://127.0.0.1:4001"
+base_url_posts = "http://127.0.0.1:4002"
+base_url_comments = "http://127.0.0.1:4003"
+base_url_feed = "http://127.0.0.1:4004"
+base_url_notifications = "http://127.0.0.1:4005"
+base_url_media = "http://127.0.0.1:4006"
+api_key = "local-demo-key"

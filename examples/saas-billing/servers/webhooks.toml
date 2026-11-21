@@ -1,0 +1,215 @@
+schema = 1
+id = "srv_saas_billing_webhooks"
+name = "Webhooks"
+enabled = true
+host = "127.0.0.1"
+port = 4006
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "endpoints"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 10
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "url"
+kind = "template"
+expr = "https://hooks.example.test/{{ uuid() }}"
+
+[[datasets.generator.fields]]
+name = "events"
+kind = "one_of"
+values = ["invoice.paid", "subscription.created", "usage.alert"]
+
+[[datasets.generator.fields]]
+name = "enabled"
+kind = "bool"
+
+[[folders]]
+id = "fld_webhooks_1"
+name = "Endpoints"
+
+[[folders]]
+id = "fld_webhooks_2"
+name = "Deliveries"
+
+[[routes]]
+id = "rte_webhooks_1"
+name = "Webhook endpoints"
+folder = "fld_webhooks_1"
+kind = "crud"
+path = "/endpoints"
+dataset = "endpoints"
+
+[[routes]]
+id = "rte_webhooks_2"
+name = "Event intake"
+folder = "fld_webhooks_2"
+method = "POST"
+path = "/events"
+
+  [[routes.responses]]
+  id = "rsp_webhooks_2_1"
+  name = "Created"
+  status = 202
+  content_type = "application/json"
+  default = true
+  body = '''
+{"queued":true,"event":"{{ request.json.type | default(value='unknown') }}"}
+'''
+
+[[routes]]
+id = "rte_webhooks_3"
+name = "Send test delivery (with retries)"
+folder = "fld_webhooks_2"
+method = "POST"
+path = "/deliveries/test"
+
+  [[routes.responses]]
+  id = "rsp_webhooks_3_1"
+  name = "Endpoint disabled"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"endpoint disabled"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.endpoint"
+    op = "eq"
+    value = "disabled"
+
+  [[routes.responses]]
+  id = "rsp_webhooks_3_2"
+  name = "Created"
+  status = 202
+  content_type = "application/json"
+  default = true
+  body = '''
+{"delivery":"dlv_{{ uuid() }}","status":"queued"}
+'''
+
+    [[routes.responses.callbacks]]
+    id = "cb_webhooks_3_1"
+    name = "Deliver to tenants"
+    method = "POST"
+    url = "{{ vars.base_url_tenants }}/hooks/inbound"
+    delay_ms = 400
+    retries = 3
+    body = '''
+{"type":"test.delivery","id":"{{ uuid() }}"}
+'''
+
+      [routes.responses.callbacks.headers]
+      content-type = "application/json"
+
+[[routes]]
+id = "rte_webhooks_4"
+name = "Recent deliveries"
+folder = "fld_webhooks_2"
+method = "GET"
+path = "/deliveries"
+
+  [[routes.responses]]
+  id = "rsp_webhooks_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=5) %}{"id":"dlv_{{ uuid() }}","status":"delivered","attempts":{{ random_int(min=1, max=3) }}}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_webhooks_5"
+name = "Delivery detail"
+folder = "fld_webhooks_2"
+method = "GET"
+path = "/deliveries/:id"
+
+  [[routes.responses]]
+  id = "rsp_webhooks_5_1"
+  name = "Delivery missing"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"delivery not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "missing"
+
+  [[routes.responses]]
+  id = "rsp_webhooks_5_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"delivered","attempts":1,"last_status_code":200}
+'''
+
+[[routes]]
+id = "rte_webhooks_6"
+name = "Retry delivery"
+folder = "fld_webhooks_2"
+method = "POST"
+path = "/deliveries/:id/retry"
+
+  [[routes.responses]]
+  id = "rsp_webhooks_6_1"
+  name = "Created"
+  status = 202
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"retrying"}
+'''
+
+[[routes]]
+id = "rte_webhooks_7"
+name = "Event types"
+folder = "fld_webhooks_1"
+method = "GET"
+path = "/events/types"
+
+  [[routes.responses]]
+  id = "rsp_webhooks_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["subscription.created","subscription.cancelled","invoice.paid","invoice.failed","usage.alert"]
+'''
+
+[[routes]]
+id = "rte_webhooks_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_webhooks_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"webhooks"}
+'''

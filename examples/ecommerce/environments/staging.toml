@@ -1,0 +1,10 @@
+name = "staging"
+
+[variables]
+base_url_catalog = "https://catalog.staging.example.test"
+base_url_cart = "https://cart.staging.example.test"
+base_url_orders = "https://orders.staging.example.test"
+base_url_payments = "https://payments.staging.example.test"
+base_url_shipping = "https://shipping.staging.example.test"
+base_url_users = "https://users.staging.example.test"
+api_key = "staging-demo-key"

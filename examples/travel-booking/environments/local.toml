@@ -1,0 +1,10 @@
+name = "local"
+
+[variables]
+base_url_flights = "http://127.0.0.1:4001"
+base_url_hotels = "http://127.0.0.1:4002"
+base_url_cars = "http://127.0.0.1:4003"
+base_url_bookings = "http://127.0.0.1:4004"
+base_url_payments = "http://127.0.0.1:4005"
+base_url_loyalty = "http://127.0.0.1:4006"
+api_key = "local-demo-key"

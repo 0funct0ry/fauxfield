@@ -1,0 +1,80 @@
+---
+source: crates/fauxfield/tests/cli.rs
+expression: v
+---
+{
+  "examples": [
+    {
+      "description": "Catalog, cart, orders, payments with a webhook Callback, shipping and users.",
+      "name": "ecommerce",
+      "routes": 44,
+      "servers": 6,
+      "title": "E-commerce platform"
+    },
+    {
+      "description": "Accounts, paginated transactions, transfers, cards, KYC workflow and FX rates.",
+      "name": "banking",
+      "routes": 49,
+      "servers": 6,
+      "title": "Fintech and banking"
+    },
+    {
+      "description": "Profiles, posts with likes, comments, cursor feed, WebSocket notifications, media.",
+      "name": "social",
+      "routes": 50,
+      "servers": 6,
+      "title": "Social network"
+    },
+    {
+      "description": "Restaurants, menus, orders, couriers, WebSocket tracking and promotions.",
+      "name": "food-delivery",
+      "routes": 48,
+      "servers": 6,
+      "title": "Food delivery"
+    },
+    {
+      "description": "Riders, drivers, trip state machine, surge pricing, payments and ratings.",
+      "name": "ride-hailing",
+      "routes": 49,
+      "servers": 6,
+      "title": "Ride hailing"
+    },
+    {
+      "description": "OAuth2 token flow, tenants, subscriptions, invoices, metered usage, webhooks.",
+      "name": "saas-billing",
+      "routes": 49,
+      "servers": 6,
+      "title": "SaaS multi-tenant billing"
+    },
+    {
+      "description": "Patients, appointments, prescriptions, labs, insurance eligibility, providers.",
+      "name": "healthcare",
+      "routes": 48,
+      "servers": 6,
+      "title": "Healthcare records (synthetic)"
+    },
+    {
+      "description": "Devices, telemetry series, firmware updates, alerts, geofences, WebSocket stream.",
+      "name": "iot-fleet",
+      "routes": 53,
+      "servers": 6,
+      "title": "IoT and fleet"
+    },
+    {
+      "description": "Catalog, playback manifests, playlists, recommendations, subscriptions, analytics.",
+      "name": "streaming-media",
+      "routes": 54,
+      "servers": 6,
+      "title": "Video and music streaming"
+    },
+    {
+      "description": "Flights, hotels, cars, bookings (hold, confirm, cancel), payments and loyalty.",
+      "name": "travel-booking",
+      "routes": 51,
+      "servers": 6,
+      "title": "Travel booking"
+    }
+  ],
+  "ok": true,
+  "schema": "fauxfield.init/v1"
+}

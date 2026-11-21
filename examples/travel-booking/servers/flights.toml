@@ -1,0 +1,242 @@
+schema = 1
+id = "srv_travel_booking_flights"
+name = "Flights"
+enabled = true
+host = "127.0.0.1"
+port = 4001
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[variables]
+currency = "EUR"
+
+[[datasets]]
+name = "flights"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 30
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "number"
+kind = "regex"
+pattern = "FX[0-9]{3}"
+
+[[datasets.generator.fields]]
+name = "origin"
+kind = "one_of"
+values = ["BER", "LIS", "OSL", "VIE", "ATH", "DUB"]
+
+[[datasets.generator.fields]]
+name = "destination"
+kind = "one_of"
+values = ["AMS", "PRG", "CPH", "MAD", "ROM", "ZRH"]
+
+[[datasets.generator.fields]]
+name = "departs"
+kind = "datetime"
+
+[[datasets.generator.fields]]
+name = "seats"
+kind = "int"
+min = 0
+max = 180
+
+[[datasets.generator.fields]]
+name = "price"
+kind = "float"
+min = 49
+max = 620
+
+[[folders]]
+id = "fld_flights_1"
+name = "Search"
+
+[[folders]]
+id = "fld_flights_2"
+name = "Fares"
+
+[[folders]]
+id = "fld_flights_3"
+name = "Airports"
+
+[[routes]]
+id = "rte_flights_1"
+name = "Flights"
+folder = "fld_flights_1"
+kind = "crud"
+path = "/flights"
+dataset = "flights"
+
+[[routes]]
+id = "rte_flights_2"
+name = "Search flights"
+folder = "fld_flights_1"
+method = "GET"
+path = "/flights/search"
+
+  [[routes.responses]]
+  id = "rsp_flights_2_1"
+  name = "Missing origin"
+  status = 400
+  content_type = "application/json"
+  body = '''
+{"error":"query parameter from is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "query"
+    key = "from"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_flights_2_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "120..450"
+  body = '''
+[{% for i in range(end=5) %}{"id":{{ i + 1 }},"number":"FX{{ random_int(min=100, max=999) }}","from":"{{ request.query.from | default(value='BER') }}","to":"{{ request.query.to | default(value='AMS') }}","price":{{ random_int(min=49, max=620) }}.00,"currency":"{{ vars.currency }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_flights_3"
+name = "Fares"
+folder = "fld_flights_2"
+method = "GET"
+path = "/flights/:id/fares"
+
+  [[routes.responses]]
+  id = "rsp_flights_3_1"
+  name = "Flight not found"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"flight not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "999"
+
+  [[routes.responses]]
+  id = "rsp_flights_3_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"class":"basic","price":89.0},{"class":"flex","price":139.0},{"class":"business","price":420.0}]
+'''
+
+[[routes]]
+id = "rte_flights_4"
+name = "Seat map"
+folder = "fld_flights_2"
+method = "GET"
+path = "/flights/:id/seats"
+
+  [[routes.responses]]
+  id = "rsp_flights_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=6) %}{"seat":"{{ i + 1 }}A","free":true}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_flights_5"
+name = "Fare calendar"
+folder = "fld_flights_2"
+method = "GET"
+path = "/fares/calendar"
+
+  [[routes.responses]]
+  id = "rsp_flights_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=7) %}{"day":{{ i + 1 }},"lowest":{{ random_int(min=49, max=300) }}}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_flights_6"
+name = "Airports"
+folder = "fld_flights_3"
+method = "GET"
+path = "/airports"
+
+  [[routes.responses]]
+  id = "rsp_flights_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"code":"BER","city":"Berlin"},{"code":"LIS","city":"Lisbon"},{"code":"AMS","city":"Amsterdam"},{"code":"PRG","city":"Prague"}]
+'''
+
+[[routes]]
+id = "rte_flights_7"
+name = "Airport"
+folder = "fld_flights_3"
+method = "GET"
+path = "/airports/:code"
+
+  [[routes.responses]]
+  id = "rsp_flights_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"code":"{{ request.params.code }}","city":"{{ fake(kind="address.city") }}","country":"{{ fake(kind="address.country") }}"}
+'''
+
+[[routes]]
+id = "rte_flights_8"
+name = "Flight status"
+folder = "fld_flights_1"
+method = "GET"
+path = "/flights/:id/status"
+
+  [[routes.responses]]
+  id = "rsp_flights_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"on_time","gate":"B{{ random_int(min=1, max=40) }}"}
+'''
+
+[[routes]]
+id = "rte_flights_9"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_flights_9_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"flights"}
+'''

@@ -1,0 +1,261 @@
+schema = 1
+id = "srv_travel_booking_bookings"
+name = "Bookings"
+enabled = true
+host = "127.0.0.1"
+port = 4004
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[variables]
+hold_minutes = "15"
+
+[[datasets]]
+name = "bookings"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 20
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "traveler"
+kind = "fake"
+fake = "name"
+
+[[datasets.generator.fields]]
+name = "email"
+kind = "fake"
+fake = "internet.email"
+
+[[datasets.generator.fields]]
+name = "status"
+kind = "one_of"
+values = ["held", "confirmed", "cancelled"]
+
+[[datasets.generator.fields]]
+name = "total"
+kind = "float"
+min = 80
+max = 2400
+
+[[datasets.generator.fields]]
+name = "created"
+kind = "datetime"
+
+[[folders]]
+id = "fld_bookings_1"
+name = "Bookings"
+
+[[folders]]
+id = "fld_bookings_2"
+name = "Webhooks"
+
+[[routes]]
+id = "rte_bookings_1"
+name = "Bookings"
+folder = "fld_bookings_1"
+kind = "crud"
+path = "/bookings"
+dataset = "bookings"
+
+[[routes]]
+id = "rte_bookings_2"
+name = "Hold booking"
+folder = "fld_bookings_1"
+method = "POST"
+path = "/bookings/hold"
+
+  [[routes.responses]]
+  id = "rsp_bookings_2_1"
+  name = "Item missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"item is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.item"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_bookings_2_2"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  delay_ms = "100..300"
+  body = '''
+{"id":"bk_{{ uuid() }}","status":"held","expires_in_minutes":{{ vars.hold_minutes }},"item":"{{ request.json.item | default(value='flight') }}"}
+'''
+
+[[routes]]
+id = "rte_bookings_3"
+name = "Confirm booking"
+folder = "fld_bookings_1"
+method = "POST"
+path = "/bookings/:id/confirm"
+
+  [[routes.responses]]
+  id = "rsp_bookings_3_1"
+  name = "Hold expired"
+  status = 410
+  content_type = "application/json"
+  body = '''
+{"error":"hold expired"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "expired"
+
+  [[routes.responses]]
+  id = "rsp_bookings_3_2"
+  name = "Payment required"
+  status = 402
+  content_type = "application/json"
+  body = '''
+{"error":"payment token is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "header"
+    key = "x-payment-token"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_bookings_3_3"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"confirmed","reference":"{{ fake(kind="finance.bic") }}"}
+'''
+
+[[routes]]
+id = "rte_bookings_4"
+name = "Cancel booking"
+folder = "fld_bookings_1"
+method = "POST"
+path = "/bookings/:id/cancel"
+
+  [[routes.responses]]
+  id = "rsp_bookings_4_1"
+  name = "Already cancelled"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"booking already cancelled"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "cancelled"
+
+  [[routes.responses]]
+  id = "rsp_bookings_4_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"cancelled","refund":true}
+'''
+
+[[routes]]
+id = "rte_bookings_5"
+name = "Itinerary"
+folder = "fld_bookings_1"
+method = "GET"
+path = "/bookings/:id/itinerary"
+
+  [[routes.responses]]
+  id = "rsp_bookings_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","segments":[{"type":"flight","number":"FX123"},{"type":"hotel","name":"Harbor Inn"}]}
+'''
+
+[[routes]]
+id = "rte_bookings_6"
+name = "Voucher"
+folder = "fld_bookings_1"
+method = "GET"
+path = "/bookings/:id/voucher"
+
+  [[routes.responses]]
+  id = "rsp_bookings_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","code":"{{ fake(kind="color.hex") }}","valid":true}
+'''
+
+[[routes]]
+id = "rte_bookings_7"
+name = "Payment webhook receiver"
+folder = "fld_bookings_2"
+method = "POST"
+path = "/webhooks/payments"
+
+  [[routes.responses]]
+  id = "rsp_bookings_7_1"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"received":true,"event":"{{ request.json.event | default(value='unknown') }}"}
+'''
+
+[[routes]]
+id = "rte_bookings_8"
+name = "Stats"
+folder = "fld_bookings_1"
+method = "GET"
+path = "/bookings/stats"
+
+  [[routes.responses]]
+  id = "rsp_bookings_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"held":4,"confirmed":11,"cancelled":3}
+'''
+
+[[routes]]
+id = "rte_bookings_9"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_bookings_9_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"bookings"}
+'''

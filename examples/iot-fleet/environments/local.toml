@@ -1,0 +1,10 @@
+name = "local"
+
+[variables]
+base_url_devices = "http://127.0.0.1:4001"
+base_url_telemetry = "http://127.0.0.1:4002"
+base_url_firmware = "http://127.0.0.1:4003"
+base_url_alerts = "http://127.0.0.1:4004"
+base_url_geofences = "http://127.0.0.1:4005"
+base_url_stream = "http://127.0.0.1:4006"
+api_key = "local-demo-key"

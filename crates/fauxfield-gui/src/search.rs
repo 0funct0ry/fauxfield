@@ -38,6 +38,8 @@ pub enum Target {
     SwitchEnvironment(String),
     /// A network profile slug (`slow-3g`), SPEC §5.6.
     NetworkProfile(String),
+    /// An example Workspace name (M19.1).
+    Example(String),
     /// Confirm the open Prompt with the typed value.
     Prompt,
 }
@@ -53,6 +55,7 @@ pub enum Kind {
     Command,
     Theme,
     Network,
+    Example,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -95,6 +95,9 @@ actions!(
         CreateWorkspace,
         OpenFolderByPath,
         CreateWorkspaceByPath,
+        NewFromExample,
+        AddExampleToWorkspace,
+        ListExamples,
         CloseWorkspace,
         RenameWorkspace,
         ClearRecent,
@@ -506,6 +509,17 @@ pub static ACTIONS: &[ActionInfo] = &[
         "Workspace: Create by Path…",
         CreateWorkspaceByPath
     ),
+    row!(
+        "new_from_example",
+        "Workspace: New from Example…",
+        NewFromExample
+    ),
+    row!(
+        "add_example_to_workspace",
+        "Workspace: Add Example to This Workspace…",
+        AddExampleToWorkspace
+    ),
+    row!("list_examples", "Workspace: List Examples", ListExamples),
     row!("close_workspace", "Workspace: Close", CloseWorkspace),
     row!("rename_workspace", "Workspace: Rename…", RenameWorkspace),
     row!("clear_recent", "Workspace: Clear Recent", ClearRecent),

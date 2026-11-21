@@ -1,0 +1,203 @@
+schema = 1
+id = "srv_ecommerce_cart"
+name = "Cart"
+enabled = true
+host = "127.0.0.1"
+port = 4002
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "carts"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 8
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "user_id"
+kind = "int"
+min = 1
+max = 20
+
+[[datasets.generator.fields]]
+name = "items"
+kind = "int"
+min = 0
+max = 6
+
+[[datasets.generator.fields]]
+name = "total"
+kind = "float"
+min = 10
+max = 900
+
+[[folders]]
+id = "fld_cart_1"
+name = "Carts"
+
+[[folders]]
+id = "fld_cart_2"
+name = "Coupons"
+
+[[routes]]
+id = "rte_cart_1"
+name = "Carts"
+folder = "fld_cart_1"
+kind = "crud"
+path = "/carts"
+dataset = "carts"
+
+[[routes]]
+id = "rte_cart_2"
+name = "Cart items"
+folder = "fld_cart_1"
+method = "GET"
+path = "/carts/:id/items"
+
+  [[routes.responses]]
+  id = "rsp_cart_2_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"product_id":{{ i + 1 }},"qty":{{ random_int(min=1, max=3) }},"price":{{ random_int(min=5, max=99) }}.00}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_cart_3"
+name = "Add item"
+folder = "fld_cart_1"
+method = "POST"
+path = "/carts/:id/items"
+
+  [[routes.responses]]
+  id = "rsp_cart_3_1"
+  name = "Quantity too large"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"qty must be at most 99"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.qty"
+    op = "gt"
+    value = "99"
+
+  [[routes.responses]]
+  id = "rsp_cart_3_2"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"cart_id":"{{ request.params.id }}","product_id":{{ request.json.product_id | default(value=1) }},"qty":{{ request.json.qty | default(value=1) }}}
+'''
+
+[[routes]]
+id = "rte_cart_4"
+name = "Remove item"
+folder = "fld_cart_1"
+method = "DELETE"
+path = "/carts/:id/items/:product_id"
+
+  [[routes.responses]]
+  id = "rsp_cart_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"removed":"{{ request.params.product_id }}"}
+'''
+
+[[routes]]
+id = "rte_cart_5"
+name = "Apply coupon"
+folder = "fld_cart_2"
+method = "POST"
+path = "/carts/:id/coupon"
+
+  [[routes.responses]]
+  id = "rsp_cart_5_1"
+  name = "Expired coupon"
+  status = 410
+  content_type = "application/json"
+  body = '''
+{"error":"coupon expired"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.code"
+    op = "eq"
+    value = "EXPIRED10"
+
+  [[routes.responses]]
+  id = "rsp_cart_5_2"
+  name = "Unknown coupon"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"coupon not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.code"
+    op = "ne"
+    value = "SAVE15"
+
+  [[routes.responses]]
+  id = "rsp_cart_5_3"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"code":"{{ request.json.code | default(value='') }}","discount_percent":15}
+'''
+
+[[routes]]
+id = "rte_cart_6"
+name = "List coupons"
+folder = "fld_cart_2"
+method = "GET"
+path = "/coupons"
+
+  [[routes.responses]]
+  id = "rsp_cart_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"code":"SAVE15","percent":15},{"code":"FREESHIP","percent":0}]
+'''
+
+[[routes]]
+id = "rte_cart_7"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_cart_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"cart"}
+'''

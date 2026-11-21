@@ -1,0 +1,231 @@
+schema = 1
+id = "srv_social_feed"
+name = "Feed"
+enabled = true
+host = "127.0.0.1"
+port = 4004
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "topics"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 8
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "one_of"
+values = ["music", "travel", "food", "tech", "sports", "art", "books", "film"]
+
+[[datasets.generator.fields]]
+name = "followers"
+kind = "int"
+min = 100
+max = 9000
+
+[[folders]]
+id = "fld_feed_1"
+name = "Feed"
+
+[[folders]]
+id = "fld_feed_2"
+name = "Discover"
+
+[[routes]]
+id = "rte_feed_1"
+name = "Home feed (paginated)"
+folder = "fld_feed_1"
+method = "GET"
+path = "/feed"
+
+  [[routes.responses]]
+  id = "rsp_feed_1_1"
+  name = "Page out of range"
+  status = 400
+  content_type = "application/json"
+  body = '''
+{"error":"page out of range"}
+'''
+
+    [[routes.responses.rules]]
+    target = "query"
+    key = "page"
+    op = "gt"
+    value = "50"
+
+  [[routes.responses]]
+  id = "rsp_feed_1_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "40..130"
+  body = '''
+{"items":[{"id":"{{ uuid() }}","author":"{{ fake(kind="internet.username") }}","text":"{{ fake(kind="lorem.sentence") }}"},{"id":"{{ uuid() }}","author":"{{ fake(kind="internet.username") }}","text":"{{ fake(kind="lorem.sentence") }}"},{"id":"{{ uuid() }}","author":"{{ fake(kind="internet.username") }}","text":"{{ fake(kind="lorem.sentence") }}"}],"page":{{ request.query.page | default(value=1) }},"next_cursor":"cur_{{ uuid() }}"}
+'''
+
+[[routes]]
+id = "rte_feed_2"
+name = "Feed by cursor"
+folder = "fld_feed_1"
+method = "GET"
+path = "/feed/cursor"
+
+  [[routes.responses]]
+  id = "rsp_feed_2_1"
+  name = "Bad cursor"
+  status = 400
+  content_type = "application/json"
+  body = '''
+{"error":"invalid cursor"}
+'''
+
+    [[routes.responses.rules]]
+    target = "query"
+    key = "cursor"
+    op = "starts_with"
+    value = "bad"
+
+  [[routes.responses]]
+  id = "rsp_feed_2_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"items":[{"id":"{{ uuid() }}","text":"{{ fake(kind="lorem.sentence") }}"},{"id":"{{ uuid() }}","text":"{{ fake(kind="lorem.sentence") }}"}],"cursor":"{{ request.query.cursor | default(value='start') }}","next_cursor":"cur_{{ uuid() }}"}
+'''
+
+[[routes]]
+id = "rte_feed_3"
+name = "Following feed"
+folder = "fld_feed_1"
+method = "GET"
+path = "/feed/following"
+
+  [[routes.responses]]
+  id = "rsp_feed_3_1"
+  name = "Sign in required"
+  status = 401
+  content_type = "application/json"
+  body = '''
+{"error":"sign in to see your following feed"}
+'''
+
+    [[routes.responses.rules]]
+    target = "header"
+    key = "authorization"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_feed_3_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"id":"{{ uuid() }}","author":"{{ fake(kind="internet.username") }}","text":"{{ fake(kind="lorem.sentence") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_feed_4"
+name = "Unread count"
+folder = "fld_feed_1"
+method = "GET"
+path = "/feed/count"
+
+  [[routes.responses]]
+  id = "rsp_feed_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"unread":{{ random_int(min=0, max=40) }}}
+'''
+
+[[routes]]
+id = "rte_feed_5"
+name = "Topics"
+folder = "fld_feed_2"
+kind = "crud"
+path = "/topics"
+dataset = "topics"
+
+[[routes]]
+id = "rte_feed_6"
+name = "Topic feed"
+folder = "fld_feed_2"
+method = "GET"
+path = "/topics/:id/feed"
+
+  [[routes.responses]]
+  id = "rsp_feed_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"id":"{{ uuid() }}","text":"{{ fake(kind="lorem.sentence") }}","topic":"{{ request.params.id }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_feed_7"
+name = "Discover"
+folder = "fld_feed_2"
+method = "GET"
+path = "/discover"
+
+  [[routes.responses]]
+  id = "rsp_feed_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "60..200"
+  body = '''
+[{% for i in range(end=4) %}{"handle":"{{ fake(kind="internet.username") }}","topic":"{{ fake(kind="lorem.word") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_feed_8"
+name = "Mark seen"
+folder = "fld_feed_1"
+method = "POST"
+path = "/feed/seen"
+
+  [[routes.responses]]
+  id = "rsp_feed_8_1"
+  name = "Created"
+  status = 204
+  content_type = "application/json"
+  default = true
+  body = '''
+{"ok":true}
+'''
+
+[[routes]]
+id = "rte_feed_9"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_feed_9_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"feed"}
+'''

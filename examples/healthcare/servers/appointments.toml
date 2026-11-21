@@ -1,0 +1,257 @@
+schema = 1
+id = "srv_healthcare_appointments"
+name = "Appointments"
+enabled = true
+host = "127.0.0.1"
+port = 4002
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "appointments"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 30
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "patient_id"
+kind = "int"
+min = 1
+max = 40
+
+[[datasets.generator.fields]]
+name = "provider_id"
+kind = "int"
+min = 1
+max = 12
+
+[[datasets.generator.fields]]
+name = "status"
+kind = "one_of"
+values = ["scheduled", "checked_in", "completed", "cancelled", "no_show"]
+
+[[datasets.generator.fields]]
+name = "starts"
+kind = "datetime"
+
+[[datasets.generator.fields]]
+name = "reason"
+kind = "one_of"
+values = ["checkup", "follow-up", "vaccination", "consultation"]
+
+[[folders]]
+id = "fld_appointments_1"
+name = "Appointments"
+
+[[folders]]
+id = "fld_appointments_2"
+name = "Slots"
+
+[[routes]]
+id = "rte_appointments_1"
+name = "Appointments"
+folder = "fld_appointments_1"
+kind = "crud"
+path = "/appointments"
+dataset = "appointments"
+
+[[routes]]
+id = "rte_appointments_2"
+name = "Available slots"
+folder = "fld_appointments_2"
+method = "GET"
+path = "/slots"
+
+  [[routes.responses]]
+  id = "rsp_appointments_2_1"
+  name = "Provider missing"
+  status = 400
+  content_type = "application/json"
+  body = '''
+{"error":"provider query parameter is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "query"
+    key = "provider"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_appointments_2_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "40..140"
+  body = '''
+[{% for i in range(end=6) %}{"slot":"{{ fake(kind="date.future") }}","provider_id":{{ random_int(min=1, max=12) }}}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_appointments_3"
+name = "Book appointment"
+folder = "fld_appointments_1"
+method = "POST"
+path = "/appointments/book"
+
+  [[routes.responses]]
+  id = "rsp_appointments_3_1"
+  name = "Slot taken"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"slot no longer available"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.slot"
+    op = "eq"
+    value = "taken"
+
+  [[routes.responses]]
+  id = "rsp_appointments_3_2"
+  name = "Patient missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"patient_id is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.patient_id"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_appointments_3_3"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"apt_{{ uuid() }}","status":"scheduled","provider_id":{{ request.json.provider_id | default(value=1) }}}
+'''
+
+[[routes]]
+id = "rte_appointments_4"
+name = "Check in"
+folder = "fld_appointments_1"
+method = "POST"
+path = "/appointments/:id/check-in"
+
+  [[routes.responses]]
+  id = "rsp_appointments_4_1"
+  name = "Cancelled"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"appointment is cancelled"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "13"
+
+  [[routes.responses]]
+  id = "rsp_appointments_4_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"checked_in"}
+'''
+
+[[routes]]
+id = "rte_appointments_5"
+name = "Cancel"
+folder = "fld_appointments_1"
+method = "POST"
+path = "/appointments/:id/cancel"
+
+  [[routes.responses]]
+  id = "rsp_appointments_5_1"
+  name = "Too late"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"cannot cancel within 2 hours"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "lte"
+    value = "3"
+
+  [[routes.responses]]
+  id = "rsp_appointments_5_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"cancelled"}
+'''
+
+[[routes]]
+id = "rte_appointments_6"
+name = "Reschedule"
+folder = "fld_appointments_1"
+method = "POST"
+path = "/appointments/:id/reschedule"
+
+  [[routes.responses]]
+  id = "rsp_appointments_6_1"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","starts":"{{ fake(kind="date.future") }}"}
+'''
+
+[[routes]]
+id = "rte_appointments_7"
+name = "Reminders"
+folder = "fld_appointments_2"
+method = "GET"
+path = "/appointments/reminders"
+
+  [[routes.responses]]
+  id = "rsp_appointments_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"appointment":{{ i + 1 }},"channel":"sms","phone":"{{ fake(kind="phone") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_appointments_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_appointments_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"appointments"}
+'''

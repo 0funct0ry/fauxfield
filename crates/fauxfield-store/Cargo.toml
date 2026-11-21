@@ -17,6 +17,7 @@ indexmap.workspace = true
 similar = "2"
 notify.workspace = true
 thiserror.workspace = true
+include_dir = "0.7.4"
 
 [dev-dependencies]
 tempfile.workspace = true

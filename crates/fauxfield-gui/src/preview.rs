@@ -20,6 +20,58 @@ use crate::ui::icon;
 
 /// Debounce between the last edit and the render.
 pub const PREVIEW_DEBOUNCE_MS: u64 = 150;
+/// How the Preview pane shows rendered JSON.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewView {
+    /// Re-indented (valid JSON only).
+    Pretty,
+    /// All whitespace removed (valid JSON only).
+    Minified,
+    /// Exactly the bytes the Server sends.
+    Raw,
+}
+
+impl PreviewView {
+    pub const ALL: [(PreviewView, &'static str); 3] = [
+        (PreviewView::Pretty, "Pretty"),
+        (PreviewView::Minified, "Minified"),
+        (PreviewView::Raw, "Raw"),
+    ];
+}
+
+/// True when the Preview toggle applies to output in `lang` (JSON, XML and HTML).
+pub fn view_applies(lang: Language) -> bool {
+    matches!(lang, Language::Json | Language::Xml | Language::Html)
+}
+
+/// The text the Preview pane shows for rendered `body`. Output that is not well formed, and
+/// languages without a formatter, are shown as is, so broken output stays visible.
+pub fn view_text(view: PreviewView, lang: Language, body: &str) -> String {
+    use crate::code_editor::format;
+    if view == PreviewView::Raw {
+        return body.to_string();
+    }
+    let pretty = view == PreviewView::Pretty;
+    let out = match lang {
+        Language::Json if format::validate_json(body).is_ok() => {
+            if pretty {
+                format::format_json(body, "  ")
+            } else {
+                format::minify_json(body)
+            }
+        }
+        Language::Xml | Language::Html => {
+            if pretty {
+                format::format_markup(body, "  ")
+            } else {
+                format::minify_markup(body)
+            }
+        }
+        _ => return body.to_string(),
+    };
+    out.unwrap_or_else(|_| body.to_string())
+}
+
 /// Render time as shown in the pane: `0.12 ms`.
 pub fn fmt_ms(ms: f64) -> String {
     format!("{ms:.2} ms")
@@ -191,6 +243,7 @@ impl Shell {
             .or(mx.content_type.clone())
             .unwrap_or_default();
         let lang = Language::detect(&ct, &p.body);
+        let shown = view_text(self.preview_view, lang, &p.body);
         let ed = self
             .body_editors
             .entry(format!("{response}#preview"))
@@ -198,8 +251,8 @@ impl Shell {
             .clone();
         let st = self.editor_settings.clone();
         ed.update(cx, |e, cx| {
-            if e.text() != p.body {
-                e.set_text(&p.body, cx);
+            if e.text() != shown {
+                e.set_text(&shown, cx);
             }
             e.set_language(lang, cx);
             e.apply_settings(&st, cx);
@@ -225,6 +278,7 @@ impl Shell {
             .body_editors
             .get(&format!("{response}#preview"))
             .cloned();
+        let viewer_lang = viewer.as_ref().map(|v| v.read(cx).lang());
         let json_msg = p.and_then(|p| p.json_error.clone());
         let head = div()
             .id("preview-toggle")
@@ -277,6 +331,41 @@ impl Shell {
                     None
                 )
             }))
+            .child(div().flex_1())
+            .children(
+                p.filter(|_| viewer_lang.is_some_and(view_applies))
+                    .map(|_| {
+                        div()
+                            .id("preview-view")
+                            .flex()
+                            .flex_row()
+                            .gap(px(2.))
+                            .children(PreviewView::ALL.into_iter().map(|(v, label)| {
+                                let on = self.preview_view == v;
+                                crate::dev_id!(
+                                    div()
+                                        .id(crate::ui::eid(format!("preview-view-{label}")))
+                                        .px(px(6.))
+                                        .rounded(px(3.))
+                                        .cursor_pointer()
+                                        .when(on, |d| d.bg(t.element_selected).text_color(t.text))
+                                        .hover(|s| s.bg(t.element_hover))
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            cx.stop_propagation();
+                                            this.preview_view = v;
+                                            if let Some((id, _)) = this.preview.clone() {
+                                                this.compute_preview(&id, cx);
+                                            }
+                                        }))
+                                        .child(label),
+                                    format!("preview-view-{label}"),
+                                    Button,
+                                    label,
+                                    None
+                                )
+                            }))
+                    }),
+            )
             .children(p.and_then(|p| p.error.clone()).map(|e| {
                 crate::dev_id!(
                     div()
@@ -339,6 +428,40 @@ mod tests {
     fn time_has_two_decimals() {
         assert_eq!(fmt_ms(0.123), "0.12 ms");
         assert_eq!(fmt_ms(12.0), "12.00 ms");
+    }
+
+    #[test]
+    fn view_text_pretty_minified_raw() {
+        // What a formatted `for` template renders to: stray blank lines and a lone comma.
+        let body = "[\n\n  {\"a\": 1,\n \"p\": 32.00}\n  ,\n\n  {\"a\": 2, \"p\": 8.00}\n]";
+        assert_eq!(
+            view_text(PreviewView::Pretty, Language::Json, body),
+            "[\n  {\n    \"a\": 1,\n    \"p\": 32.00\n  },\n  {\n    \"a\": 2,\n    \"p\": 8.00\n  }\n]"
+        );
+        assert_eq!(
+            view_text(PreviewView::Minified, Language::Json, body),
+            r#"[{"a":1,"p":32.00},{"a":2,"p":8.00}]"#
+        );
+        assert_eq!(view_text(PreviewView::Raw, Language::Json, body), body);
+        // Not JSON: shown unchanged in every mode.
+        assert_eq!(
+            view_text(PreviewView::Pretty, Language::Json, "{oops"),
+            "{oops"
+        );
+        let xml = "<a>\n\n<b>1</b></a>";
+        assert_eq!(
+            view_text(PreviewView::Pretty, Language::Xml, xml),
+            "<a>\n  <b>1</b>\n</a>"
+        );
+        assert_eq!(
+            view_text(PreviewView::Minified, Language::Xml, xml),
+            "<a><b>1</b></a>"
+        );
+        assert_eq!(
+            view_text(PreviewView::Pretty, Language::Yaml, "a:   1"),
+            "a:   1"
+        );
+        assert!(!view_applies(Language::Yaml) && view_applies(Language::Html));
     }
 
     #[test]

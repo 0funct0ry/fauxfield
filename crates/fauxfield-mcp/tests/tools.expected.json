@@ -75,6 +75,16 @@
     "milestone": "M10.05"
   },
   {
+    "name": "init_workspace",
+    "class": "write",
+    "milestone": "?"
+  },
+  {
+    "name": "list_examples",
+    "class": "read",
+    "milestone": "?"
+  },
+  {
     "name": "list_routes",
     "class": "read",
     "milestone": "M2"

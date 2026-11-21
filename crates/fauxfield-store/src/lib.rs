@@ -4,6 +4,7 @@
 
 pub mod agents;
 mod datasets;
+pub mod examples;
 mod init;
 mod recent;
 pub mod settings;

@@ -706,7 +706,6 @@ impl Shell {
         if (self.layout.format_on_save || self.editor_settings.format_json_on_save)
             && Language::detect(&x.content_type, &text) == Language::Json
             && let Ok(pretty) = format::format_json(&text, "  ")
-            && format::validate_json(&text).is_ok()
         {
             text = pretty;
         }
@@ -758,7 +757,7 @@ impl Shell {
         let Some(x) = self.response_by_id(response) else {
             return;
         };
-        let res = format::validate_json(&x.body).and_then(|_| format::format_json(&x.body, "  "));
+        let res = format::format_json(&x.body, "  ");
         match res {
             Ok(pretty) => {
                 let id = response.to_string();

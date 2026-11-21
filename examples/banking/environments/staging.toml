@@ -1,0 +1,10 @@
+name = "staging"
+
+[variables]
+base_url_accounts = "https://accounts.staging.example.test"
+base_url_transactions = "https://transactions.staging.example.test"
+base_url_transfers = "https://transfers.staging.example.test"
+base_url_cards = "https://cards.staging.example.test"
+base_url_kyc = "https://kyc.staging.example.test"
+base_url_fx = "https://fx.staging.example.test"
+api_key = "staging-demo-key"

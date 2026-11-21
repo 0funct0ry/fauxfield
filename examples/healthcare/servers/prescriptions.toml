@@ -1,0 +1,245 @@
+schema = 1
+id = "srv_healthcare_prescriptions"
+name = "Prescriptions"
+enabled = true
+host = "127.0.0.1"
+port = 4003
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "prescriptions"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 30
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "patient_id"
+kind = "int"
+min = 1
+max = 40
+
+[[datasets.generator.fields]]
+name = "drug"
+kind = "one_of"
+values = ["Amoxicillin", "Lisinopril", "Metformin", "Atorvastatin", "Albuterol", "Ibuprofen"]
+
+[[datasets.generator.fields]]
+name = "dose_mg"
+kind = "int"
+min = 5
+max = 1000
+
+[[datasets.generator.fields]]
+name = "refills"
+kind = "int"
+min = 0
+max = 5
+
+[[datasets.generator.fields]]
+name = "status"
+kind = "one_of"
+values = ["active", "filled", "expired"]
+
+[[folders]]
+id = "fld_prescriptions_1"
+name = "Prescriptions"
+
+[[folders]]
+id = "fld_prescriptions_2"
+name = "Pharmacy"
+
+[[routes]]
+id = "rte_prescriptions_1"
+name = "Prescriptions"
+folder = "fld_prescriptions_1"
+kind = "crud"
+path = "/prescriptions"
+dataset = "prescriptions"
+
+[[routes]]
+id = "rte_prescriptions_2"
+name = "Issue prescription"
+folder = "fld_prescriptions_1"
+method = "POST"
+path = "/prescriptions/issue"
+
+  [[routes.responses]]
+  id = "rsp_prescriptions_2_1"
+  name = "Drug missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"drug is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.drug"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_prescriptions_2_2"
+  name = "Interaction"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"possible interaction with active prescription"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.drug"
+    op = "eq"
+    value = "Warfarin"
+
+  [[routes.responses]]
+  id = "rsp_prescriptions_2_3"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  delay_ms = "120..350"
+  body = '''
+{"id":"rx_{{ uuid() }}","drug":"{{ request.json.drug | default(value='Ibuprofen') }}","refills":2}
+'''
+
+[[routes]]
+id = "rte_prescriptions_3"
+name = "Refill"
+folder = "fld_prescriptions_1"
+method = "POST"
+path = "/prescriptions/:id/refill"
+
+  [[routes.responses]]
+  id = "rsp_prescriptions_3_1"
+  name = "No refills left"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"no refills remaining"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "lte"
+    value = "3"
+
+  [[routes.responses]]
+  id = "rsp_prescriptions_3_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","refills_left":{{ random_int(min=0, max=4) }}}
+'''
+
+[[routes]]
+id = "rte_prescriptions_4"
+name = "Interaction check"
+folder = "fld_prescriptions_1"
+method = "GET"
+path = "/prescriptions/:id/interactions"
+
+  [[routes.responses]]
+  id = "rsp_prescriptions_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","interactions":[],"checked":"{{ now() }}"}
+'''
+
+[[routes]]
+id = "rte_prescriptions_5"
+name = "Pharmacies"
+folder = "fld_prescriptions_2"
+method = "GET"
+path = "/pharmacies"
+
+  [[routes.responses]]
+  id = "rsp_prescriptions_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=4) %}{"id":{{ i + 1 }},"name":"{{ fake(kind="company.name") }} Pharmacy","city":"{{ fake(kind="address.city") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_prescriptions_6"
+name = "Dispense"
+folder = "fld_prescriptions_2"
+method = "POST"
+path = "/pharmacy/dispense"
+
+  [[routes.responses]]
+  id = "rsp_prescriptions_6_1"
+  name = "Expired"
+  status = 410
+  content_type = "application/json"
+  body = '''
+{"error":"prescription expired"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.status"
+    op = "eq"
+    value = "expired"
+
+  [[routes.responses]]
+  id = "rsp_prescriptions_6_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"dispensed":true,"lot":"LOT-{{ random_int(min=10000, max=99999) }}"}
+'''
+
+[[routes]]
+id = "rte_prescriptions_7"
+name = "Formulary"
+folder = "fld_prescriptions_2"
+method = "GET"
+path = "/formulary"
+
+  [[routes.responses]]
+  id = "rsp_prescriptions_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["Amoxicillin","Lisinopril","Metformin","Atorvastatin","Albuterol"]
+'''
+
+[[routes]]
+id = "rte_prescriptions_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_prescriptions_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"prescriptions"}
+'''

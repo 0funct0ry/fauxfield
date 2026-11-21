@@ -1,0 +1,239 @@
+schema = 1
+id = "srv_social_posts"
+name = "Posts"
+enabled = true
+host = "127.0.0.1"
+port = 4002
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "posts"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 40
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "author"
+kind = "fake"
+fake = "internet.username"
+
+[[datasets.generator.fields]]
+name = "text"
+kind = "fake"
+fake = "lorem.sentence"
+
+[[datasets.generator.fields]]
+name = "likes"
+kind = "int"
+min = 0
+max = 900
+
+[[datasets.generator.fields]]
+name = "created_at"
+kind = "datetime"
+
+[[folders]]
+id = "fld_posts_1"
+name = "Posts"
+
+[[folders]]
+id = "fld_posts_2"
+name = "Likes"
+
+[[routes]]
+id = "rte_posts_1"
+name = "Posts"
+folder = "fld_posts_1"
+kind = "crud"
+path = "/posts"
+dataset = "posts"
+
+[[routes]]
+id = "rte_posts_2"
+name = "Like post"
+folder = "fld_posts_2"
+method = "POST"
+path = "/posts/:id/like"
+
+  [[routes.responses]]
+  id = "rsp_posts_2_1"
+  name = "Post deleted"
+  status = 410
+  content_type = "application/json"
+  body = '''
+{"error":"post was deleted"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "0"
+
+  [[routes.responses]]
+  id = "rsp_posts_2_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"post_id":"{{ request.params.id }}","liked":true,"likes":{{ random_int(min=1, max=900) }}}
+'''
+
+[[routes]]
+id = "rte_posts_3"
+name = "Unlike post"
+folder = "fld_posts_2"
+method = "DELETE"
+path = "/posts/:id/like"
+
+  [[routes.responses]]
+  id = "rsp_posts_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"post_id":"{{ request.params.id }}","liked":false}
+'''
+
+[[routes]]
+id = "rte_posts_4"
+name = "Who liked"
+folder = "fld_posts_2"
+method = "GET"
+path = "/posts/:id/likes"
+
+  [[routes.responses]]
+  id = "rsp_posts_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "20..70"
+  body = '''
+[{% for i in range(end=4) %}{"handle":"{{ fake(kind="internet.username") }}","at":"{{ fake(kind="date.past") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_posts_5"
+name = "Share post"
+folder = "fld_posts_1"
+method = "POST"
+path = "/posts/:id/share"
+
+  [[routes.responses]]
+  id = "rsp_posts_5_1"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"share_id":"shr_{{ uuid() }}","post_id":"{{ request.params.id }}"}
+'''
+
+[[routes]]
+id = "rte_posts_6"
+name = "Save draft"
+folder = "fld_posts_1"
+method = "POST"
+path = "/posts/drafts"
+
+  [[routes.responses]]
+  id = "rsp_posts_6_1"
+  name = "Text too long"
+  status = 413
+  content_type = "application/json"
+  body = '''
+{"error":"post exceeds 280 characters"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.length"
+    op = "gt"
+    value = "280"
+
+  [[routes.responses]]
+  id = "rsp_posts_6_2"
+  name = "Text missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"text is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.text"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_posts_6_3"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"draft_id":"drf_{{ uuid() }}","text":"{{ request.json.text | default(value='') }}"}
+'''
+
+[[routes]]
+id = "rte_posts_7"
+name = "Trending posts"
+folder = "fld_posts_1"
+method = "GET"
+path = "/posts/trending"
+
+  [[routes.responses]]
+  id = "rsp_posts_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"id":{{ i + 1 }},"text":"{{ fake(kind="lorem.sentence") }}","likes":{{ random_int(min=100, max=900) }}}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_posts_8"
+name = "Posts by tag"
+folder = "fld_posts_1"
+method = "GET"
+path = "/tags/:tag/posts"
+
+  [[routes.responses]]
+  id = "rsp_posts_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"id":{{ i + 1 }},"text":"{{ fake(kind="lorem.sentence") }}","tag":"{{ request.params.tag }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_posts_9"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_posts_9_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"posts"}
+'''

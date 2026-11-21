@@ -1,0 +1,101 @@
+# M19.1 scenario: example workspaces. For each embedded example: `init_workspace` (MCP, as an agent
+# would), open it, check it loads without Problems, start its first Server, see it running, stop it.
+# HTTP requests to every Route are covered by crates/fauxfield/tests/examples.rs.
+# Writes under /tmp/fauxfield-m191 (remove that folder before a rerun) and needs ports 4001+ free.
+name: m191-examples
+size: default
+steps:
+  - state: [reset]
+  - call: {tool: list_examples}
+  - call: {tool: init_workspace, arguments: {path: /tmp/fauxfield-m191/ecommerce, example: ecommerce}}
+  - open_workspace: /tmp/fauxfield-m191/ecommerce
+  - assert: {pointer: /view, equals: workspace}
+  - assert: {pointer: /problems, equals: 0}
+  - assert: {pointer: /servers/0/id, equals: srv_ecommerce_cart}
+  - call: {tool: start_server, arguments: {server: srv_ecommerce_cart}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: running}}
+  - call: {tool: stop_server, arguments: {server: srv_ecommerce_cart}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: stopped}}
+  - call: {tool: init_workspace, arguments: {path: /tmp/fauxfield-m191/banking, example: banking}}
+  - open_workspace: /tmp/fauxfield-m191/banking
+  - assert: {pointer: /view, equals: workspace}
+  - assert: {pointer: /problems, equals: 0}
+  - assert: {pointer: /servers/0/id, equals: srv_banking_accounts}
+  - call: {tool: start_server, arguments: {server: srv_banking_accounts}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: running}}
+  - call: {tool: stop_server, arguments: {server: srv_banking_accounts}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: stopped}}
+  - call: {tool: init_workspace, arguments: {path: /tmp/fauxfield-m191/social, example: social}}
+  - open_workspace: /tmp/fauxfield-m191/social
+  - assert: {pointer: /view, equals: workspace}
+  - assert: {pointer: /problems, equals: 0}
+  - assert: {pointer: /servers/0/id, equals: srv_social_comments}
+  - call: {tool: start_server, arguments: {server: srv_social_comments}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: running}}
+  - call: {tool: stop_server, arguments: {server: srv_social_comments}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: stopped}}
+  - call: {tool: init_workspace, arguments: {path: /tmp/fauxfield-m191/food-delivery, example: food-delivery}}
+  - open_workspace: /tmp/fauxfield-m191/food-delivery
+  - assert: {pointer: /view, equals: workspace}
+  - assert: {pointer: /problems, equals: 0}
+  - assert: {pointer: /servers/0/id, equals: srv_food_delivery_couriers}
+  - call: {tool: start_server, arguments: {server: srv_food_delivery_couriers}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: running}}
+  - call: {tool: stop_server, arguments: {server: srv_food_delivery_couriers}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: stopped}}
+  - call: {tool: init_workspace, arguments: {path: /tmp/fauxfield-m191/ride-hailing, example: ride-hailing}}
+  - open_workspace: /tmp/fauxfield-m191/ride-hailing
+  - assert: {pointer: /view, equals: workspace}
+  - assert: {pointer: /problems, equals: 0}
+  - assert: {pointer: /servers/0/id, equals: srv_ride_hailing_drivers}
+  - call: {tool: start_server, arguments: {server: srv_ride_hailing_drivers}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: running}}
+  - call: {tool: stop_server, arguments: {server: srv_ride_hailing_drivers}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: stopped}}
+  - call: {tool: init_workspace, arguments: {path: /tmp/fauxfield-m191/saas-billing, example: saas-billing}}
+  - open_workspace: /tmp/fauxfield-m191/saas-billing
+  - assert: {pointer: /view, equals: workspace}
+  - assert: {pointer: /problems, equals: 0}
+  - assert: {pointer: /servers/0/id, equals: srv_saas_billing_auth}
+  - call: {tool: start_server, arguments: {server: srv_saas_billing_auth}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: running}}
+  - call: {tool: stop_server, arguments: {server: srv_saas_billing_auth}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: stopped}}
+  - call: {tool: init_workspace, arguments: {path: /tmp/fauxfield-m191/healthcare, example: healthcare}}
+  - open_workspace: /tmp/fauxfield-m191/healthcare
+  - assert: {pointer: /view, equals: workspace}
+  - assert: {pointer: /problems, equals: 0}
+  - assert: {pointer: /servers/0/id, equals: srv_healthcare_appointments}
+  - call: {tool: start_server, arguments: {server: srv_healthcare_appointments}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: running}}
+  - call: {tool: stop_server, arguments: {server: srv_healthcare_appointments}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: stopped}}
+  - call: {tool: init_workspace, arguments: {path: /tmp/fauxfield-m191/iot-fleet, example: iot-fleet}}
+  - open_workspace: /tmp/fauxfield-m191/iot-fleet
+  - assert: {pointer: /view, equals: workspace}
+  - assert: {pointer: /problems, equals: 0}
+  - assert: {pointer: /servers/0/id, equals: srv_iot_fleet_alerts}
+  - call: {tool: start_server, arguments: {server: srv_iot_fleet_alerts}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: running}}
+  - call: {tool: stop_server, arguments: {server: srv_iot_fleet_alerts}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: stopped}}
+  - call: {tool: init_workspace, arguments: {path: /tmp/fauxfield-m191/streaming-media, example: streaming-media}}
+  - open_workspace: /tmp/fauxfield-m191/streaming-media
+  - assert: {pointer: /view, equals: workspace}
+  - assert: {pointer: /problems, equals: 0}
+  - assert: {pointer: /servers/0/id, equals: srv_streaming_media_analytics}
+  - call: {tool: start_server, arguments: {server: srv_streaming_media_analytics}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: running}}
+  - call: {tool: stop_server, arguments: {server: srv_streaming_media_analytics}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: stopped}}
+  - call: {tool: init_workspace, arguments: {path: /tmp/fauxfield-m191/travel-booking, example: travel-booking}}
+  - open_workspace: /tmp/fauxfield-m191/travel-booking
+  - assert: {pointer: /view, equals: workspace}
+  - assert: {pointer: /problems, equals: 0}
+  - assert: {pointer: /servers/0/id, equals: srv_travel_booking_bookings}
+  - call: {tool: start_server, arguments: {server: srv_travel_booking_bookings}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: running}}
+  - call: {tool: stop_server, arguments: {server: srv_travel_booking_bookings}}
+  - wait_for: {condition: {pointer: /servers/0/status, equals: stopped}}
+  - state: [reset]
+  - audit: {themes: [one-dark, one-light]}

@@ -1,0 +1,222 @@
+schema = 1
+id = "srv_healthcare_labs"
+name = "Labs"
+enabled = true
+host = "127.0.0.1"
+port = 4004
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "lab_orders"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 25
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "patient_id"
+kind = "int"
+min = 1
+max = 40
+
+[[datasets.generator.fields]]
+name = "panel"
+kind = "one_of"
+values = ["CBC", "Lipid", "Metabolic", "Thyroid", "HbA1c"]
+
+[[datasets.generator.fields]]
+name = "status"
+kind = "one_of"
+values = ["ordered", "collected", "processing", "resulted"]
+
+[[datasets.generator.fields]]
+name = "ordered"
+kind = "datetime"
+
+[[folders]]
+id = "fld_labs_1"
+name = "Orders"
+
+[[folders]]
+id = "fld_labs_2"
+name = "Results"
+
+[[routes]]
+id = "rte_labs_1"
+name = "Lab orders"
+folder = "fld_labs_1"
+kind = "crud"
+path = "/lab-orders"
+dataset = "lab_orders"
+
+[[routes]]
+id = "rte_labs_2"
+name = "Result"
+folder = "fld_labs_2"
+method = "GET"
+path = "/results/:order_id"
+
+  [[routes.responses]]
+  id = "rsp_labs_2_1"
+  name = "Not ready"
+  status = 202
+  content_type = "application/json"
+  body = '''
+{"status":"processing"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "order_id"
+    op = "gt"
+    value = "900"
+
+  [[routes.responses]]
+  id = "rsp_labs_2_2"
+  name = "Unknown order"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"order not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "order_id"
+    op = "eq"
+    value = "0"
+
+  [[routes.responses]]
+  id = "rsp_labs_2_3"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "60..250"
+  body = '''
+{"order":"{{ request.params.order_id }}","status":"resulted","values":[{"test":"glucose","value":{{ random_int(min=70, max=140) }},"unit":"mg/dL"}]}
+'''
+
+[[routes]]
+id = "rte_labs_3"
+name = "Abnormal flags"
+folder = "fld_labs_2"
+method = "GET"
+path = "/results/:order_id/flags"
+
+  [[routes.responses]]
+  id = "rsp_labs_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"order":"{{ request.params.order_id }}","flags":[]}
+'''
+
+[[routes]]
+id = "rte_labs_4"
+name = "Place order"
+folder = "fld_labs_1"
+method = "POST"
+path = "/lab-orders/place"
+
+  [[routes.responses]]
+  id = "rsp_labs_4_1"
+  name = "Panel missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"panel is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.panel"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_labs_4_2"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"lab_{{ uuid() }}","panel":"{{ request.json.panel | default(value='CBC') }}","status":"ordered"}
+'''
+
+[[routes]]
+id = "rte_labs_5"
+name = "Mark collected"
+folder = "fld_labs_1"
+method = "POST"
+path = "/lab-orders/:id/collect"
+
+  [[routes.responses]]
+  id = "rsp_labs_5_1"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"collected"}
+'''
+
+[[routes]]
+id = "rte_labs_6"
+name = "Panels"
+folder = "fld_labs_2"
+method = "GET"
+path = "/panels"
+
+  [[routes.responses]]
+  id = "rsp_labs_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["CBC","Lipid","Metabolic","Thyroid","HbA1c"]
+'''
+
+[[routes]]
+id = "rte_labs_7"
+name = "Reference ranges"
+folder = "fld_labs_2"
+method = "GET"
+path = "/reference-ranges"
+
+  [[routes.responses]]
+  id = "rsp_labs_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"glucose":{"min":70,"max":99,"unit":"mg/dL"},"hdl":{"min":40,"max":100,"unit":"mg/dL"}}
+'''
+
+[[routes]]
+id = "rte_labs_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_labs_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"labs"}
+'''

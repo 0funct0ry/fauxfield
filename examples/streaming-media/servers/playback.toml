@@ -1,0 +1,261 @@
+schema = 1
+id = "srv_streaming_media_playback"
+name = "Playback"
+enabled = true
+host = "127.0.0.1"
+port = 4002
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[folders]]
+id = "fld_playback_1"
+name = "Manifests"
+
+[[folders]]
+id = "fld_playback_2"
+name = "Sessions"
+
+[[folders]]
+id = "fld_playback_3"
+name = "Media"
+
+[[routes]]
+id = "rte_playback_1"
+name = "Manifest"
+folder = "fld_playback_1"
+method = "GET"
+path = "/manifest/:id"
+
+  [[routes.responses]]
+  id = "rsp_playback_1_1"
+  name = "Not licensed"
+  status = 403
+  content_type = "application/json"
+  body = '''
+{"error":"title not available in your region"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "666"
+
+  [[routes.responses]]
+  id = "rsp_playback_1_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "30..90"
+  body = '''
+{"id":"{{ request.params.id }}","protocol":"hls","segments":[{"n":1,"uri":"http://127.0.0.1:4002/media/segment1.txt","duration_s":6},{"n":2,"uri":"http://127.0.0.1:4002/media/segment2.txt","duration_s":6}]}
+'''
+  [routes.responses.headers]
+  "Accept-Ranges" = "bytes"
+
+[[routes]]
+id = "rte_playback_2"
+name = "Qualities"
+folder = "fld_playback_1"
+method = "GET"
+path = "/manifest/:id/qualities"
+
+  [[routes.responses]]
+  id = "rsp_playback_2_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"label":"480p","kbps":1200},{"label":"720p","kbps":3000},{"label":"1080p","kbps":6000}]
+'''
+
+[[routes]]
+id = "rte_playback_3"
+name = "Start session"
+folder = "fld_playback_2"
+method = "POST"
+path = "/sessions"
+
+  [[routes.responses]]
+  id = "rsp_playback_3_1"
+  name = "Title missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"title_id is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.title_id"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_playback_3_2"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  delay_ms = "60..180"
+  body = '''
+{"session":"ses_{{ uuid() }}","title":{{ request.json.title_id | default(value=0) }},"token":"tok_{{ uuid() }}"}
+'''
+
+[[routes]]
+id = "rte_playback_4"
+name = "Get session"
+folder = "fld_playback_2"
+method = "GET"
+path = "/sessions/:id"
+
+  [[routes.responses]]
+  id = "rsp_playback_4_1"
+  name = "Session expired"
+  status = 410
+  content_type = "application/json"
+  body = '''
+{"error":"session expired"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "expired"
+
+  [[routes.responses]]
+  id = "rsp_playback_4_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","position_s":{{ random_int(min=0, max=3600) }},"state":"playing"}
+'''
+
+[[routes]]
+id = "rte_playback_5"
+name = "Update position"
+folder = "fld_playback_2"
+method = "PUT"
+path = "/sessions/:id/position"
+
+  [[routes.responses]]
+  id = "rsp_playback_5_1"
+  name = "Negative position"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"position_s must be non-negative"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.position_s"
+    op = "lt"
+    value = "0"
+
+  [[routes.responses]]
+  id = "rsp_playback_5_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","position_s":{{ request.json.position_s | default(value=0) }}}
+'''
+
+[[routes]]
+id = "rte_playback_6"
+name = "End session"
+folder = "fld_playback_2"
+method = "DELETE"
+path = "/sessions/:id"
+
+  [[routes.responses]]
+  id = "rsp_playback_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","ended":true}
+'''
+
+[[routes]]
+id = "rte_playback_7"
+name = "Subtitle tracks"
+folder = "fld_playback_2"
+method = "GET"
+path = "/subtitles/:id"
+
+  [[routes.responses]]
+  id = "rsp_playback_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"lang":"en","label":"English"},{"lang":"de","label":"Deutsch"},{"lang":"es","label":"Espanol"}]
+'''
+
+[[routes]]
+id = "rte_playback_8"
+name = "License"
+folder = "fld_playback_2"
+method = "GET"
+path = "/drm/license"
+
+  [[routes.responses]]
+  id = "rsp_playback_8_1"
+  name = "No token"
+  status = 401
+  content_type = "application/json"
+  body = '''
+{"error":"missing token"}
+'''
+
+    [[routes.responses.rules]]
+    target = "header"
+    key = "authorization"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_playback_8_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"license":"lic_{{ uuid() }}","expires_in":3600}
+'''
+
+[[routes]]
+id = "rte_playback_9"
+name = "Static media"
+folder = "fld_playback_3"
+kind = "static"
+path = "/media/*"
+dir = "files/media"
+index = "index.html"
+
+[[routes]]
+id = "rte_playback_10"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_playback_10_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"playback"}
+'''

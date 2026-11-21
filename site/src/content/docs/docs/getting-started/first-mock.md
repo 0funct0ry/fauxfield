@@ -15,6 +15,9 @@ cd my-mocks
 `init` writes `fauxfield.toml` and one example Server in `servers/`. Open the app on it with
 `fauxfield .`, or stay in the terminal and use the same files.
 
+Want something bigger to explore? `fauxfield init my-shop --example ecommerce` writes a six-Server
+Workspace; see [Example Workspaces](/docs/guides/examples/).
+
 ## 2. Add a Route
 
 ```bash

@@ -1,0 +1,10 @@
+name = "staging"
+
+[variables]
+base_url_devices = "https://devices.staging.example.test"
+base_url_telemetry = "https://telemetry.staging.example.test"
+base_url_firmware = "https://firmware.staging.example.test"
+base_url_alerts = "https://alerts.staging.example.test"
+base_url_geofences = "https://geofences.staging.example.test"
+base_url_stream = "https://stream.staging.example.test"
+api_key = "staging-demo-key"

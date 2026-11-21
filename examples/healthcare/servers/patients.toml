@@ -1,0 +1,243 @@
+schema = 1
+id = "srv_healthcare_patients"
+name = "Patients"
+enabled = true
+host = "127.0.0.1"
+port = 4001
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "patients"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 40
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "fake"
+fake = "name"
+
+[[datasets.generator.fields]]
+name = "email"
+kind = "fake"
+fake = "internet.email"
+
+[[datasets.generator.fields]]
+name = "phone"
+kind = "fake"
+fake = "phone"
+
+[[datasets.generator.fields]]
+name = "birth_year"
+kind = "int"
+min = 1940
+max = 2015
+
+[[datasets.generator.fields]]
+name = "blood_type"
+kind = "one_of"
+values = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+"]
+
+[[folders]]
+id = "fld_patients_1"
+name = "Patients"
+
+[[folders]]
+id = "fld_patients_2"
+name = "Records"
+
+[[routes]]
+id = "rte_patients_1"
+name = "Patients"
+folder = "fld_patients_1"
+kind = "crud"
+path = "/patients"
+dataset = "patients"
+
+[[routes]]
+id = "rte_patients_2"
+name = "Patient summary"
+folder = "fld_patients_1"
+method = "GET"
+path = "/patients/:id/summary"
+
+  [[routes.responses]]
+  id = "rsp_patients_2_1"
+  name = "Patient not found"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"patient not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "999"
+
+  [[routes.responses]]
+  id = "rsp_patients_2_2"
+  name = "Record restricted"
+  status = 403
+  content_type = "application/json"
+  body = '''
+{"error":"record restricted"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "666"
+
+  [[routes.responses]]
+  id = "rsp_patients_2_3"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","name":"{{ fake(kind="name") }}","allergies":["pollen"],"conditions":["hypertension"]}
+'''
+
+[[routes]]
+id = "rte_patients_3"
+name = "Allergies"
+folder = "fld_patients_2"
+method = "GET"
+path = "/patients/:id/allergies"
+
+  [[routes.responses]]
+  id = "rsp_patients_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"substance":"pollen","severity":"mild"},{"substance":"penicillin","severity":"severe"}]
+'''
+
+[[routes]]
+id = "rte_patients_4"
+name = "Vitals"
+folder = "fld_patients_2"
+method = "GET"
+path = "/patients/:id/vitals"
+
+  [[routes.responses]]
+  id = "rsp_patients_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "30..100"
+  body = '''
+{"patient_id":"{{ request.params.id }}","heart_rate":{{ random_int(min=55, max=100) }},"systolic":{{ random_int(min=100, max=140) }},"diastolic":{{ random_int(min=60, max=90) }},"temp_c":36.{{ random_int(min=2, max=9) }}}
+'''
+
+[[routes]]
+id = "rte_patients_5"
+name = "Visit history"
+folder = "fld_patients_2"
+method = "GET"
+path = "/patients/:id/history"
+
+  [[routes.responses]]
+  id = "rsp_patients_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"date":"{{ fake(kind="date.past") }}","note":"{{ fake(kind="lorem.sentence") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_patients_6"
+name = "Register patient"
+folder = "fld_patients_1"
+method = "POST"
+path = "/patients/register"
+
+  [[routes.responses]]
+  id = "rsp_patients_6_1"
+  name = "Name missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"name is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.name"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_patients_6_2"
+  name = "Duplicate"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"patient already registered"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.name"
+    op = "eq"
+    value = "Duplicate Example"
+
+  [[routes.responses]]
+  id = "rsp_patients_6_3"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"pat_{{ uuid() }}","name":"{{ request.json.name | default(value='Pat Example') }}","status":"registered"}
+'''
+
+[[routes]]
+id = "rte_patients_7"
+name = "Add clinical note"
+folder = "fld_patients_2"
+method = "POST"
+path = "/patients/:id/notes"
+
+  [[routes.responses]]
+  id = "rsp_patients_7_1"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"note_{{ uuid() }}","patient_id":"{{ request.params.id }}"}
+'''
+
+[[routes]]
+id = "rte_patients_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_patients_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"patients"}
+'''

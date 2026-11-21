@@ -1,0 +1,238 @@
+schema = 1
+id = "srv_banking_cards"
+name = "Cards"
+enabled = true
+host = "127.0.0.1"
+port = 4004
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "cards"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 10
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "holder"
+kind = "fake"
+fake = "name"
+
+[[datasets.generator.fields]]
+name = "number"
+kind = "fake"
+fake = "finance.card_number"
+
+[[datasets.generator.fields]]
+name = "status"
+kind = "one_of"
+values = ["active", "frozen", "expired"]
+
+[[datasets.generator.fields]]
+name = "limit"
+kind = "int"
+min = 500
+max = 10000
+
+[[folders]]
+id = "fld_cards_1"
+name = "Cards"
+
+[[folders]]
+id = "fld_cards_2"
+name = "Controls"
+
+[[routes]]
+id = "rte_cards_1"
+name = "Cards"
+folder = "fld_cards_1"
+kind = "crud"
+path = "/cards"
+dataset = "cards"
+
+[[routes]]
+id = "rte_cards_2"
+name = "Freeze card"
+folder = "fld_cards_2"
+method = "POST"
+path = "/cards/:id/freeze"
+
+  [[routes.responses]]
+  id = "rsp_cards_2_1"
+  name = "Card expired"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"expired cards cannot be frozen"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "0"
+
+  [[routes.responses]]
+  id = "rsp_cards_2_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"card_id":"{{ request.params.id }}","status":"frozen","at":"{{ now() }}"}
+'''
+
+[[routes]]
+id = "rte_cards_3"
+name = "Unfreeze card"
+folder = "fld_cards_2"
+method = "POST"
+path = "/cards/:id/unfreeze"
+
+  [[routes.responses]]
+  id = "rsp_cards_3_1"
+  name = "Not frozen"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"card is not frozen"}
+'''
+
+    [[routes.responses.rules]]
+    target = "query"
+    key = "force"
+    op = "eq"
+    value = "no"
+
+  [[routes.responses]]
+  id = "rsp_cards_3_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"card_id":"{{ request.params.id }}","status":"active","at":"{{ now() }}"}
+'''
+
+[[routes]]
+id = "rte_cards_4"
+name = "Set limit"
+folder = "fld_cards_2"
+method = "POST"
+path = "/cards/:id/limit"
+
+  [[routes.responses]]
+  id = "rsp_cards_4_1"
+  name = "Limit too high"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"limit exceeds product maximum"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.limit"
+    op = "gt"
+    value = "20000"
+
+  [[routes.responses]]
+  id = "rsp_cards_4_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"card_id":"{{ request.params.id }}","limit":{{ request.json.limit | default(value=1000) }}}
+'''
+
+[[routes]]
+id = "rte_cards_5"
+name = "Card activity"
+folder = "fld_cards_1"
+method = "GET"
+path = "/cards/:id/transactions"
+
+  [[routes.responses]]
+  id = "rsp_cards_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "30..100"
+  body = '''
+[{% for i in range(end=3) %}{"merchant":"{{ fake(kind="company.name") }}","amount":{{ random_int(min=3, max=300) }}.00}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_cards_6"
+name = "Reset PIN"
+folder = "fld_cards_1"
+method = "POST"
+path = "/cards/:id/pin"
+
+  [[routes.responses]]
+  id = "rsp_cards_6_1"
+  name = "Created"
+  status = 202
+  content_type = "application/json"
+  default = true
+  body = '''
+{"card_id":"{{ request.params.id }}","pin_reset":"requested"}
+'''
+
+[[routes]]
+id = "rte_cards_7"
+name = "Card details"
+folder = "fld_cards_1"
+method = "GET"
+path = "/cards/:id/details"
+
+  [[routes.responses]]
+  id = "rsp_cards_7_1"
+  name = "Details locked"
+  status = 403
+  content_type = "application/json"
+  body = '''
+{"error":"pin required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "header"
+    key = "x-card-pin"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_cards_7_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","number":"{{ fake(kind="finance.card_number") }}","expires":"12/29","brand":"demo"}
+'''
+
+[[routes]]
+id = "rte_cards_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_cards_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"cards"}
+'''

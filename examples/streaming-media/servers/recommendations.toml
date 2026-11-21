@@ -1,0 +1,205 @@
+schema = 1
+id = "srv_streaming_media_recommendations"
+name = "Recommendations"
+enabled = true
+host = "127.0.0.1"
+port = 4004
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "signals"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 20
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "user_id"
+kind = "int"
+min = 1
+max = 30
+
+[[datasets.generator.fields]]
+name = "title_id"
+kind = "int"
+min = 1
+max = 40
+
+[[datasets.generator.fields]]
+name = "weight"
+kind = "float"
+min = 0
+max = 1
+
+[[folders]]
+id = "fld_recommendations_1"
+name = "For You"
+
+[[folders]]
+id = "fld_recommendations_2"
+name = "Trending"
+
+[[routes]]
+id = "rte_recommendations_1"
+name = "For you"
+folder = "fld_recommendations_1"
+method = "GET"
+path = "/recommendations"
+
+  [[routes.responses]]
+  id = "rsp_recommendations_1_1"
+  name = "Unknown user"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"user not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "query"
+    key = "user"
+    op = "eq"
+    value = "0"
+
+  [[routes.responses]]
+  id = "rsp_recommendations_1_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "80..220"
+  body = '''
+[{% for i in range(end=6) %}{"title_id":{{ random_int(min=1, max=40) }},"score":0.{{ random_int(min=50, max=99) }},"reason":"{{ fake(kind="lorem.sentence") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_recommendations_2"
+name = "For a user"
+folder = "fld_recommendations_1"
+method = "GET"
+path = "/recommendations/:user"
+
+  [[routes.responses]]
+  id = "rsp_recommendations_2_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=4) %}{"title_id":{{ random_int(min=1, max=40) }},"score":0.{{ random_int(min=50, max=99) }}}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_recommendations_3"
+name = "Continue watching"
+folder = "fld_recommendations_1"
+method = "GET"
+path = "/continue/:user"
+
+  [[routes.responses]]
+  id = "rsp_recommendations_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"title_id":{{ random_int(min=1, max=40) }},"progress":{{ random_int(min=5, max=95) }}}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_recommendations_4"
+name = "Trending"
+folder = "fld_recommendations_2"
+method = "GET"
+path = "/trending"
+
+  [[routes.responses]]
+  id = "rsp_recommendations_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=5) %}{"rank":{{ i + 1 }},"title_id":{{ random_int(min=1, max=40) }},"views":{{ random_int(min=1000, max=90000) }}}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_recommendations_5"
+name = "Trending in genre"
+folder = "fld_recommendations_2"
+method = "GET"
+path = "/trending/:genre"
+
+  [[routes.responses]]
+  id = "rsp_recommendations_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"rank":{{ i + 1 }},"genre":"{{ request.params.genre }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_recommendations_6"
+name = "Send feedback"
+folder = "fld_recommendations_1"
+method = "POST"
+path = "/feedback"
+
+  [[routes.responses]]
+  id = "rsp_recommendations_6_1"
+  name = "Title missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"title_id is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.title_id"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_recommendations_6_2"
+  name = "Created"
+  status = 202
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"fb_{{ uuid() }}","title_id":{{ request.json.title_id | default(value=0) }},"signal":"{{ request.json.signal | default(value='like') }}"}
+'''
+
+[[routes]]
+id = "rte_recommendations_7"
+name = "Signals"
+folder = "fld_recommendations_1"
+kind = "crud"
+path = "/signals"
+dataset = "signals"
+
+[[routes]]
+id = "rte_recommendations_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_recommendations_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"recommendations"}
+'''

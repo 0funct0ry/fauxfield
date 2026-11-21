@@ -1,0 +1,10 @@
+name = "staging"
+
+[variables]
+base_url_patients = "https://patients.staging.example.test"
+base_url_appointments = "https://appointments.staging.example.test"
+base_url_prescriptions = "https://prescriptions.staging.example.test"
+base_url_labs = "https://labs.staging.example.test"
+base_url_insurance = "https://insurance.staging.example.test"
+base_url_providers = "https://providers.staging.example.test"
+api_key = "staging-demo-key"

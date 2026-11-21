@@ -24,6 +24,7 @@ pub(crate) fn placeholder(kind: PickerKind) -> &'static str {
         PickerKind::Theme => "Select a theme (Esc reverts)…",
         PickerKind::Environment => "Switch environment…",
         PickerKind::Network => "Switch network profile…",
+        PickerKind::Example => "Choose an example Workspace…",
         PickerKind::Prompt => "Type a value, Enter to confirm, Esc to cancel",
     }
 }
@@ -38,6 +39,7 @@ impl Shell {
             Some(PickerKind::Theme) => ("theme-selector", "Theme selector"),
             Some(PickerKind::Prompt) => ("prompt", "Prompt"),
             Some(PickerKind::Network) => ("network-picker", "Network profile picker"),
+            Some(PickerKind::Example) => ("example-picker", "Example picker"),
             _ => ("environment-picker", "Environment picker"),
         }
     }
@@ -165,6 +167,7 @@ impl Shell {
             (None, Kind::Environment) => icon("layers", 14., t.icon_muted).into_any_element(),
             (None, Kind::Dataset) => icon("server", 14., t.icon_muted).into_any_element(),
             (None, Kind::Variable) => icon("file-text", 14., t.icon_muted).into_any_element(),
+            (None, Kind::Example) => icon("layers", 14., t.icon_muted).into_any_element(),
             (None, Kind::Network) => icon("wifi", 14., t.icon_muted).into_any_element(),
             (None, Kind::Theme) => swatch_strip(t, &h.label),
             (None, _) => icon("terminal", 14., t.icon_muted).into_any_element(),

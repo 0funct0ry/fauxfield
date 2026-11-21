@@ -1,0 +1,227 @@
+schema = 1
+id = "srv_travel_booking_payments"
+name = "Payments"
+enabled = true
+host = "127.0.0.1"
+port = 4005
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[folders]]
+id = "fld_payments_1"
+name = "Payments"
+
+[[folders]]
+id = "fld_payments_2"
+name = "Refunds"
+
+[[routes]]
+id = "rte_payments_1"
+name = "Create payment"
+folder = "fld_payments_1"
+method = "POST"
+path = "/payments"
+
+  [[routes.responses]]
+  id = "rsp_payments_1_1"
+  name = "Card declined"
+  status = 402
+  content_type = "application/json"
+  body = '''
+{"error":{"code":"card_declined","message":"The card was declined."}}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.card"
+    op = "eq"
+    value = "4000000000000002"
+
+  [[routes.responses]]
+  id = "rsp_payments_1_2"
+  name = "Amount missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"amount is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.amount"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_payments_1_3"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  delay_ms = "150..450"
+  body = '''
+{"id":"pay_{{ uuid() }}","status":"succeeded","amount":{{ request.json.amount | default(value=0) }},"currency":"eur","booking":"{{ request.json.booking | default(value='') }}"}
+'''
+
+    [[routes.responses.callbacks]]
+    id = "cb_payments_1_1"
+    name = "Notify bookings"
+    method = "POST"
+    url = "{{ vars.base_url_bookings }}/webhooks/payments"
+    delay_ms = 400
+    retries = 2
+    body = '''
+{"event":"payment.succeeded","amount":{{ request.json.amount | default(value=0) }}}
+'''
+
+      [routes.responses.callbacks.headers]
+      content-type = "application/json"
+
+[[routes]]
+id = "rte_payments_2"
+name = "Get payment"
+folder = "fld_payments_1"
+method = "GET"
+path = "/payments/:id"
+
+  [[routes.responses]]
+  id = "rsp_payments_2_1"
+  name = "Payment not found"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"payment not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "missing"
+
+  [[routes.responses]]
+  id = "rsp_payments_2_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"succeeded","amount":24900}
+'''
+
+[[routes]]
+id = "rte_payments_3"
+name = "List payments"
+folder = "fld_payments_1"
+method = "GET"
+path = "/payments"
+
+  [[routes.responses]]
+  id = "rsp_payments_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=4) %}{"id":"pay_{{ uuid() }}","amount":{{ random_int(min=5000, max=90000) }},"status":"succeeded"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_payments_4"
+name = "Create refund"
+folder = "fld_payments_2"
+method = "POST"
+path = "/refunds"
+
+  [[routes.responses]]
+  id = "rsp_payments_4_1"
+  name = "Payment missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"payment is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.payment"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_payments_4_2"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"re_{{ uuid() }}","payment":"{{ request.json.payment | default(value='') }}","status":"succeeded"}
+'''
+
+[[routes]]
+id = "rte_payments_5"
+name = "Get refund"
+folder = "fld_payments_2"
+method = "GET"
+path = "/refunds/:id"
+
+  [[routes.responses]]
+  id = "rsp_payments_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"succeeded"}
+'''
+
+[[routes]]
+id = "rte_payments_6"
+name = "Payment methods"
+folder = "fld_payments_1"
+method = "GET"
+path = "/methods"
+
+  [[routes.responses]]
+  id = "rsp_payments_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["card","bank_transfer","wallet"]
+'''
+
+[[routes]]
+id = "rte_payments_7"
+name = "Receipt"
+folder = "fld_payments_1"
+method = "GET"
+path = "/receipts/:id"
+
+  [[routes.responses]]
+  id = "rsp_payments_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"payment":"{{ request.params.id }}","iban":"{{ fake(kind="finance.iban") }}","total":249.0}
+'''
+
+[[routes]]
+id = "rte_payments_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_payments_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"payments"}
+'''

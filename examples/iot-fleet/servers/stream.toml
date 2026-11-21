@@ -1,0 +1,198 @@
+schema = 1
+id = "srv_iot_fleet_stream"
+name = "Stream"
+enabled = true
+host = "127.0.0.1"
+port = 4006
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[folders]]
+id = "fld_stream_1"
+name = "Sockets"
+
+[[folders]]
+id = "fld_stream_2"
+name = "Control"
+
+[[routes]]
+id = "rte_stream_1"
+name = "Telemetry stream"
+folder = "fld_stream_1"
+kind = "websocket"
+path = "/stream/telemetry"
+mode = "script"
+
+  [[routes.messages]]
+  trigger = "connect"
+  body = '''
+{"type":"hello","channel":"telemetry"}
+'''
+
+  [[routes.messages]]
+  trigger = "interval"
+  every = "2s"
+  body = '''
+{"type":"telemetry","device":{{ random_int(min=1, max=30) }},"temperature":{{ random_int(min=10, max=35) }}.2,"at":"{{ now() }}"}
+'''
+
+  [[routes.messages]]
+  trigger = "message"
+  when = { target = "body", key = "$.type", op = "eq", value = "ping" }
+  body = '''
+{"type":"pong"}
+'''
+
+[[routes]]
+id = "rte_stream_2"
+name = "Alert stream"
+folder = "fld_stream_1"
+kind = "websocket"
+path = "/stream/alerts"
+mode = "script"
+
+  [[routes.messages]]
+  trigger = "connect"
+  body = '''
+{"type":"hello","channel":"alerts"}
+'''
+
+  [[routes.messages]]
+  trigger = "interval"
+  every = "2s"
+  body = '''
+{"type":"alert","id":"al_{{ uuid() }}","severity":"warning","message":"{{ fake(kind="lorem.sentence") }}"}
+'''
+
+[[routes]]
+id = "rte_stream_3"
+name = "Channels"
+folder = "fld_stream_2"
+method = "GET"
+path = "/stream/channels"
+
+  [[routes.responses]]
+  id = "rsp_stream_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["telemetry","alerts"]
+'''
+
+[[routes]]
+id = "rte_stream_4"
+name = "Status"
+folder = "fld_stream_2"
+method = "GET"
+path = "/stream/status"
+
+  [[routes.responses]]
+  id = "rsp_stream_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"clients":{{ random_int(min=1, max=40) }},"messages_per_s":{{ random_int(min=1, max=50) }}}
+'''
+
+[[routes]]
+id = "rte_stream_5"
+name = "Subscribe"
+folder = "fld_stream_2"
+method = "POST"
+path = "/stream/subscribe"
+
+  [[routes.responses]]
+  id = "rsp_stream_5_1"
+  name = "Channel missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"channel is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.channel"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_stream_5_2"
+  name = "Unknown channel"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"unknown channel"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.channel"
+    op = "eq"
+    value = "nope"
+
+  [[routes.responses]]
+  id = "rsp_stream_5_3"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"subscription":"sub_{{ uuid() }}","channel":"{{ request.json.channel | default(value='') }}"}
+'''
+
+[[routes]]
+id = "rte_stream_6"
+name = "Unsubscribe"
+folder = "fld_stream_2"
+method = "DELETE"
+path = "/stream/subscriptions/:id"
+
+  [[routes.responses]]
+  id = "rsp_stream_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"subscription":"{{ request.params.id }}","removed":true}
+'''
+
+[[routes]]
+id = "rte_stream_7"
+name = "Clients"
+folder = "fld_stream_2"
+method = "GET"
+path = "/stream/clients"
+
+  [[routes.responses]]
+  id = "rsp_stream_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"id":"cl_{{ uuid() }}","ip":"{{ fake(kind="internet.ipv4") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_stream_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_stream_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"stream"}
+'''

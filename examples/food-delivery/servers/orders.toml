@@ -1,0 +1,244 @@
+schema = 1
+id = "srv_food_delivery_orders"
+name = "Orders"
+enabled = true
+host = "127.0.0.1"
+port = 4003
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "orders"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 25
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "customer"
+kind = "fake"
+fake = "name"
+
+[[datasets.generator.fields]]
+name = "restaurant_id"
+kind = "int"
+min = 1
+max = 20
+
+[[datasets.generator.fields]]
+name = "status"
+kind = "one_of"
+values = ["placed", "preparing", "picked_up", "delivered", "cancelled"]
+
+[[datasets.generator.fields]]
+name = "total"
+kind = "float"
+min = 8
+max = 90
+
+[[datasets.generator.fields]]
+name = "placed_at"
+kind = "datetime"
+
+[[folders]]
+id = "fld_orders_1"
+name = "Orders"
+
+[[folders]]
+id = "fld_orders_2"
+name = "Payments"
+
+[[routes]]
+id = "rte_orders_1"
+name = "Orders"
+folder = "fld_orders_1"
+kind = "crud"
+path = "/orders"
+dataset = "orders"
+
+[[routes]]
+id = "rte_orders_2"
+name = "Place order"
+folder = "fld_orders_1"
+method = "POST"
+path = "/orders/place"
+
+  [[routes.responses]]
+  id = "rsp_orders_2_1"
+  name = "Cart empty"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"items are required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.items"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_orders_2_2"
+  name = "Restaurant closed"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"restaurant is closed"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.restaurant_id"
+    op = "eq"
+    value = "13"
+
+  [[routes.responses]]
+  id = "rsp_orders_2_3"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  delay_ms = "100..300"
+  body = '''
+{"id":"ord_{{ uuid() }}","status":"placed","total":{{ request.json.total | default(value=0) }},"eta_min":{{ random_int(min=20, max=50) }}}
+'''
+
+[[routes]]
+id = "rte_orders_3"
+name = "Cancel order"
+folder = "fld_orders_1"
+method = "POST"
+path = "/orders/:id/cancel"
+
+  [[routes.responses]]
+  id = "rsp_orders_3_1"
+  name = "Already picked up"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"order already picked up"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "lte"
+    value = "5"
+
+  [[routes.responses]]
+  id = "rsp_orders_3_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"cancelled"}
+'''
+
+[[routes]]
+id = "rte_orders_4"
+name = "Order status"
+folder = "fld_orders_1"
+method = "GET"
+path = "/orders/:id/status"
+
+  [[routes.responses]]
+  id = "rsp_orders_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"preparing","updated":"{{ now() }}"}
+'''
+
+[[routes]]
+id = "rte_orders_5"
+name = "Receipt"
+folder = "fld_orders_1"
+method = "GET"
+path = "/orders/:id/receipt"
+
+  [[routes.responses]]
+  id = "rsp_orders_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"order":"{{ request.params.id }}","subtotal":24.5,"delivery_fee":2.99,"tip":3.0,"total":30.49}
+'''
+
+[[routes]]
+id = "rte_orders_6"
+name = "Pay for order"
+folder = "fld_orders_2"
+method = "POST"
+path = "/orders/:id/pay"
+
+  [[routes.responses]]
+  id = "rsp_orders_6_1"
+  name = "Card declined"
+  status = 402
+  content_type = "application/json"
+  body = '''
+{"error":"card declined"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.card"
+    op = "eq"
+    value = "4000000000000002"
+
+  [[routes.responses]]
+  id = "rsp_orders_6_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "120..350"
+  body = '''
+{"order":"{{ request.params.id }}","payment":"pay_{{ uuid() }}","status":"captured"}
+'''
+
+[[routes]]
+id = "rte_orders_7"
+name = "Payment methods"
+folder = "fld_orders_2"
+method = "GET"
+path = "/payment-methods"
+
+  [[routes.responses]]
+  id = "rsp_orders_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["card","wallet","cash"]
+'''
+
+[[routes]]
+id = "rte_orders_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_orders_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"orders"}
+'''

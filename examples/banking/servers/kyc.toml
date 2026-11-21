@@ -1,0 +1,250 @@
+schema = 1
+id = "srv_banking_kyc"
+name = "KYC"
+enabled = true
+host = "127.0.0.1"
+port = 4005
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "cases"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 15
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "applicant"
+kind = "fake"
+fake = "name"
+
+[[datasets.generator.fields]]
+name = "status"
+kind = "one_of"
+values = ["pending", "in_review", "approved", "rejected"]
+
+[[datasets.generator.fields]]
+name = "risk"
+kind = "one_of"
+values = ["low", "medium", "high"]
+
+[[datasets.generator.fields]]
+name = "submitted_at"
+kind = "datetime"
+
+[[folders]]
+id = "fld_kyc_1"
+name = "Cases"
+
+[[folders]]
+id = "fld_kyc_2"
+name = "Documents"
+
+[[routes]]
+id = "rte_kyc_1"
+name = "KYC cases"
+folder = "fld_kyc_1"
+kind = "crud"
+path = "/cases"
+dataset = "cases"
+
+[[routes]]
+id = "rte_kyc_2"
+name = "Submit for review"
+folder = "fld_kyc_1"
+method = "POST"
+path = "/cases/:id/submit"
+
+  [[routes.responses]]
+  id = "rsp_kyc_2_1"
+  name = "Documents missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"at least one document is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.documents"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_kyc_2_2"
+  name = "Created"
+  status = 202
+  content_type = "application/json"
+  default = true
+  body = '''
+{"case_id":"{{ request.params.id }}","status":"in_review"}
+'''
+
+[[routes]]
+id = "rte_kyc_3"
+name = "Case status"
+folder = "fld_kyc_1"
+method = "GET"
+path = "/cases/:id/status"
+
+  [[routes.responses]]
+  id = "rsp_kyc_3_1"
+  name = "Approved case"
+  status = 200
+  content_type = "application/json"
+  body = '''
+{"case_id":0,"status":"approved","updated":"2025-01-02T09:00:00Z"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "lte"
+    value = "5"
+
+  [[routes.responses]]
+  id = "rsp_kyc_3_2"
+  name = "Rejected case"
+  status = 200
+  content_type = "application/json"
+  body = '''
+{"case_id":90,"status":"rejected","reason":"document unreadable"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "gte"
+    value = "90"
+
+  [[routes.responses]]
+  id = "rsp_kyc_3_3"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"case_id":"{{ request.params.id }}","status":"in_review","updated":"{{ now() }}"}
+'''
+
+[[routes]]
+id = "rte_kyc_4"
+name = "Approve case"
+folder = "fld_kyc_1"
+method = "POST"
+path = "/cases/:id/approve"
+
+  [[routes.responses]]
+  id = "rsp_kyc_4_1"
+  name = "High risk needs manager"
+  status = 403
+  content_type = "application/json"
+  body = '''
+{"error":"manager approval required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "header"
+    key = "x-role"
+    op = "ne"
+    value = "manager"
+
+  [[routes.responses]]
+  id = "rsp_kyc_4_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"case_id":"{{ request.params.id }}","status":"approved"}
+'''
+
+[[routes]]
+id = "rte_kyc_5"
+name = "Upload document"
+folder = "fld_kyc_2"
+method = "POST"
+path = "/cases/:id/documents"
+
+  [[routes.responses]]
+  id = "rsp_kyc_5_1"
+  name = "Type missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"type is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.type"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_kyc_5_2"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  delay_ms = "100..250"
+  body = '''
+{"document_id":"doc_{{ uuid() }}","type":"{{ request.json.type | default(value='passport') }}","state":"received"}
+'''
+
+[[routes]]
+id = "rte_kyc_6"
+name = "List documents"
+folder = "fld_kyc_2"
+method = "GET"
+path = "/cases/:id/documents"
+
+  [[routes.responses]]
+  id = "rsp_kyc_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=2) %}{"id":"doc_{{ uuid() }}","type":"proof_of_address","state":"verified"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_kyc_7"
+name = "Status workflow"
+folder = "fld_kyc_1"
+method = "GET"
+path = "/workflow"
+
+  [[routes.responses]]
+  id = "rsp_kyc_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["pending","in_review","approved","rejected"]
+'''
+
+[[routes]]
+id = "rte_kyc_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_kyc_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"kyc"}
+'''

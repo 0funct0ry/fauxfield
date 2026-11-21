@@ -1,0 +1,10 @@
+name = "staging"
+
+[variables]
+base_url_auth = "https://auth.staging.example.test"
+base_url_tenants = "https://tenants.staging.example.test"
+base_url_subscriptions = "https://subscriptions.staging.example.test"
+base_url_invoices = "https://invoices.staging.example.test"
+base_url_usage = "https://usage.staging.example.test"
+base_url_webhooks = "https://webhooks.staging.example.test"
+api_key = "staging-demo-key"

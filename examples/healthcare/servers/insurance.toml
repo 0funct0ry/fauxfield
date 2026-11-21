@@ -1,0 +1,271 @@
+schema = 1
+id = "srv_healthcare_insurance"
+name = "Insurance"
+enabled = true
+host = "127.0.0.1"
+port = 4005
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[variables]
+payer = "Example Mutual"
+
+[[datasets]]
+name = "claims"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 20
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "patient_id"
+kind = "int"
+min = 1
+max = 40
+
+[[datasets.generator.fields]]
+name = "amount"
+kind = "float"
+min = 50
+max = 5000
+
+[[datasets.generator.fields]]
+name = "status"
+kind = "one_of"
+values = ["submitted", "approved", "denied", "paid"]
+
+[[datasets.generator.fields]]
+name = "submitted"
+kind = "datetime"
+
+[[folders]]
+id = "fld_insurance_1"
+name = "Eligibility"
+
+[[folders]]
+id = "fld_insurance_2"
+name = "Claims"
+
+[[routes]]
+id = "rte_insurance_1"
+name = "Claims"
+folder = "fld_insurance_2"
+kind = "crud"
+path = "/claims"
+dataset = "claims"
+
+[[routes]]
+id = "rte_insurance_2"
+name = "Check eligibility"
+folder = "fld_insurance_1"
+method = "POST"
+path = "/eligibility"
+
+  [[routes.responses]]
+  id = "rsp_insurance_2_1"
+  name = "Member id missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"member_id is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.member_id"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_insurance_2_2"
+  name = "Coverage lapsed"
+  status = 200
+  content_type = "application/json"
+  body = '''
+{"payer":"{{ vars.payer }}","eligible":false,"reason":"coverage lapsed"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.member_id"
+    op = "starts_with"
+    value = "LAPSED"
+
+  [[routes.responses]]
+  id = "rsp_insurance_2_3"
+  name = "Unknown member"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"member not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.member_id"
+    op = "eq"
+    value = "UNKNOWN"
+
+  [[routes.responses]]
+  id = "rsp_insurance_2_4"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "100..300"
+  body = '''
+{"payer":"{{ vars.payer }}","eligible":true,"copay":{{ random_int(min=10, max=50) }},"deductible_remaining":{{ random_int(min=0, max=1500) }}}
+'''
+
+[[routes]]
+id = "rte_insurance_3"
+name = "Plans"
+folder = "fld_insurance_1"
+method = "GET"
+path = "/plans"
+
+  [[routes.responses]]
+  id = "rsp_insurance_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"id":"basic","copay":30},{"id":"standard","copay":20},{"id":"premium","copay":10}]
+'''
+
+[[routes]]
+id = "rte_insurance_4"
+name = "Coverage"
+folder = "fld_insurance_1"
+method = "GET"
+path = "/members/:id/coverage"
+
+  [[routes.responses]]
+  id = "rsp_insurance_4_1"
+  name = "Coverage ended"
+  status = 410
+  content_type = "application/json"
+  body = '''
+{"error":"coverage ended"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "ENDED"
+
+  [[routes.responses]]
+  id = "rsp_insurance_4_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"member":"{{ request.params.id }}","plan":"standard","active":true,"payer":"{{ vars.payer }}"}
+'''
+
+[[routes]]
+id = "rte_insurance_5"
+name = "Submit claim"
+folder = "fld_insurance_2"
+method = "POST"
+path = "/claims/submit"
+
+  [[routes.responses]]
+  id = "rsp_insurance_5_1"
+  name = "Amount invalid"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"amount must be positive"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.amount"
+    op = "lte"
+    value = "0"
+
+  [[routes.responses]]
+  id = "rsp_insurance_5_2"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"clm_{{ uuid() }}","status":"submitted","amount":{{ request.json.amount | default(value=0) }}}
+'''
+
+[[routes]]
+id = "rte_insurance_6"
+name = "Claim status"
+folder = "fld_insurance_2"
+method = "GET"
+path = "/claims/:id/status"
+
+  [[routes.responses]]
+  id = "rsp_insurance_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"approved","paid":{{ random_int(min=50, max=900) }}.00}
+'''
+
+[[routes]]
+id = "rte_insurance_7"
+name = "Prior authorization"
+folder = "fld_insurance_2"
+method = "POST"
+path = "/prior-auth"
+
+  [[routes.responses]]
+  id = "rsp_insurance_7_1"
+  name = "Not covered"
+  status = 403
+  content_type = "application/json"
+  body = '''
+{"error":"procedure not covered"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.procedure"
+    op = "eq"
+    value = "cosmetic"
+
+  [[routes.responses]]
+  id = "rsp_insurance_7_2"
+  name = "Created"
+  status = 202
+  content_type = "application/json"
+  default = true
+  body = '''
+{"auth":"pa_{{ uuid() }}","decision":"pending"}
+'''
+
+[[routes]]
+id = "rte_insurance_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_insurance_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"insurance"}
+'''

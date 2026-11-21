@@ -1,0 +1,227 @@
+schema = 1
+id = "srv_food_delivery_restaurants"
+name = "Restaurants"
+enabled = true
+host = "127.0.0.1"
+port = 4001
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "restaurants"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 20
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "name"
+kind = "one_of"
+values = ["Sunny Noodle Bar", "Harbor Grill", "Green Bowl", "Pepper Pizzeria", "Lotus Kitchen", "Taco Corner", "Maple Diner"]
+
+[[datasets.generator.fields]]
+name = "cuisine"
+kind = "one_of"
+values = ["noodles", "grill", "salad", "pizza", "indian", "mexican", "american"]
+
+[[datasets.generator.fields]]
+name = "rating"
+kind = "float"
+min = 3
+max = 5
+
+[[datasets.generator.fields]]
+name = "open"
+kind = "bool"
+
+[[datasets.generator.fields]]
+name = "city"
+kind = "fake"
+fake = "address.city"
+
+[[folders]]
+id = "fld_restaurants_1"
+name = "Restaurants"
+
+[[folders]]
+id = "fld_restaurants_2"
+name = "Reviews"
+
+[[routes]]
+id = "rte_restaurants_1"
+name = "Restaurants"
+folder = "fld_restaurants_1"
+kind = "crud"
+path = "/restaurants"
+dataset = "restaurants"
+
+[[routes]]
+id = "rte_restaurants_2"
+name = "Search restaurants"
+folder = "fld_restaurants_1"
+method = "GET"
+path = "/restaurants/search"
+
+  [[routes.responses]]
+  id = "rsp_restaurants_2_1"
+  name = "Location required"
+  status = 400
+  content_type = "application/json"
+  body = '''
+{"error":"query parameter lat is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "query"
+    key = "lat"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_restaurants_2_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "40..140"
+  body = '''
+[{% for i in range(end=4) %}{"id":{{ i + 1 }},"name":"{{ fake(kind="company.name") }}","cuisine":"{{ request.query.cuisine | default(value='any') }}","eta_min":{{ random_int(min=15, max=55) }}}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_restaurants_3"
+name = "Nearby"
+folder = "fld_restaurants_1"
+method = "GET"
+path = "/restaurants/nearby"
+
+  [[routes.responses]]
+  id = "rsp_restaurants_3_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"id":{{ i + 1 }},"distance_km":{{ random_int(min=1, max=9) }}.2}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_restaurants_4"
+name = "Opening hours"
+folder = "fld_restaurants_1"
+method = "GET"
+path = "/restaurants/:id/hours"
+
+  [[routes.responses]]
+  id = "rsp_restaurants_4_1"
+  name = "Closed"
+  status = 200
+  content_type = "application/json"
+  body = '''
+{"restaurant_id":13,"open":null,"close":null,"note":"closed today"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "13"
+
+  [[routes.responses]]
+  id = "rsp_restaurants_4_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"restaurant_id":"{{ request.params.id }}","open":"10:00","close":"22:30"}
+'''
+
+[[routes]]
+id = "rte_restaurants_5"
+name = "Reviews"
+folder = "fld_restaurants_2"
+method = "GET"
+path = "/restaurants/:id/reviews"
+
+  [[routes.responses]]
+  id = "rsp_restaurants_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"author":"{{ fake(kind="name.first") }}","stars":{{ random_int(min=3, max=5) }},"text":"{{ fake(kind="lorem.sentence") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_restaurants_6"
+name = "Post review"
+folder = "fld_restaurants_2"
+method = "POST"
+path = "/restaurants/:id/reviews"
+
+  [[routes.responses]]
+  id = "rsp_restaurants_6_1"
+  name = "Invalid stars"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"stars must be 1 to 5"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.stars"
+    op = "gt"
+    value = "5"
+
+  [[routes.responses]]
+  id = "rsp_restaurants_6_2"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"rev_{{ uuid() }}","stars":{{ request.json.stars | default(value=5) }}}
+'''
+
+[[routes]]
+id = "rte_restaurants_7"
+name = "Cuisines"
+folder = "fld_restaurants_1"
+method = "GET"
+path = "/cuisines"
+
+  [[routes.responses]]
+  id = "rsp_restaurants_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["noodles","grill","salad","pizza","indian","mexican"]
+'''
+
+[[routes]]
+id = "rte_restaurants_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_restaurants_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"restaurants"}
+'''

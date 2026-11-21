@@ -1,0 +1,268 @@
+schema = 1
+id = "srv_saas_billing_subscriptions"
+name = "Subscriptions"
+enabled = true
+host = "127.0.0.1"
+port = 4003
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "subscriptions"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 20
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "tenant_id"
+kind = "int"
+min = 1
+max = 20
+
+[[datasets.generator.fields]]
+name = "plan"
+kind = "one_of"
+values = ["free", "team", "business", "enterprise"]
+
+[[datasets.generator.fields]]
+name = "status"
+kind = "one_of"
+values = ["active", "trialing", "past_due", "cancelled"]
+
+[[datasets.generator.fields]]
+name = "seats"
+kind = "int"
+min = 1
+max = 200
+
+[[folders]]
+id = "fld_subscriptions_1"
+name = "Subscriptions"
+
+[[folders]]
+id = "fld_subscriptions_2"
+name = "Plans"
+
+[[routes]]
+id = "rte_subscriptions_1"
+name = "Subscriptions"
+folder = "fld_subscriptions_1"
+kind = "crud"
+path = "/subscriptions"
+dataset = "subscriptions"
+
+[[routes]]
+id = "rte_subscriptions_2"
+name = "Plans"
+folder = "fld_subscriptions_2"
+method = "GET"
+path = "/plans"
+
+  [[routes.responses]]
+  id = "rsp_subscriptions_2_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"id":"free","price":0},{"id":"team","price":29},{"id":"business","price":99},{"id":"enterprise","price":499}]
+'''
+
+[[routes]]
+id = "rte_subscriptions_3"
+name = "Plan detail"
+folder = "fld_subscriptions_2"
+method = "GET"
+path = "/plans/:id"
+
+  [[routes.responses]]
+  id = "rsp_subscriptions_3_1"
+  name = "Unknown plan"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"plan not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "platinum"
+
+  [[routes.responses]]
+  id = "rsp_subscriptions_3_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","interval":"month","currency":"USD","features":["sso","audit_log"]}
+'''
+
+[[routes]]
+id = "rte_subscriptions_4"
+name = "Start subscription"
+folder = "fld_subscriptions_1"
+method = "POST"
+path = "/subscriptions/start"
+
+  [[routes.responses]]
+  id = "rsp_subscriptions_4_1"
+  name = "Plan missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"plan is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.plan"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_subscriptions_4_2"
+  name = "Payment required"
+  status = 402
+  content_type = "application/json"
+  body = '''
+{"error":"payment_required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.card"
+    op = "eq"
+    value = "4000000000000002"
+
+  [[routes.responses]]
+  id = "rsp_subscriptions_4_3"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  delay_ms = "100..300"
+  body = '''
+{"id":"sub_{{ uuid() }}","plan":"{{ request.json.plan | default(value='team') }}","status":"trialing","trial_days":14}
+'''
+
+    [[routes.responses.callbacks]]
+    id = "cb_subscriptions_4_1"
+    name = "Notify webhooks"
+    method = "POST"
+    url = "{{ vars.base_url_webhooks }}/events"
+    delay_ms = 300
+    retries = 3
+    body = '''
+{"type":"subscription.created","plan":"{{ request.json.plan | default(value='team') }}"}
+'''
+
+      [routes.responses.callbacks.headers]
+      content-type = "application/json"
+
+[[routes]]
+id = "rte_subscriptions_5"
+name = "Upgrade"
+folder = "fld_subscriptions_1"
+method = "POST"
+path = "/subscriptions/:id/upgrade"
+
+  [[routes.responses]]
+  id = "rsp_subscriptions_5_1"
+  name = "Already on plan"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"already on this plan"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.plan"
+    op = "eq"
+    value = "current"
+
+  [[routes.responses]]
+  id = "rsp_subscriptions_5_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","plan":"{{ request.json.plan | default(value='business') }}","prorated":true}
+'''
+
+[[routes]]
+id = "rte_subscriptions_6"
+name = "Cancel"
+folder = "fld_subscriptions_1"
+method = "POST"
+path = "/subscriptions/:id/cancel"
+
+  [[routes.responses]]
+  id = "rsp_subscriptions_6_1"
+  name = "Already cancelled"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"already cancelled"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "cancelled"
+
+  [[routes.responses]]
+  id = "rsp_subscriptions_6_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","status":"cancelled","ends":"{{ fake(kind="date.future") }}"}
+'''
+
+[[routes]]
+id = "rte_subscriptions_7"
+name = "Proration preview"
+folder = "fld_subscriptions_1"
+method = "GET"
+path = "/subscriptions/:id/preview"
+
+  [[routes.responses]]
+  id = "rsp_subscriptions_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","amount_due":{{ random_int(min=5, max=300) }}.00,"currency":"USD"}
+'''
+
+[[routes]]
+id = "rte_subscriptions_8"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_subscriptions_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"subscriptions"}
+'''

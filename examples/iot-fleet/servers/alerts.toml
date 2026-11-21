@@ -1,0 +1,258 @@
+schema = 1
+id = "srv_iot_fleet_alerts"
+name = "Alerts"
+enabled = true
+host = "127.0.0.1"
+port = 4004
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "alerts"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 25
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "device_id"
+kind = "int"
+min = 1
+max = 30
+
+[[datasets.generator.fields]]
+name = "severity"
+kind = "one_of"
+values = ["info", "warning", "critical"]
+
+[[datasets.generator.fields]]
+name = "message"
+kind = "lorem"
+words = 6
+
+[[datasets.generator.fields]]
+name = "state"
+kind = "one_of"
+values = ["open", "acked", "resolved"]
+
+[[datasets.generator.fields]]
+name = "raised_at"
+kind = "datetime"
+
+[[folders]]
+id = "fld_alerts_1"
+name = "Alerts"
+
+[[folders]]
+id = "fld_alerts_2"
+name = "Alert Rules"
+
+[[routes]]
+id = "rte_alerts_1"
+name = "Alerts"
+folder = "fld_alerts_1"
+kind = "crud"
+path = "/alerts"
+dataset = "alerts"
+
+[[routes]]
+id = "rte_alerts_2"
+name = "Acknowledge alert"
+folder = "fld_alerts_1"
+method = "POST"
+path = "/alerts/:id/ack"
+
+  [[routes.responses]]
+  id = "rsp_alerts_2_1"
+  name = "Already resolved"
+  status = 409
+  content_type = "application/json"
+  body = '''
+{"error":"alert already resolved"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "lte"
+    value = "3"
+
+  [[routes.responses]]
+  id = "rsp_alerts_2_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","state":"acked","by":"{{ fake(kind="internet.username") }}"}
+'''
+
+[[routes]]
+id = "rte_alerts_3"
+name = "Resolve alert"
+folder = "fld_alerts_1"
+method = "POST"
+path = "/alerts/:id/resolve"
+
+  [[routes.responses]]
+  id = "rsp_alerts_3_1"
+  name = "Not found"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"alert not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "eq"
+    value = "999"
+
+  [[routes.responses]]
+  id = "rsp_alerts_3_2"
+  name = "Created"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","state":"resolved"}
+'''
+
+[[routes]]
+id = "rte_alerts_4"
+name = "Summary"
+folder = "fld_alerts_1"
+method = "GET"
+path = "/alerts/summary"
+
+  [[routes.responses]]
+  id = "rsp_alerts_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"open":{{ random_int(min=1, max=20) }},"acked":{{ random_int(min=0, max=10) }},"critical":{{ random_int(min=0, max=4) }}}
+'''
+
+[[routes]]
+id = "rte_alerts_5"
+name = "Alert history"
+folder = "fld_alerts_1"
+method = "GET"
+path = "/alerts/:id/history"
+
+  [[routes.responses]]
+  id = "rsp_alerts_5_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{% for i in range(end=3) %}{"state":"open","at":"{{ fake(kind="date.past") }}"}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_alerts_6"
+name = "Alert rules"
+folder = "fld_alerts_2"
+method = "GET"
+path = "/rules"
+
+  [[routes.responses]]
+  id = "rsp_alerts_6_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+[{"id":1,"metric":"temperature","op":"gt","threshold":40,"severity":"critical"},{"id":2,"metric":"battery","op":"lt","threshold":15,"severity":"warning"}]
+'''
+
+[[routes]]
+id = "rte_alerts_7"
+name = "Create rule"
+folder = "fld_alerts_2"
+method = "POST"
+path = "/rules"
+
+  [[routes.responses]]
+  id = "rsp_alerts_7_1"
+  name = "Threshold missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"threshold is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.threshold"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_alerts_7_2"
+  name = "Created"
+  status = 201
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":{{ random_int(min=10, max=99) }},"metric":"{{ request.json.metric | default(value='temperature') }}","threshold":{{ request.json.threshold | default(value=0) }}}
+'''
+
+[[routes]]
+id = "rte_alerts_8"
+name = "Get rule"
+folder = "fld_alerts_2"
+method = "GET"
+path = "/rules/:id"
+
+  [[routes.responses]]
+  id = "rsp_alerts_8_1"
+  name = "Rule not found"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"rule not found"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "id"
+    op = "gt"
+    value = "50"
+
+  [[routes.responses]]
+  id = "rsp_alerts_8_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"id":"{{ request.params.id }}","metric":"temperature","op":"gt","threshold":40}
+'''
+
+[[routes]]
+id = "rte_alerts_9"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_alerts_9_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"alerts"}
+'''

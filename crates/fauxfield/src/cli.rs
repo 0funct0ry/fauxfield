@@ -61,6 +61,15 @@ pub enum Command {
         /// Also write MCP client config and an AGENTS.md section (same as `agents init`).
         #[arg(long)]
         agents: bool,
+        /// Create a ready-to-run example Workspace instead of the one-Server layout.
+        #[arg(long, value_name = "NAME", conflicts_with = "list_examples")]
+        example: Option<String>,
+        /// Print the embedded examples and exit.
+        #[arg(long)]
+        list_examples: bool,
+        /// Write an example into a folder that already has some of its files (existing files are kept).
+        #[arg(long, requires = "example")]
+        force_example: bool,
         /// Machine-readable output with a stable schema.
         #[arg(long)]
         json: bool,
@@ -268,8 +277,21 @@ pub fn run() -> i32 {
     match cli.command {
         None => open(cli.path),
         Some(Command::Open { path }) => open(path),
-        Some(Command::Init { path, agents, json }) => {
-            crate::workspace_cmd::init(path, agents, json)
+        Some(Command::Init {
+            path,
+            agents,
+            example,
+            list_examples,
+            force_example,
+            json,
+        }) => {
+            if list_examples {
+                crate::workspace_cmd::list_examples(json)
+            } else if let Some(name) = example {
+                crate::workspace_cmd::init_example(path, &name, agents, force_example, json)
+            } else {
+                crate::workspace_cmd::init(path, agents, json)
+            }
         }
         Some(Command::Agents { action }) => crate::agents_cmd::agents(action),
         Some(Command::Validate(a)) => crate::workspace_cmd::validate(&a),

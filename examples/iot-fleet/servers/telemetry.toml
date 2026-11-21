@@ -1,0 +1,261 @@
+schema = 1
+id = "srv_iot_fleet_telemetry"
+name = "Telemetry"
+enabled = true
+host = "127.0.0.1"
+port = 4002
+fake_seed = 42
+
+[cors]
+enabled = true
+origins = ["*"]
+
+[[datasets]]
+name = "readings"
+key = "id"
+id_strategy = "increment"
+
+[datasets.generator]
+rows = 50
+
+[[datasets.generator.fields]]
+name = "id"
+kind = "sequence"
+
+[[datasets.generator.fields]]
+name = "device_id"
+kind = "int"
+min = 1
+max = 30
+
+[[datasets.generator.fields]]
+name = "temperature"
+kind = "float"
+min = -10
+max = 45
+
+[[datasets.generator.fields]]
+name = "humidity"
+kind = "float"
+min = 10
+max = 95
+
+[[datasets.generator.fields]]
+name = "recorded_at"
+kind = "datetime"
+
+[[folders]]
+id = "fld_telemetry_1"
+name = "Readings"
+
+[[folders]]
+id = "fld_telemetry_2"
+name = "Series"
+
+[[folders]]
+id = "fld_telemetry_3"
+name = "Ingest"
+
+[[routes]]
+id = "rte_telemetry_1"
+name = "Readings"
+folder = "fld_telemetry_1"
+kind = "crud"
+path = "/readings"
+dataset = "readings"
+
+[[routes]]
+id = "rte_telemetry_2"
+name = "Latest reading"
+folder = "fld_telemetry_1"
+method = "GET"
+path = "/telemetry/:device/latest"
+
+  [[routes.responses]]
+  id = "rsp_telemetry_2_1"
+  name = "No data yet"
+  status = 404
+  content_type = "application/json"
+  body = '''
+{"error":"no readings for device"}
+'''
+
+    [[routes.responses.rules]]
+    target = "param"
+    key = "device"
+    op = "eq"
+    value = "0"
+
+  [[routes.responses]]
+  id = "rsp_telemetry_2_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"device":"{{ request.params.device }}","temperature":{{ random_int(min=-5, max=40) }}.4,"humidity":{{ random_int(min=20, max=90) }}.1,"at":"{{ now() }}"}
+'''
+
+[[routes]]
+id = "rte_telemetry_3"
+name = "Time series"
+folder = "fld_telemetry_2"
+method = "GET"
+path = "/telemetry/:device/series"
+
+  [[routes.responses]]
+  id = "rsp_telemetry_3_1"
+  name = "Too many points"
+  status = 400
+  content_type = "application/json"
+  body = '''
+{"error":"points must be at most 500"}
+'''
+
+    [[routes.responses.rules]]
+    target = "query"
+    key = "points"
+    op = "gt"
+    value = "500"
+
+  [[routes.responses]]
+  id = "rsp_telemetry_3_2"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  delay_ms = "50..180"
+  body = '''
+[{% for i in range(end=12) %}{"t":{{ i }},"temperature":{{ random_int(min=10, max=35) }}.{{ random_int(min=0, max=9) }},"humidity":{{ random_int(min=30, max=80) }}}{% if not loop.last %},{% endif %}{% endfor %}]
+'''
+
+[[routes]]
+id = "rte_telemetry_4"
+name = "Summary"
+folder = "fld_telemetry_2"
+method = "GET"
+path = "/telemetry/:device/summary"
+
+  [[routes.responses]]
+  id = "rsp_telemetry_4_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"device":"{{ request.params.device }}","min":{{ random_int(min=-10, max=5) }},"max":{{ random_int(min=25, max=45) }},"avg":{{ random_int(min=10, max=25) }}.5,"samples":{{ random_int(min=100, max=5000) }}}
+'''
+
+[[routes]]
+id = "rte_telemetry_5"
+name = "Ingest reading"
+folder = "fld_telemetry_3"
+method = "POST"
+path = "/telemetry/ingest"
+
+  [[routes.responses]]
+  id = "rsp_telemetry_5_1"
+  name = "Device missing"
+  status = 422
+  content_type = "application/json"
+  body = '''
+{"error":"device_id is required"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.device_id"
+    op = "absent"
+
+  [[routes.responses]]
+  id = "rsp_telemetry_5_2"
+  name = "Created"
+  status = 202
+  content_type = "application/json"
+  default = true
+  delay_ms = "10..40"
+  body = '''
+{"accepted":true,"device":{{ request.json.device_id | default(value=0) }},"id":"rd_{{ uuid() }}"}
+'''
+
+[[routes]]
+id = "rte_telemetry_6"
+name = "Ingest batch"
+folder = "fld_telemetry_3"
+method = "POST"
+path = "/telemetry/batch"
+
+  [[routes.responses]]
+  id = "rsp_telemetry_6_1"
+  name = "Batch too large"
+  status = 413
+  content_type = "application/json"
+  body = '''
+{"error":"batch limit is 1000 readings"}
+'''
+
+    [[routes.responses.rules]]
+    target = "body"
+    key = "$.count"
+    op = "gt"
+    value = "1000"
+
+  [[routes.responses]]
+  id = "rsp_telemetry_6_2"
+  name = "Created"
+  status = 202
+  content_type = "application/json"
+  default = true
+  body = '''
+{"accepted":{{ request.json.count | default(value=0) }},"batch":"bt_{{ uuid() }}"}
+'''
+
+[[routes]]
+id = "rte_telemetry_7"
+name = "Metric names"
+folder = "fld_telemetry_2"
+method = "GET"
+path = "/metrics"
+
+  [[routes.responses]]
+  id = "rsp_telemetry_7_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+["temperature","humidity","battery","signal_dbm"]
+'''
+
+[[routes]]
+id = "rte_telemetry_8"
+name = "Export CSV rows"
+folder = "fld_telemetry_2"
+method = "GET"
+path = "/telemetry/:device/export"
+
+  [[routes.responses]]
+  id = "rsp_telemetry_8_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"device":"{{ request.params.device }}","format":"json","rows":3}
+'''
+
+[[routes]]
+id = "rte_telemetry_9"
+name = "Health"
+method = "GET"
+path = "/health"
+
+  [[routes.responses]]
+  id = "rsp_telemetry_9_1"
+  name = "OK"
+  status = 200
+  content_type = "application/json"
+  default = true
+  body = '''
+{"status":"ok","service":"telemetry"}
+'''
